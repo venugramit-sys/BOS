@@ -1,0 +1,29 @@
+// ============================================================
+// BOS Business Script: Fleet & Dispatch Validator
+// ============================================================
+
+table VehicleDispatch {
+    caption = "Vehicle Dispatch Record";
+    tableType = Document;
+    dataPerCompany = true;
+
+    id: UUID {
+        default = auto();
+    };
+    vin: String(30) {
+        notNull = true;
+    };
+    capacityTons: Decimal(10, 2);
+    inspectionStatus: String(30);
+
+    primaryKey(id);
+}
+
+codeunit FleetValidator {
+    ValidateFleetDispatch(vin: String, capacityTons: Decimal) {
+        validateRequired(vin);
+        assert(capacityTons > 0, "Payload capacity must be greater than 0 tons");
+        inspectionStatus = "Approved";
+        logAudit("Vehicle dispatch parameters successfully verified by engine");
+    }
+}

@@ -1,0 +1,140 @@
+# ==============================================================================
+# BOS (Business Operating System) - Production Docker Compose Orchestration
+# Designed for Indian Cloud VPS & Enterprise Deployments
+# ==============================================================================
+
+version: '3.8'
+
+services:
+  # ----------------------------------------------------------------------------
+  # BOS Backend Runtime Engine & Static UI
+  # ----------------------------------------------------------------------------
+  bos-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bos/business-operating-system:latest
+    container_name: bos_app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-bos_secure_pass_2026}@postgres:5432/${POSTGRES_DB:-bos_prod}
+      - PORT=3000
+      - RUST_LOG=info
+      - TZ=Asia/Kolkata
+    volumes:
+      - bos_data:/home/bos/app/data
+      - ./packages:/home/bos/app/packages:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - bos_network
+
+  # ----------------------------------------------------------------------------
+  # PostgreSQL 16 Enterprise Database
+  # ----------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: bos_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bos_secure_pass_2026}
+      POSTGRES_DB: ${POSTGRES_DB:-bos_prod}
+      TZ: Asia/Kolkata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/cloud/postgres-tuning.conf:/etc/postgresql/postgresql.conf:ro
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    ports:
+      # Expose only to localhost for security (never expose 5432 to public internet)
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-bos_prod}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - bos_network
+
+  # ----------------------------------------------------------------------------
+  # Caddy Reverse Proxy (Auto Let's Encrypt TLS & HTTP/2 / HTTP/3)
+  # ----------------------------------------------------------------------------
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: bos_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN_NAME=${DOMAIN_NAME:-localhost}
+      - ACME_EMAIL=${ACME_EMAIL:-admin@example.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - bos-app
+    networks:
+      - bos_network
+
+  # ----------------------------------------------------------------------------
+  # Automated Backup Runner (Daily Encrypted Snapshots to S3/EOS)
+  # ----------------------------------------------------------------------------
+  backup:
+    image: postgres:16-alpine
+    container_name: bos_backup
+    restart: unless-stopped
+    environment:
+      - PGHOST=postgres
+      - PGPORT=5432
+      - PGUSER=${POSTGRES_USER:-postgres}
+      - PGPASSWORD=${POSTGRES_PASSWORD:-bos_secure_pass_2026}
+      - PGDATABASE=${POSTGRES_DB:-bos_prod}
+      - BACKUP_RETENTION_DAYS=30
+      - S3_ENDPOINT=${S3_ENDPOINT:-https://s3.ap-south-1.amazonaws.com}
+      - S3_BUCKET=${S3_BUCKET:-bos-backups-india}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY:-}
+      - S3_SECRET_KEY=${S3_SECRET_KEY:-}
+      - TZ=Asia/Kolkata
+    volumes:
+      - ./scripts/cloud/backup-postgres.sh:/backup.sh:ro
+      - backup_data:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        apk add --no-cache curl aws-cli tzdata gzip
+        echo "0 2 * * * /backup.sh >> /var/log/backup.log 2>&1" > /etc/crontabs/root
+        crond -f -d 8
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - bos_network
+
+volumes:
+  postgres_data:
+    name: bos_postgres_data
+  bos_data:
+    name: bos_app_data
+  backup_data:
+    name: bos_backup_data
+  caddy_data:
+    name: bos_caddy_data
+  caddy_config:
+    name: bos_caddy_config
+
+networks:
+  bos_network:
+    name: bos_network
+    driver: bridge

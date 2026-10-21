@@ -1,0 +1,407 @@
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::EventSubscriber;
+
+    fn run(engine: &QuickJsEngine, script: &str, data: &mut JsonValue) -> Result<(), RuntimeError> {
+        let mut logs = Vec::new();
+        engine.execute_trigger("Note", "onInsert", script, data, None, &SessionContext::default(), None, &mut logs)
+    }
+
+    #[test]
+    fn test_quickjs_engine_execution() {
+        let engine = QuickJsEngine::new().expect("Failed to create engine");
+        let mut data = serde_json::json!({
+            "username": "alice",
+            "password": "Password123!",
+            "email": "ALICE@EXAMPLE.COM"
+        });
+        let script = r#"
+            if (!rec.username) throw new Error("Username is required");
+            if (rec.password) {
+                const salt = ctx.crypto.randomBytes(8).toHex();
+                if (salt.length !== 16) throw new Error("randomBytes(8) must yield 16 hex chars");
+                rec.passwordHash = `$sha256$${salt}$${ctx.crypto.sha256(salt + rec.password)}`;
+                delete rec.password;
+            }
+            rec.email = rec.email.toLowerCase().trim();
+            rec.processedBy = "QuickJS-Engine";
+            ctx.audit.log("User processed successfully");
+        "#;
+        run(&engine, script, &mut data).expect("execution");
+        assert!(data.get("password").is_none());
+        assert!(data.get("passwordHash").and_then(|v| v.as_str()).is_some_and(|h| h.starts_with("$sha256$")));
+        assert_eq!(data.get("email").and_then(|v| v.as_str()), Some("alice@example.com"));
+        assert_eq!(data.get("processedBy").and_then(|v| v.as_str()), Some("QuickJS-Engine"));
+    }
+
+    #[test]
+    fn test_random_bytes_lengths() {
+        let engine = QuickJsEngine::new().expect("engine");
+        let mut data = serde_json::json!({});
+        let script = r#"
+            rec.lens = [1, 16, 33, 100].map(n => ctx.crypto.randomBytes(n).toHex().length);
+        "#;
+        run(&engine, script, &mut data).expect("execution");
+        assert_eq!(data.get("lens"), Some(&serde_json::json!([2, 32, 66, 200])));
+    }
+
+    #[test]
+    fn test_data_access_without_session_throws() {
+        let engine = QuickJsEngine::new().expect("engine");
+        for call in [
+            "Customer.get('C1')",
+            "Customer.findMany({ where: { name: 'x' } })",
+            "Customer.count()",
+            "Customer.exists({ name: 'x' })",
+            "Customer.create({ name: 'x' })",
+            "Customer.modifyAll({ name: 'y' }, {})",
+            "ctx.db.query('SELECT 1')",
+            "ctx.call('Posting', 'run', {})",
+            "ctx.workflow.transition('Note', 'N1', 'release')",
+        ] {
+            let mut data = serde_json::json!({});
+            let err = run(&engine, call, &mut data).expect_err(call);
+            assert!(
+                err.to_string().contains("Database access is unavailable"),
+                "{} -> unexpected error: {}",
+                call,
+                err
+            );
+        }
+    }
+
+    #[test]
+    fn test_host_errors_are_catchable_in_script() {
+        let engine = QuickJsEngine::new().expect("engine");
+        let mut data = serde_json::json!({});
+        let script = r#"
+            try { Customer.get("C1"); rec.caught = false; }
+            catch (e) { rec.caught = String(e.message).includes("Database access is unavailable"); }
+        "#;
+        run(&engine, script, &mut data).expect("execution");
+        assert_eq!(data.get("caught").and_then(|v| v.as_bool()), Some(true));
+    }
+
+    #[test]
+    fn test_number_series_host_api_removed() {
+        let engine = QuickJsEngine::new().expect("engine");
+        let mut data = serde_json::json!({});
+        let script = r#"
+            rec.hasNumSeries = typeof ctx.numSeries !== "undefined";
+            rec.hasHostFn = typeof globalThis.__host_num_series_next !== "undefined";
+        "#;
+        run(&engine, script, &mut data).expect("execution");
+        assert_eq!(data.get("hasNumSeries").and_then(|v| v.as_bool()), Some(false));
+        assert_eq!(data.get("hasHostFn").and_then(|v| v.as_bool()), Some(false));
+        assert!(!QuickJsEngine::generate_ambient_dts().contains("numSeries"));
+    }
+
+    #[test]
+    fn test_fuel_exhaustion_stops_infinite_loop() {
+        let engine = QuickJsEngine::new().expect("engine");
+        let mut data = serde_json::json!({});
+        let started = Instant::now();
+        let err = run(&engine, "while (true) {}", &mut data).expect_err("infinite loop must be stopped");
+        assert!(err.to_string().contains("fuel exhausted"), "unexpected error: {}", err);
+        assert!(started.elapsed() < Duration::from_secs(5), "fuel limit must stop the loop quickly");
+        assert!(engine.fuel_used() >= DEFAULT_MAX_FUEL);
+    }
+
+    #[test]
+    fn test_fuel_exhaustion_cannot_be_caught() {
+        let engine = QuickJsEngine::new().expect("engine");
+        let mut data = serde_json::json!({});
+        let script = r#"
+            try { while (true) {} } catch (e) { rec.swallowed = true; }
+        "#;
+        let err = run(&engine, script, &mut data).expect_err("interrupt must not be catchable");
+        assert!(err.to_string().contains("fuel exhausted"));
+        assert!(data.get("swallowed").is_none());
+    }
+
+    #[test]
+    fn test_fuel_budget_is_configurable_and_reported() {
+        let script = "let s = 0; for (let i = 0; i < 300000; i++) { s += i; } rec.sum = s;";
+
+        let small = QuickJsEngine::with_limits(ScriptServices::default(), ExecutionLimits::with_fuel(Some(100_000)))
+            .expect("engine");
+        let mut data = serde_json::json!({});
+        assert!(run(&small, script, &mut data).is_err(), "300k iterations exceed a 100k budget");
+
+        let large = QuickJsEngine::with_limits(ScriptServices::default(), ExecutionLimits::with_fuel(Some(5_000_000)))
+            .expect("engine");
+        let mut data = serde_json::json!({});
+        run(&large, script, &mut data).expect("5M budget is enough");
+        assert_eq!(data.get("sum").and_then(|v| v.as_i64()), Some(44_999_850_000));
+        assert!(large.fuel_used() >= 300_000, "fuel used should reflect loop iterations, got {}", large.fuel_used());
+
+        let mut data = serde_json::json!({});
+        run(&large, "rec.ok = true;", &mut data).expect("trivial script");
+        assert!(large.fuel_used() < 100_000, "meter must reset between executions");
+    }
+
+    #[test]
+    fn test_quickjs_extensions_wasm_events() {
+        let wasm = Arc::new(WasmEngine::new().expect("Failed to create WasmEngine"));
+        let wat = r#"
+            (module
+                (func (export "calc_tax") (param f64 f64) (result f64)
+                    local.get 0
+                    local.get 1
+                    f64.mul
+                )
+            )
+        "#;
+        wasm.load_module("tax_calc", wat.as_bytes()).expect("Failed to load wat");
+
+        let events = Arc::new(EventRegistry::new());
+        events.register(EventSubscriber {
+            id: Uuid::new_v4(),
+            publisher: "SalesOrder".to_string(),
+            event_name: "onPostDiscount".to_string(),
+            subscriber_name: "DiscountMod".to_string(),
+            method_name: "Apply".to_string(),
+            priority: 10,
+            script: "rec.discountApplied = true;".to_string(),
+            is_active: true,
+        });
+
+        let engine = QuickJsEngine::with_services(Some(wasm), None, Some(events)).expect("engine");
+        let mut data = serde_json::json!({ "subtotal": 100.0, "taxRate": 0.20 });
+        let script = r#"
+            rec.tax = ctx.wasm.invoke("tax_calc", "calc_tax", rec.subtotal, rec.taxRate);
+            const evt = ctx.events.publish("SalesOrder", "onPostDiscount", { discountApplied: false });
+            rec.discountEventFired = evt.discountApplied;
+            try { ctx.wasm.invoke("missing_module", "f", 1, 2); rec.missingThrew = false; }
+            catch (e) { rec.missingThrew = true; }
+            try { ctx.sidecar.call("svc", "/x", {}); rec.sidecarThrew = false; }
+            catch (e) { rec.sidecarThrew = true; }
+        "#;
+        run(&engine, script, &mut data).expect("execution");
+        assert_eq!(data.get("tax").and_then(|v| v.as_f64()), Some(20.0));
+        assert_eq!(data.get("discountEventFired").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(data.get("missingThrew").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(data.get("sidecarThrew").and_then(|v| v.as_bool()), Some(true));
+    }
+
+    #[test]
+    fn test_publish_without_registry_throws() {
+        let engine = QuickJsEngine::new().expect("engine");
+        let mut data = serde_json::json!({});
+        let err = run(&engine, "ctx.events.publish('A', 'b', {});", &mut data).expect_err("no registry");
+        assert!(err.to_string().contains("Event registry is not available"));
+    }
+
+    #[test]
+    fn test_quickjs_rec_erp_helpers() {
+        let engine = QuickJsEngine::new().expect("engine");
+        let mut data = serde_json::json!({ "status": "Approved", "customerNo": "CUST001" });
+        let script = r#"
+            rec.testField("status", "Approved");
+            rec.testField("customerNo");
+            let failed = false;
+            try { rec.testField("status", "Draft"); } catch (e) { failed = true; }
+            if (!failed) throw new Error("testField should have thrown for mismatched status");
+            rec.testedHelpers = true;
+        "#;
+        run(&engine, script, &mut data).expect("execution");
+        assert_eq!(data.get("testedHelpers").and_then(|v| v.as_bool()), Some(true));
+    }
+
+    #[test]
+    fn test_quickjs_ui_toast_and_messaging() {
+        let engine = QuickJsEngine::new().expect("engine");
+        let mut data = serde_json::json!({ "orderNo": "SO-9999", "amount": 2500.00 });
+        let script = r#"
+            ctx.ui.success("Order SO-9999 released successfully", "Release Done");
+            ctx.ui.warning("Amount exceeds $2000 threshold", { duration: 8000 });
+            ui.info("Tax calculation updated");
+            toast({
+                title: "Action Item",
+                message: "Verify shipping address",
+                type: "warning",
+                duration: 6000,
+                action: { label: "Review", url: "/orders/SO-9999" }
+            });
+            rec.processed = true;
+        "#;
+        run(&engine, script, &mut data).expect("execution");
+        let msgs = data.get("_system_messages").and_then(|v| v.as_array()).expect("messages");
+        assert_eq!(msgs.len(), 4);
+        assert_eq!(msgs[0].get("type").and_then(|v| v.as_str()), Some("success"));
+        assert_eq!(msgs[0].get("title").and_then(|v| v.as_str()), Some("Release Done"));
+        assert_eq!(msgs[1].get("duration").and_then(|v| v.as_i64()), Some(8000));
+        assert_eq!(msgs[2].get("type").and_then(|v| v.as_str()), Some("info"));
+        assert_eq!(msgs[3].get("action").and_then(|a| a.get("label")).and_then(|l| l.as_str()), Some("Review"));
+    }
+
+    #[test]
+    fn test_ctx_sdk_pure_helpers() {
+        let engine = QuickJsEngine::new().expect("engine");
+        let mut ctx = SessionContext::default();
+        ctx.roles = vec!["FINANCE_MANAGER".to_string()];
+        let mut data = serde_json::json!({ "code": "N-100", "content": "Initial Note" });
+        let script = r#"
+            ctx.ui.openModal("NoteCard", { id: rec.code });
+            ctx.ui.navigate("/pages/NoteList");
+            ctx.ui.setFieldVisible("content", true);
+            ctx.ui.setFieldEditable("code", false);
+            if (!ctx.security.hasRole("finance_manager")) throw new Error("Role check failed");
+            ctx.security.requireRole("FINANCE_MANAGER");
+            const dimId = ctx.dimension.getSetId({ DEPT: "SALES" });
+            if (!dimId || dimId.length !== 16) throw new Error("Invalid dimension set id");
+            if (!ctx.dimension.validateSet(dimId)) throw new Error("Dimension validateSet failed");
+            const noteModel = ctx.db.getModel("Note");
+            if (!noteModel || typeof noteModel.findMany !== "function") throw new Error("ctx.db.getModel failed");
+            rec.directivesCount = ctx.ui.getDirectives().length;
+            rec.dimSetId = dimId;
+        "#;
+        let mut logs = Vec::new();
+        engine
+            .execute_trigger("Note", "onInsert", script, &mut data, None, &ctx, None, &mut logs)
+            .expect("execution");
+        assert_eq!(data.get("directivesCount").and_then(|v| v.as_i64()), Some(4));
+        assert!(data.get("dimSetId").and_then(|v| v.as_str()).is_some());
+    }
+
+    #[test]
+    fn test_quickjs_typescript_declarations_and_record_constructors() {
+        let engine = QuickJsEngine::new().expect("engine");
+        let mut data = serde_json::json!({ "code": "N-001", "content": "hello world" });
+        let script = r#"
+            let title: string = rec.content.toUpperCase();
+            let count: number = 42;
+            let active: boolean = true;
+            let testDate: Date = new Date("2026-10-15T00:00:00.000Z");
+            let price: Decimal = Decimal("125.50").add("4.50");
+            let childNote: Note = new Note({ code: "N-002", content: "Child note" });
+            childNote.testField("code");
+            const lookup: Map<string, number> = new Map<string, number>();
+            lookup.set("A", 10);
+            const tags: Set<string> = new Set<string>(["bos", "ts"]);
+            const meta: { code: string; year: number } = { code: rec.code, year: testDate.getUTCFullYear() };
+            const { code, content }: NoteRecord = rec;
+            const pair: [string, number] = [code, lookup.get("A")!];
+            let evalBlocked: boolean = false;
+            try { eval("1 + 1"); } catch (err: unknown) { evalBlocked = true; }
+            rec.content = `${title}|${count}|${active}|${price.toString()}|${childNote.code}|${meta.year}|${pair[1]}|${tags.has("ts")}|${evalBlocked}`;
+        "#;
+        run(&engine, script, &mut data).expect("TypeScript execution");
+        assert_eq!(
+            data.get("content").and_then(|v| v.as_str()),
+            Some("HELLO WORLD|42|true|130|N-002|2026|10|true|true")
+        );
+    }
+
+    #[test]
+    fn test_decimal_helpers_and_error_reporting() {
+        let engine = QuickJsEngine::new().expect("engine");
+        let mut data = serde_json::json!({ "code": "N-500" });
+        let script = r#"
+            const a: Decimal = Decimal("100.25");
+            const b: Decimal = Decimal("50.75");
+            if (!a.gt(b) || !a.gte("100.25") || !b.lt(a) || !b.lte(50.75) || a.isZero() || !a.isPositive()) {
+                throw new Error("Decimal comparison helpers failed");
+            }
+            const neg: Decimal = Decimal("-25.50");
+            if (!neg.isNegative() || !neg.abs().eq("25.50")) throw new Error("Decimal abs/isNegative failed");
+            const total = Decimal("1250.755").mul(3).add(Decimal("1250.755").mul(3).mul("0.18")).round(2);
+            rec.content = `OK:${a.add(b).toString()}:${neg.abs().toString()}:${total.toString()}`;
+        "#;
+        run(&engine, script, &mut data).expect("decimal");
+        assert_eq!(data.get("content").and_then(|v| v.as_str()), Some("OK:151:25.5:4427.67"));
+
+        let err = run(&engine, r#"throw new Error("Custom validation failure on field X");"#, &mut data)
+            .expect_err("must fail");
+        assert!(err.to_string().contains("Custom validation failure on field X"), "got: {}", err);
+    }
+
+    fn note_types(col: &str) -> Option<String> {
+        match col {
+            "title" | "status" => Some("character varying".to_string()),
+            "priority" => Some("integer".to_string()),
+            "created_at" => Some("timestamp with time zone".to_string()),
+            "id" => Some("uuid".to_string()),
+            "payload" => Some("jsonb".to_string()),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn test_build_filter_sql_typed_params_groups_and_projection() {
+        let opts = serde_json::json!({
+            "where": {
+                "title": { "contains": "urgent" },
+                "priority": { "gte": 3, "in": [3, 4, 5] },
+                "OR": [ { "status": "Open" }, { "status": { "eq": "InProgress" } } ]
+            },
+            "orderBy": { "createdAt": "desc" },
+            "select": ["id", "title", "status"],
+            "take": 25,
+            "skip": 10
+        });
+        let (sql, params) = QuickJsEngine::build_filter_sql("note", &opts, &note_types, None, None).expect("sql");
+        assert!(sql.contains("jsonb_build_object('id', t.\"id\", 'title', t.\"title\", 'status', t.\"status\")"), "{}", sql);
+        assert!(sql.contains("t.\"title\"::text ILIKE '%' || $1::text || '%'"), "{}", sql);
+        assert!(sql.contains("t.\"priority\" >= $2::integer"), "{}", sql);
+        assert!(sql.contains("t.\"priority\" IN ($3::integer, $4::integer, $5::integer)"), "{}", sql);
+        assert!(sql.contains("t.\"status\" = $6::character varying"), "{}", sql);
+        assert!(sql.contains(" OR "), "{}", sql);
+        assert!(sql.contains("ORDER BY t.\"created_at\" DESC"), "{}", sql);
+        assert!(sql.contains("LIMIT 25 OFFSET 10"), "{}", sql);
+        assert_eq!(params.len(), 7);
+        assert_eq!(params[1].as_deref(), Some("3"));
+    }
+
+    #[test]
+    fn test_build_filter_sql_rejects_bad_input() {
+        let bad_op = serde_json::json!({ "where": { "title": { "regex": ".*" } } });
+        assert!(QuickJsEngine::build_filter_sql("note", &bad_op, &note_types, None, None).is_err());
+
+        let bad_dir = serde_json::json!({ "orderBy": { "title": "sideways" } });
+        assert!(QuickJsEngine::build_filter_sql("note", &bad_dir, &note_types, None, None).is_err());
+
+        let injection = serde_json::json!({ "where": { "title\" = '' OR 1=1 --": "x" } });
+        assert!(QuickJsEngine::build_filter_sql("note", &injection, &note_types, None, None).is_err());
+
+        let negative = serde_json::json!({ "take": -1 });
+        assert!(QuickJsEngine::build_filter_sql("note", &negative, &note_types, None, None).is_err());
+    }
+
+    #[test]
+    fn test_unpaged_find_many_is_capped_not_truncated() {
+        let (sql, _) = QuickJsEngine::build_filter_sql("note", &serde_json::json!({}), &note_types, None, None).expect("sql");
+        assert!(sql.contains(&format!("LIMIT {}", MAX_UNPAGED_ROWS + 1)), "{}", sql);
+        assert!(!sql.contains("LIMIT 100 "), "{}", sql);
+    }
+
+    #[test]
+    fn test_empty_in_and_json_equality() {
+        let opts = serde_json::json!({ "where": { "status": { "in": [] }, "payload": { "a": 1 } } });
+        let (sql, params) = QuickJsEngine::build_filter_sql("note", &opts, &note_types, None, None).expect("sql");
+        assert!(sql.contains("FALSE"), "{}", sql);
+        assert!(sql.contains("t.\"payload\" = $1::jsonb"), "{}", sql);
+        assert_eq!(params[0].as_deref(), Some(r#"{"a":1}"#));
+    }
+
+    #[test]
+    fn test_key_predicate_typing() {
+        let mut columns = HashMap::new();
+        for (n, t) in [("_id", "uuid"), ("no", "character varying"), ("line_no", "integer")] {
+            columns.insert(n.to_string(), ColumnMeta { sql_type: t.to_string(), generated: false });
+        }
+        let by_code = TableMeta { physical: "x".into(), columns: columns.clone(), key_column: "no".into() };
+        assert_eq!(by_code.key_predicate("SO-1", 1).as_deref(), Some("t.\"no\" = $1::character varying"));
+        let uuid = Uuid::new_v4().to_string();
+        assert_eq!(
+            by_code.key_predicate(&uuid, 1).as_deref(),
+            Some("(t.\"_id\" = $1::uuid OR t.\"no\" = $1::character varying)")
+        );
+
+        let by_int = TableMeta { physical: "x".into(), columns, key_column: "line_no".into() };
+        assert_eq!(by_int.key_predicate("10000", 2).as_deref(), Some("t.\"line_no\" = $2::integer"));
+        assert_eq!(by_int.key_predicate("abc", 2), None);
+    }
+}

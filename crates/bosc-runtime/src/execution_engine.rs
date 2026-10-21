@@ -1,0 +1,1425 @@
+use bosc_ir::{ActionIR, CodeunitIR, TableIR, TriggerEventIR};
+use serde::{Deserialize, Serialize};
+use sqlx::{PgPool, Row};
+use uuid::Uuid;
+
+use crate::db_session::DbSession;
+use crate::quickjs_engine::{
+    DEFAULT_MAX_FUEL, ExecutionLimits, QuickJsEngine, ScriptCall, ScriptServices,
+};
+use crate::{RuntimeError, SessionContext, to_snake_case};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionResult {
+    pub success: bool,
+    pub codeunit: String,
+    pub method: String,
+    pub mutated_data: serde_json::Value,
+    pub logs: Vec<String>,
+    #[serde(default)]
+    pub messages: Vec<serde_json::Value>,
+    /// Interpreter steps consumed by the method script (0 for action and pushdown methods).
+    #[serde(default)]
+    pub fuel_used: u64,
+    #[serde(default)]
+    pub fuel_limit: u64,
+}
+
+/// Everything one unit of work shares: the database session (single transaction), the
+/// caller identity, host services for scripts, and the current nested-call depth.
+#[derive(Clone)]
+pub struct ExecScope {
+    pub db: DbSession,
+    pub ctx: SessionContext,
+    pub services: ScriptServices,
+    pub depth: u32,
+    pub ui_answers: std::collections::HashMap<String, bool>,
+}
+
+impl ExecScope {
+    pub fn new(db: DbSession, ctx: SessionContext, services: ScriptServices) -> Self {
+        Self {
+            db,
+            ctx,
+            services,
+            depth: 0,
+            ui_answers: std::collections::HashMap::new(),
+        }
+    }
+}
+
+pub struct ExecutionEngine;
+
+async fn fetch_definitions(
+    db: &DbSession,
+    sql: &str,
+    bind: Option<&str>,
+) -> Result<Vec<(String, serde_json::Value)>, RuntimeError> {
+    let mut conn = db.conn().await?;
+    let mut q = sqlx::query_as::<_, (String, serde_json::Value)>(sql);
+    if let Some(b) = bind {
+        q = q.bind(b.to_string());
+    }
+    let res = q.fetch_all(&mut *conn).await;
+    db.track(res)
+}
+
+fn trigger_matches(name: &str, event: &TriggerEventIR) -> bool {
+    let is = |n: &str| name.eq_ignore_ascii_case(n);
+    match event {
+        TriggerEventIR::OnBeforeInsert => {
+            is("onInsert") || is("onBeforeInsert") || is("beforeInsert")
+        }
+        TriggerEventIR::OnAfterInsert => is("onAfterInsert") || is("afterInsert"),
+        TriggerEventIR::OnBeforeModify => {
+            is("onModify") || is("onBeforeModify") || is("beforeModify")
+        }
+        TriggerEventIR::OnAfterModify => is("onAfterModify") || is("afterModify"),
+        TriggerEventIR::OnBeforeDelete => {
+            is("onDelete") || is("onBeforeDelete") || is("beforeDelete")
+        }
+        TriggerEventIR::OnAfterDelete => is("onAfterDelete") || is("afterDelete"),
+        TriggerEventIR::OnValidate(col) => {
+            name.eq_ignore_ascii_case(&format!("onValidate{}", col))
+                || name.eq_ignore_ascii_case(&format!("onValidate_{}", col))
+        }
+        TriggerEventIR::OnDraftSave => is("onDraftSave"),
+        TriggerEventIR::OnDraftActivate => is("onDraftActivate"),
+        TriggerEventIR::OnDraftDiscard => is("onDraftDiscard"),
+    }
+}
+
+fn capitalize(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+impl ExecutionEngine {
+    /// Register a Codeunit meta-object in the BOS catalog
+    pub async fn register_codeunit(
+        pool: &PgPool,
+        codeunit: CodeunitIR,
+    ) -> Result<Uuid, RuntimeError> {
+        let pkg = if codeunit.package_name.trim().is_empty() {
+            "bos.core".to_string()
+        } else {
+            codeunit.package_name.clone()
+        };
+
+        let def_ir = serde_json::to_value(&codeunit)
+            .map_err(|e| RuntimeError::Internal(format!("Failed to serialize codeunit: {}", e)))?;
+
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        serde_json::to_string(&def_ir)
+            .unwrap_or_default()
+            .hash(&mut hasher);
+        let checksum = format!("{:016x}", hasher.finish());
+
+        let upsert_query = r#"
+            INSERT INTO "_bos_meta_objects" (
+                "object_type", "object_name", "package_name", "version", "caption",
+                "sub_type", "definition", "checksum", "status", "updated_at"
+            ) VALUES (
+                'codeunit', $1, $2, '1.0.0', $3, 'Standard', $4, $5, 'active', NOW()
+            )
+            ON CONFLICT ("object_type", "object_name", "package_name") DO UPDATE
+            SET "definition" = EXCLUDED."definition",
+                "checksum" = EXCLUDED."checksum",
+                "updated_at" = NOW()
+            RETURNING "object_id";
+        "#;
+
+        let caption = format!("Codeunit {}", codeunit.name);
+
+        let row = sqlx::query(upsert_query)
+            .bind(&codeunit.name)
+            .bind(&pkg)
+            .bind(&caption)
+            .bind(&def_ir)
+            .bind(&checksum)
+            .fetch_one(pool)
+            .await?;
+
+        let obj_id: Uuid = row.try_get("object_id")?;
+
+        // Automatic BOS-AMDP deployment: Deploy pushdown methods as native PL/pgSQL functions
+        let generator = bosc_codegen_db::PostgresGenerator::new();
+        for m in &codeunit.methods {
+            if (m.is_pushdown || codeunit.is_pushdown) && bosc_codegen_db::pushdown::body(m).is_ok()
+            {
+                let func_ddl = generator.generate_plpgsql_procedure(&codeunit.name, m);
+                let _ = sqlx::raw_sql(&func_ddl).execute(pool).await;
+            }
+
+            // Automatically register @subscribeEvent(Publisher, "eventName") annotations into _bos_event_subscribers
+            for ann in &m.annotations {
+                if let Some(rest) = ann.strip_prefix("subscribeEvent(") {
+                    let inner = rest.trim_end_matches(')');
+                    let parts: Vec<&str> = inner
+                        .split(',')
+                        .map(|s| s.trim().trim_matches('"').trim_matches('\''))
+                        .collect();
+                    if parts.len() >= 2 && !parts[0].is_empty() && !parts[1].is_empty() {
+                        if let Some(ref script) = m.script {
+                            let _ = crate::EventRegistry::init_table(pool).await;
+                            let _ = sqlx::query(
+                                "DELETE FROM \"_bos_event_subscribers\" WHERE LOWER(\"subscriber_name\") = LOWER($1) AND LOWER(\"method_name\") = LOWER($2)"
+                            )
+                            .bind(&codeunit.name)
+                            .bind(&m.name)
+                            .execute(pool)
+                            .await;
+                            let _ = sqlx::query(
+                                "INSERT INTO \"_bos_event_subscribers\" (\"id\", \"publisher\", \"event_name\", \"subscriber_name\", \"method_name\", \"priority\", \"script\", \"is_active\") VALUES ($1, $2, $3, $4, $5, 100, $6, true)"
+                            )
+                            .bind(Uuid::new_v4())
+                            .bind(parts[0])
+                            .bind(parts[1])
+                            .bind(&codeunit.name)
+                            .bind(&m.name)
+                            .bind(script)
+                            .execute(pool)
+                            .await;
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(obj_id)
+    }
+
+    /// Run one script inside the scope's transaction and return its logs and fuel consumption.
+    async fn run_script(
+        scope: &ExecScope,
+        table: &str,
+        name: &str,
+        script: &str,
+        data: &mut serde_json::Value,
+        x_rec: Option<&serde_json::Value>,
+        max_fuel: Option<u64>,
+    ) -> Result<(Vec<String>, u64, Option<serde_json::Value>), RuntimeError> {
+        Self::run_script_with_bytecode(scope, table, name, script, None, data, x_rec, max_fuel).await
+    }
+
+    /// Run one script or pre-compiled AOT bytecode inside the scope's transaction
+    async fn run_script_with_bytecode(
+        scope: &ExecScope,
+        table: &str,
+        name: &str,
+        script: &str,
+        bytecode: Option<Vec<u8>>,
+        data: &mut serde_json::Value,
+        x_rec: Option<&serde_json::Value>,
+        max_fuel: Option<u64>,
+    ) -> Result<(Vec<String>, u64, Option<serde_json::Value>), RuntimeError> {
+        let run = QuickJsEngine::run_script(
+            scope,
+            ScriptCall {
+                table_name: table.to_string(),
+                trigger_name: name.to_string(),
+                script: script.to_string(),
+                bytecode,
+                data: data.clone(),
+                x_rec: x_rec.cloned(),
+                limits: ExecutionLimits::with_fuel(max_fuel),
+                ui_answers: scope.ui_answers.clone(),
+            },
+        )
+        .await?;
+        *data = run.data;
+        Ok((run.logs, run.fuel_used, run.return_value))
+    }
+
+    /// Execute a codeunit procedure inside an existing unit of work. Every statement, trigger,
+    /// nested codeunit call and event subscriber shares `scope.db`, so the caller decides
+    /// whether the whole call commits or rolls back.
+    pub async fn execute_procedure_in(
+        scope: &ExecScope,
+        codeunit_name: &str,
+        method_name: &str,
+        mut params: serde_json::Value,
+    ) -> Result<ExecutionResult, RuntimeError> {
+        // 1. Hot Execution Path: Check in-memory verified AOT bytecode cache (ZERO SQL roundtrips)
+        if let Some(ref bc) = scope.services.bytecode_cache {
+            if let Some(artifact) = bc.get(codeunit_name) {
+                let (q_logs, used, returned) = Self::run_script_with_bytecode(
+                    scope,
+                    codeunit_name,
+                    method_name,
+                    "",
+                    Some(artifact.bytecode),
+                    &mut params,
+                    None,
+                    Some(DEFAULT_MAX_FUEL),
+                )
+                .await?;
+                if let Some(value) = returned {
+                    params = value;
+                }
+                let messages = if let Some(msgs) = params
+                    .as_object_mut()
+                    .and_then(|o| o.remove("_system_messages"))
+                {
+                    msgs.as_array().cloned().unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+
+                return Ok(ExecutionResult {
+                    success: true,
+                    codeunit: codeunit_name.to_string(),
+                    method: method_name.to_string(),
+                    mutated_data: params,
+                    logs: q_logs,
+                    messages,
+                    fuel_used: used,
+                    fuel_limit: DEFAULT_MAX_FUEL,
+                });
+            }
+        }
+
+        // 2. In-Memory Meta Cache (Warm Path) before falling back to DB query
+        let def_ir = if let Some(ref mc) = scope.services.meta_cache {
+            if let Some(entry) = mc.get(&codeunit_name.to_lowercase()) {
+                entry.definition.clone()
+            } else {
+                let rows = fetch_definitions(
+                    &scope.db,
+                    "SELECT object_name, definition FROM \"_bos_meta_objects\" WHERE object_type = 'codeunit' AND LOWER(object_name) = LOWER($1) ORDER BY updated_at DESC LIMIT 1",
+                    Some(codeunit_name),
+                )
+                .await?;
+                rows.into_iter().next().map(|(_, d)| d).ok_or_else(|| {
+                    RuntimeError::NotFound("Codeunit".to_string(), codeunit_name.to_string())
+                })?
+            }
+        } else {
+            let rows = fetch_definitions(
+                &scope.db,
+                "SELECT object_name, definition FROM \"_bos_meta_objects\" WHERE object_type = 'codeunit' AND LOWER(object_name) = LOWER($1) ORDER BY updated_at DESC LIMIT 1",
+                Some(codeunit_name),
+            )
+            .await?;
+            rows.into_iter().next().map(|(_, d)| d).ok_or_else(|| {
+                RuntimeError::NotFound("Codeunit".to_string(), codeunit_name.to_string())
+            })?
+        };
+
+        let codeunit: CodeunitIR = serde_json::from_value(def_ir)
+            .map_err(|e| RuntimeError::Internal(format!("Failed to parse Codeunit IR: {}", e)))?;
+
+        let method = codeunit
+            .methods
+            .iter()
+            .find(|m| m.name.eq_ignore_ascii_case(method_name))
+            .ok_or_else(|| {
+                RuntimeError::NotFound(
+                    "Method".to_string(),
+                    format!("{}.{}", codeunit_name, method_name),
+                )
+            })?;
+
+        let fuel_limit = codeunit.max_fuel.unwrap_or(DEFAULT_MAX_FUEL);
+
+        // BOS-AMDP pushdown execution (in-database PL/pgSQL function), still inside the session
+        if (method.is_pushdown || codeunit.is_pushdown)
+            && bosc_codegen_db::pushdown::body(method).is_ok()
+        {
+            let proc_name = format!(
+                "bos_proc_{}_{}",
+                codeunit_name.to_lowercase(),
+                method_name.to_lowercase()
+            );
+            let proc_ident = crate::sanitize_identifier(&proc_name)?;
+            let ctx_json = serde_json::to_value(&scope.ctx).map_err(|e| {
+                RuntimeError::Internal(format!("Failed to serialize session context: {}", e))
+            })?;
+            let call_sql = format!("SELECT \"{}\"($1, $2) as res;", proc_ident);
+            let res_opt = {
+                let mut conn = scope.db.conn().await?;
+                let res = sqlx::query_scalar::<_, Option<serde_json::Value>>(&call_sql)
+                    .bind(&params)
+                    .bind(&ctx_json)
+                    .fetch_one(&mut *conn)
+                    .await;
+                scope.db.track(res)?
+            };
+
+            return Ok(ExecutionResult {
+                success: true,
+                codeunit: codeunit_name.to_string(),
+                method: method_name.to_string(),
+                mutated_data: res_opt.unwrap_or(params),
+                logs: vec![format!(
+                    "Executed pushdown procedure '{}' directly inside PostgreSQL engine (BOS-AMDP)",
+                    proc_name
+                )],
+                messages: vec![],
+                fuel_used: 0,
+                fuel_limit,
+            });
+        }
+
+        let mut logs = Vec::new();
+        let fuel_used = if let Some(ref script) = method.script {
+            let (q_logs, used, returned) = Self::run_script(
+                scope,
+                codeunit_name,
+                method_name,
+                script,
+                &mut params,
+                None,
+                Some(fuel_limit),
+            )
+            .await?;
+            logs.extend(q_logs);
+            if let Some(value) = returned {
+                params = value;
+            }
+            used
+        } else {
+            let mut fuel = fuel_limit;
+            Self::eval_actions(
+                &method.actions,
+                &mut params,
+                None,
+                &scope.ctx,
+                Some(&scope.db),
+                &mut logs,
+                &mut fuel,
+                0,
+            )
+            .await?;
+            fuel_limit - fuel
+        };
+
+        let messages = if let Some(msgs) = params
+            .as_object_mut()
+            .and_then(|o| o.remove("_system_messages"))
+        {
+            msgs.as_array().cloned().unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        Ok(ExecutionResult {
+            success: true,
+            codeunit: codeunit_name.to_string(),
+            method: method_name.to_string(),
+            mutated_data: params,
+            logs,
+            messages,
+            fuel_used,
+            fuel_limit,
+        })
+    }
+
+    /// Run test codeunit methods. The whole run happens inside `scope.db`, which the caller
+    /// must roll back; each test additionally runs under its own savepoint and is rolled back
+    /// to it afterwards, so tests never observe each other's writes and nothing is committed.
+    pub async fn execute_tests(
+        scope: &ExecScope,
+        codeunit_filter: Option<&str>,
+    ) -> Result<serde_json::Value, RuntimeError> {
+        let rows = fetch_definitions(
+            &scope.db,
+            "SELECT object_name, definition FROM \"_bos_meta_objects\" WHERE object_type = 'codeunit' ORDER BY object_name",
+            None,
+        )
+        .await?;
+
+        let mut test_results = Vec::new();
+        let mut total_tests = 0;
+        let mut passed_tests = 0;
+        let mut failed_tests = 0;
+
+        for (cu_name, def_val) in rows {
+            if let Some(filter) = codeunit_filter
+                && !cu_name.to_lowercase().contains(&filter.to_lowercase())
+            {
+                continue;
+            }
+
+            let cu = serde_json::from_value::<CodeunitIR>(def_val).map_err(|e| {
+                RuntimeError::Internal(format!(
+                    "Failed to parse Codeunit IR for '{}': {}",
+                    cu_name, e
+                ))
+            })?;
+            let is_test_cu = cu.name.to_lowercase().ends_with("test")
+                || cu.name.to_lowercase().ends_with("tests");
+            let fuel_limit = cu.max_fuel.unwrap_or(DEFAULT_MAX_FUEL);
+
+            for method in &cu.methods {
+                if !(is_test_cu || method.name.to_lowercase().starts_with("test")) {
+                    continue;
+                }
+
+                total_tests += 1;
+                let start_time = std::time::Instant::now();
+                let savepoint = format!("bos_test_{}", total_tests);
+                scope.db.savepoint(&savepoint).await?;
+
+                let exec_res = if let Some(ref script) = method.script {
+                    let mut data = serde_json::json!({});
+                    Self::run_script(
+                        scope,
+                        &cu.name,
+                        &method.name,
+                        script,
+                        &mut data,
+                        None,
+                        Some(fuel_limit),
+                    )
+                    .await
+                    .map(|(logs, _, _)| logs)
+                } else {
+                    let mut logs = Vec::new();
+                    let mut fuel = fuel_limit;
+                    let mut test_params = serde_json::json!({});
+                    Self::eval_actions(
+                        &method.actions,
+                        &mut test_params,
+                        None,
+                        &scope.ctx,
+                        Some(&scope.db),
+                        &mut logs,
+                        &mut fuel,
+                        0,
+                    )
+                    .await
+                    .map(|_| logs)
+                };
+
+                scope.db.rollback_to_savepoint(&savepoint).await?;
+                scope.db.release_savepoint(&savepoint).await?;
+                let duration_ms = start_time.elapsed().as_millis();
+
+                match exec_res {
+                    Ok(logs) => {
+                        passed_tests += 1;
+                        test_results.push(serde_json::json!({
+                            "codeunit": cu.name,
+                            "test": method.name,
+                            "status": "PASSED",
+                            "duration_ms": duration_ms,
+                            "logs": logs,
+                        }));
+                    }
+                    Err(e) => {
+                        failed_tests += 1;
+                        test_results.push(serde_json::json!({
+                            "codeunit": cu.name,
+                            "test": method.name,
+                            "status": "FAILED",
+                            "duration_ms": duration_ms,
+                            "error": e.to_string(),
+                        }));
+                    }
+                }
+            }
+        }
+
+        Ok(serde_json::json!({
+            "total": total_tests,
+            "passed": passed_tests,
+            "failed": failed_tests,
+            "success": failed_tests == 0,
+            "results": test_results,
+        }))
+    }
+
+    /// Dispatch entity triggers (OnBeforeInsert, OnAfterInsert, OnBeforeModify, ...) inside the
+    /// caller's unit of work. Any trigger failure is returned so the caller rolls back.
+    pub async fn dispatch_triggers(
+        scope: &ExecScope,
+        table: &str,
+        event: &TriggerEventIR,
+        data: &mut serde_json::Value,
+        x_rec: Option<&serde_json::Value>,
+    ) -> Result<Vec<String>, RuntimeError> {
+        let mut all_logs = Vec::new();
+        let clean_table = table.trim().trim_matches('"');
+
+        // 1. Triggers declared directly on the table meta-object
+        let table_rows = fetch_definitions(
+            &scope.db,
+            "SELECT object_name, definition FROM \"_bos_meta_objects\" WHERE object_type = 'table' AND (LOWER(object_name) = LOWER($1) OR LOWER(definition->>'sql_table_name') = LOWER($1) OR LOWER(definition->>'name') = LOWER($1)) LIMIT 1",
+            Some(clean_table),
+        )
+        .await?;
+        if let Some((obj_name, def)) = table_rows.into_iter().next() {
+            let table_ir = serde_json::from_value::<TableIR>(def).map_err(|e| {
+                RuntimeError::Internal(format!(
+                    "Failed to parse Table IR for '{}': {}",
+                    obj_name, e
+                ))
+            })?;
+            let mut fuel = DEFAULT_MAX_FUEL;
+            for trg in table_ir
+                .triggers
+                .iter()
+                .filter(|t| trigger_matches(&t.name, event))
+            {
+                if let Some(ref script) = trg.script {
+                    let (logs, _, _) =
+                        Self::run_script(scope, clean_table, &trg.name, script, data, x_rec, None)
+                            .await?;
+                    all_logs.extend(logs);
+                } else {
+                    Self::eval_actions(
+                        &trg.actions,
+                        data,
+                        x_rec,
+                        &scope.ctx,
+                        Some(&scope.db),
+                        &mut all_logs,
+                        &mut fuel,
+                        0,
+                    )
+                    .await?;
+                }
+            }
+        }
+
+        // 2. Codeunit methods bound to this table event
+        let cu_rows = fetch_definitions(
+            &scope.db,
+            "SELECT object_name, definition FROM \"_bos_meta_objects\" WHERE object_type = 'codeunit' ORDER BY object_name",
+            None,
+        )
+        .await?;
+        for (cu_name, def) in cu_rows {
+            let cu = serde_json::from_value::<CodeunitIR>(def).map_err(|e| {
+                RuntimeError::Internal(format!(
+                    "Failed to parse Codeunit IR for '{}': {}",
+                    cu_name, e
+                ))
+            })?;
+            if let Some(target) = &cu.bound_table
+                && !target.eq_ignore_ascii_case(clean_table)
+            {
+                continue;
+            }
+            let mut fuel = cu.max_fuel.unwrap_or(DEFAULT_MAX_FUEL);
+            for m in cu
+                .methods
+                .iter()
+                .filter(|m| m.trigger_event.as_ref() == Some(event))
+            {
+                if let Some(ref script) = m.script {
+                    let (logs, _, _) = Self::run_script(
+                        scope,
+                        clean_table,
+                        &m.name,
+                        script,
+                        data,
+                        x_rec,
+                        cu.max_fuel,
+                    )
+                    .await?;
+                    all_logs.extend(logs);
+                } else {
+                    Self::eval_actions(
+                        &m.actions,
+                        data,
+                        x_rec,
+                        &scope.ctx,
+                        Some(&scope.db),
+                        &mut all_logs,
+                        &mut fuel,
+                        0,
+                    )
+                    .await?;
+                }
+            }
+        }
+
+        // 3. Ahead-of-Time Bytecode Execution for TableLogic companions (Zero SQL metadata roundtrips)
+        let logic_companion_name = format!("{}Logic", clean_table);
+        if let Some(ref bc) = scope.services.bytecode_cache {
+            if let Some(artifact) = bc.get(&logic_companion_name).or_else(|| bc.get(clean_table)) {
+                let trigger_js_name = match event {
+                    TriggerEventIR::OnBeforeInsert => "onInsert".to_string(),
+                    TriggerEventIR::OnAfterInsert => "onAfterInsert".to_string(),
+                    TriggerEventIR::OnBeforeModify => "onModify".to_string(),
+                    TriggerEventIR::OnAfterModify => "onAfterModify".to_string(),
+                    TriggerEventIR::OnBeforeDelete => "onDelete".to_string(),
+                    TriggerEventIR::OnAfterDelete => "onAfterDelete".to_string(),
+                    TriggerEventIR::OnValidate(col) => format!("validate_{}", col),
+                    TriggerEventIR::OnDraftSave => "onDraftSave".to_string(),
+                    TriggerEventIR::OnDraftActivate => "onDraftActivate".to_string(),
+                    TriggerEventIR::OnDraftDiscard => "onDraftDiscard".to_string(),
+                };
+
+                let aot_res = Self::run_script_with_bytecode(
+                    scope,
+                    clean_table,
+                    &trigger_js_name,
+                    "",
+                    Some(artifact.bytecode.clone()),
+                    data,
+                    x_rec,
+                    None,
+                )
+                .await;
+
+                match aot_res {
+                    Ok((logs, _, _)) => {
+                        all_logs.extend(logs);
+                        return Ok(all_logs);
+                    }
+                    Err(RuntimeError::Internal(ref msg)) if msg.contains("not found in compiled AOT bytecode") => {
+                        // Specific trigger event not defined on companion (e.g. no onDelete), continue to other handlers
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+        }
+
+        // 4. Fallback: tablelogic / tablelogicextension companions bound to this table
+        let logic_rows: Vec<serde_json::Value> = fetch_definitions(
+            &scope.db,
+            "SELECT object_name, definition FROM \"_bos_meta_objects\" WHERE object_type IN ('tablelogic', 'tablelogicextension') ORDER BY object_type, object_name",
+            None,
+        )
+        .await?
+        .into_iter()
+        .map(|(_, d)| d)
+        .filter(|d| {
+            d.get("target_table")
+                .and_then(|v| v.as_str())
+                .map(|t| t.eq_ignore_ascii_case(clean_table))
+                .unwrap_or(false)
+        })
+        .collect();
+
+        // Companion prelude (validate<Field> and record methods) so `rec.validate("field", val)`
+        // and `rec.customMethod()` work inside triggers.
+        let mut companion_prelude = String::new();
+        for def in &logic_rows {
+            if let Some(fvs) = def.get("field_validations").and_then(|v| v.as_array()) {
+                for fv in fvs {
+                    let f_name = fv.get("field_name").and_then(|v| v.as_str()).unwrap_or("");
+                    let p_name = fv
+                        .get("param_name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("value");
+                    let old_p = fv
+                        .get("old_param_name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("oldValue");
+                    let body = fv.get("script").and_then(|v| v.as_str()).unwrap_or("");
+                    if !f_name.is_empty() && !body.is_empty() {
+                        companion_prelude.push_str(&format!(
+                            "__recProto.validate{} = function({}, {}) {{ const rec = this; {} }};\n",
+                            capitalize(f_name), p_name, old_p, body
+                        ));
+                    }
+                }
+            }
+            if let Some(methods) = def.get("methods").and_then(|v| v.as_array()) {
+                for m in methods {
+                    let m_name = m.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let m_script = m.get("script").and_then(|v| v.as_str()).unwrap_or("");
+                    if !m_name.is_empty() && !m_script.is_empty() {
+                        let params_str = m
+                            .get("params")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|p| {
+                                        p.as_array()
+                                            .and_then(|pair| pair.first())
+                                            .and_then(|n| n.as_str())
+                                            .or_else(|| p.get("name").and_then(|n| n.as_str()))
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            })
+                            .unwrap_or_default();
+                        companion_prelude.push_str(&format!(
+                            "__recProto.{} = function({}) {{ const rec = this; {} }};\n",
+                            m_name, params_str, m_script
+                        ));
+                    }
+                }
+            }
+        }
+
+        for def in &logic_rows {
+            if let TriggerEventIR::OnValidate(col) = event {
+                if let Some(fvs) = def.get("field_validations").and_then(|v| v.as_array()) {
+                    for fv in fvs {
+                        let f_name = fv.get("field_name").and_then(|v| v.as_str()).unwrap_or("");
+                        if !f_name.eq_ignore_ascii_case(col) {
+                            continue;
+                        }
+                        let body = fv
+                            .get("script")
+                            .and_then(|v| v.as_str())
+                            .or_else(|| fv.get("body").and_then(|v| v.as_str()));
+                        if let Some(body) = body {
+                            let full_script = format!("{}\n{}", companion_prelude, body);
+                            let (logs, _, _) = Self::run_script(
+                                scope,
+                                clean_table,
+                                &format!("validate_{}", col),
+                                &full_script,
+                                data,
+                                x_rec,
+                                None,
+                            )
+                            .await?;
+                            all_logs.extend(logs);
+                        }
+                    }
+                }
+            }
+
+            if let Some(trgs) = def.get("triggers").and_then(|v| v.as_array()) {
+                for trg_val in trgs {
+                    let trg_name = trg_val.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    if matches!(event, TriggerEventIR::OnValidate(_))
+                        || !trigger_matches(trg_name, event)
+                    {
+                        continue;
+                    }
+                    if let Some(script) = trg_val.get("script").and_then(|v| v.as_str()) {
+                        let full_script = format!("{}\n{}", companion_prelude, script);
+                        let (logs, _, _) = Self::run_script(
+                            scope,
+                            clean_table,
+                            trg_name,
+                            &full_script,
+                            data,
+                            x_rec,
+                            None,
+                        )
+                        .await?;
+                        all_logs.extend(logs);
+                    }
+                }
+            }
+        }
+
+        Ok(all_logs)
+    }
+
+    fn require_db<'a>(
+        db: Option<&'a DbSession>,
+        action: &str,
+    ) -> Result<&'a DbSession, RuntimeError> {
+        db.ok_or_else(|| {
+            RuntimeError::Internal(format!("Action '{}' requires a database session", action))
+        })
+    }
+
+    fn resolve_filter(filter: &str, data: &serde_json::Value) -> String {
+        if filter.trim().is_empty() {
+            return "TRUE".to_string();
+        }
+        let mut resolved_cond = filter.to_string();
+        if let Some(obj) = data.as_object() {
+            for (k, v) in obj {
+                let val_sql = match v {
+                    serde_json::Value::String(s) => format!("'{}'", s.replace('\'', "''")),
+                    serde_json::Value::Number(n) => n.to_string(),
+                    serde_json::Value::Bool(b) => b.to_string(),
+                    _ => "NULL".to_string(),
+                };
+                resolved_cond = resolved_cond
+                    .replace(&format!("this.{}", k), &val_sql)
+                    .replace(&format!("rec.{}", k), &val_sql);
+            }
+        }
+        resolved_cond
+    }
+
+    /// Internal procedural action evaluator with sandboxed fuel metering and Decimal arithmetic
+    #[allow(clippy::too_many_arguments)]
+    async fn eval_actions(
+        actions: &[ActionIR],
+        data: &mut serde_json::Value,
+        x_rec: Option<&serde_json::Value>,
+        ctx: &SessionContext,
+        db: Option<&DbSession>,
+        logs: &mut Vec<String>,
+        fuel: &mut u64,
+        depth: usize,
+    ) -> Result<(), RuntimeError> {
+        if depth > 32 {
+            return Err(RuntimeError::Internal(
+                "Execution stack depth limit exceeded (maximum 32 recursion levels)".to_string(),
+            ));
+        }
+
+        for act in actions {
+            if *fuel == 0 {
+                return Err(RuntimeError::Internal(
+                    "Execution fuel exhausted: sandboxed instruction budget exceeded (possible infinite loop)".to_string(),
+                ));
+            }
+            *fuel = fuel.saturating_sub(1);
+            match act {
+                ActionIR::ValidateRequired { field, location } => {
+                    let is_empty = match data
+                        .as_object()
+                        .and_then(|o| o.get(field).or_else(|| o.get(&to_snake_case(field))))
+                    {
+                        None => true,
+                        Some(serde_json::Value::Null) => true,
+                        Some(serde_json::Value::String(s)) => s.trim().is_empty(),
+                        _ => false,
+                    };
+                    if is_empty {
+                        let loc_str = location
+                            .as_ref()
+                            .map(|l| format!(" at {}:{}:{}", l.file, l.line, l.column))
+                            .unwrap_or_default();
+                        return Err(RuntimeError::Internal(format!(
+                            "Business Rule Violation: Field '{}' is required.{}",
+                            field, loc_str
+                        )));
+                    }
+                    logs.push(format!("Validated required field: {}", field));
+                }
+                ActionIR::Assert {
+                    condition,
+                    message,
+                    location,
+                } => {
+                    let parts: Vec<&str> = condition.split_whitespace().collect();
+                    if parts.len() >= 3 {
+                        let op = parts[1];
+                        let (val1, val2) = if let Some(obj) = data.as_object() {
+                            (
+                                resolve_operand(parts[0], obj, x_rec),
+                                resolve_operand(parts[2], obj, x_rec),
+                            )
+                        } else {
+                            (None, None)
+                        };
+
+                        let passed = match (val1, val2) {
+                            (Some(v1), Some(v2)) => eval_comparison(op, &v1, &v2),
+                            _ => true,
+                        };
+
+                        if !passed {
+                            let loc_str = location
+                                .as_ref()
+                                .map(|l| format!(" at {}:{}:{}", l.file, l.line, l.column))
+                                .unwrap_or_default();
+                            return Err(RuntimeError::Internal(format!(
+                                "Business Rule Assertion Failed: {}{}",
+                                message, loc_str
+                            )));
+                        }
+                    }
+                    logs.push(format!("Assertion passed: {}", condition));
+                }
+                ActionIR::SetField {
+                    field,
+                    value_expr,
+                    location: _,
+                } => {
+                    let new_val = {
+                        if let Some(obj) = data.as_object() {
+                            if let Some(operand_val) = resolve_operand(value_expr, obj, x_rec) {
+                                operand_val
+                            } else if let Ok(d) = rust_decimal::Decimal::from_str_exact(value_expr)
+                            {
+                                serde_json::json!(d.to_string())
+                            } else if value_expr.eq_ignore_ascii_case("true") {
+                                serde_json::Value::Bool(true)
+                            } else if value_expr.eq_ignore_ascii_case("false") {
+                                serde_json::Value::Bool(false)
+                            } else {
+                                serde_json::Value::String(
+                                    value_expr.trim_matches('\'').trim_matches('"').to_string(),
+                                )
+                            }
+                        } else {
+                            serde_json::Value::Null
+                        }
+                    };
+
+                    if let Some(obj) = data.as_object_mut() {
+                        obj.insert(field.clone(), new_val);
+                    }
+                    logs.push(format!("Set field '{}' = {}", field, value_expr));
+                }
+                ActionIR::HashPassword {
+                    source_field,
+                    target_field,
+                    location: _,
+                } => {
+                    if let Some(obj) = data.as_object_mut() {
+                        let plain_pwd = obj
+                            .get(source_field)
+                            .or_else(|| obj.get(&to_snake_case(source_field)))
+                            .or_else(|| {
+                                if source_field.eq_ignore_ascii_case("password") {
+                                    obj.get("plainPassword")
+                                        .or_else(|| obj.get("plain_password"))
+                                } else {
+                                    None
+                                }
+                            })
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+
+                        if let Some(pwd) = plain_pwd {
+                            if !pwd.trim().is_empty() {
+                                let computed_hash = crate::hash_password(&pwd);
+                                obj.insert(target_field.clone(), serde_json::json!(computed_hash));
+                                obj.insert(
+                                    to_snake_case(target_field),
+                                    serde_json::json!(computed_hash),
+                                );
+                                logs.push(format!(
+                                    "Hashed password from field '{}' into '{}'",
+                                    source_field, target_field
+                                ));
+                            }
+                            obj.remove(source_field);
+                            obj.remove(&to_snake_case(source_field));
+                            if source_field.eq_ignore_ascii_case("password") {
+                                obj.remove("plainPassword");
+                                obj.remove("plain_password");
+                            }
+                        }
+                    }
+                }
+                ActionIR::LogAudit {
+                    message,
+                    location: _,
+                } => {
+                    let session = Self::require_db(db, "logAudit")?;
+                    let insert_log = r#"
+                        INSERT INTO "_system_privileged_audit_log" (
+                            "table_name", "record_id", "action", "reason", "ticket_ref", "authorized_by"
+                        ) VALUES ('codeunit', $1, 'EXECUTE', $2, 'RULE-ENGINE', $3);
+                    "#;
+                    let mut conn = session.conn().await?;
+                    let res = sqlx::query(insert_log)
+                        .bind(ctx.company_id)
+                        .bind(message)
+                        .bind(ctx.user_id.to_string())
+                        .execute(&mut *conn)
+                        .await;
+                    session.track(res)?;
+                    logs.push(format!("Logged audit: {}", message));
+                }
+                ActionIR::IfElse {
+                    condition,
+                    then_branch,
+                    else_branch,
+                    location: _,
+                } => {
+                    let cond_passed = {
+                        let parts: Vec<&str> = condition.split_whitespace().collect();
+                        if parts.len() >= 3 {
+                            let op = parts[1];
+                            if let Some(obj) = data.as_object() {
+                                let val1 = resolve_operand(parts[0], obj, x_rec);
+                                let val2 = resolve_operand(parts[2], obj, x_rec);
+                                match (val1, val2) {
+                                    (Some(v1), Some(v2)) => eval_comparison(op, &v1, &v2),
+                                    _ => false,
+                                }
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    };
+
+                    if cond_passed {
+                        Box::pin(Self::eval_actions(
+                            then_branch,
+                            data,
+                            x_rec,
+                            ctx,
+                            db,
+                            logs,
+                            fuel,
+                            depth + 1,
+                        ))
+                        .await?;
+                    } else if let Some(else_b) = else_branch {
+                        Box::pin(Self::eval_actions(
+                            else_b,
+                            data,
+                            x_rec,
+                            ctx,
+                            db,
+                            logs,
+                            fuel,
+                            depth + 1,
+                        ))
+                        .await?;
+                    }
+                }
+                ActionIR::GetRecord {
+                    table,
+                    filter,
+                    target_buffer,
+                    location: _,
+                } => {
+                    let session = Self::require_db(db, "getRecord")?;
+                    let table_ident = crate::sanitize_identifier(&table.to_lowercase())?;
+                    let query = format!(
+                        "SELECT to_jsonb(t.*) as data FROM \"{}\" t WHERE {} LIMIT 1;",
+                        table_ident,
+                        Self::resolve_filter(filter, data)
+                    );
+                    let row_opt = {
+                        let mut conn = session.conn().await?;
+                        let res = sqlx::query_scalar::<_, serde_json::Value>(&query)
+                            .fetch_optional(&mut *conn)
+                            .await;
+                        session.track(res)?
+                    };
+                    if let Some(record) = row_opt {
+                        if let Some(obj) = data.as_object_mut() {
+                            obj.insert(target_buffer.clone(), record);
+                        }
+                        logs.push(format!(
+                            "Prefetched record buffer '{}' from table '{}'",
+                            target_buffer, table
+                        ));
+                    } else {
+                        logs.push(format!(
+                            "Record not found for buffer '{}' from table '{}'",
+                            target_buffer, table
+                        ));
+                    }
+                }
+                ActionIR::ForEachRecord {
+                    table,
+                    filter,
+                    cursor_var,
+                    body,
+                    location: _,
+                } => {
+                    let session = Self::require_db(db, "forEachRecord")?;
+                    let table_ident = crate::sanitize_identifier(&table.to_lowercase())?;
+                    let query = format!(
+                        "SELECT to_jsonb(t.*) as data FROM \"{}\" t WHERE {};",
+                        table_ident,
+                        Self::resolve_filter(filter, data)
+                    );
+                    let rows = {
+                        let mut conn = session.conn().await?;
+                        let res = sqlx::query_scalar::<_, serde_json::Value>(&query)
+                            .fetch_all(&mut *conn)
+                            .await;
+                        session.track(res)?
+                    };
+                    let count = rows.len();
+                    for row_item in rows {
+                        if let Some(obj) = data.as_object_mut() {
+                            obj.insert(cursor_var.clone(), row_item);
+                        }
+                        Box::pin(Self::eval_actions(
+                            body,
+                            data,
+                            x_rec,
+                            ctx,
+                            db,
+                            logs,
+                            fuel,
+                            depth + 1,
+                        ))
+                        .await?;
+                    }
+                    logs.push(format!(
+                        "Processed batch loop on table '{}' ({} rows processed)",
+                        table, count
+                    ));
+                }
+                ActionIR::CallProcedure {
+                    codeunit,
+                    method,
+                    location: _,
+                } => {
+                    let session = Self::require_db(db, "callProcedure")?;
+                    let rows = fetch_definitions(
+                        session,
+                        "SELECT object_name, definition FROM \"_bos_meta_objects\" WHERE object_type = 'codeunit' AND LOWER(object_name) = LOWER($1) LIMIT 1",
+                        Some(codeunit),
+                    )
+                    .await?;
+                    let (_, def) = rows.into_iter().next().ok_or_else(|| {
+                        RuntimeError::NotFound("Codeunit".to_string(), codeunit.to_string())
+                    })?;
+                    let cu_ir = serde_json::from_value::<CodeunitIR>(def).map_err(|e| {
+                        RuntimeError::Internal(format!(
+                            "Failed to parse Codeunit IR for '{}': {}",
+                            codeunit, e
+                        ))
+                    })?;
+                    let target_method = cu_ir
+                        .methods
+                        .iter()
+                        .find(|m| m.name.eq_ignore_ascii_case(method))
+                        .ok_or_else(|| {
+                            RuntimeError::NotFound(
+                                codeunit.to_string(),
+                                format!("Method '{}'", method),
+                            )
+                        })?;
+                    Box::pin(Self::eval_actions(
+                        &target_method.actions,
+                        data,
+                        x_rec,
+                        ctx,
+                        db,
+                        logs,
+                        fuel,
+                        depth + 1,
+                    ))
+                    .await?;
+                    logs.push(format!(
+                        "Successfully executed procedure {}.{}",
+                        codeunit, method
+                    ));
+                }
+                ActionIR::NotLowered { kind } => {
+                    return Err(RuntimeError::Internal(format!(
+                        "Statement '{kind}' is not an action. The method needs a script body."
+                    )));
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+fn resolve_operand(
+    expr: &str,
+    rec: &serde_json::Map<String, serde_json::Value>,
+    x_rec: Option<&serde_json::Value>,
+) -> Option<serde_json::Value> {
+    let trimmed = expr.trim();
+    if let Some(field) = trimmed
+        .strip_prefix("xRec.")
+        .or_else(|| trimmed.strip_prefix("x_rec."))
+    {
+        return x_rec
+            .and_then(|x| x.get(field).or_else(|| x.get(to_snake_case(field))))
+            .cloned();
+    }
+    let clean = trimmed
+        .strip_prefix("this.")
+        .or_else(|| trimmed.strip_prefix("rec."))
+        .unwrap_or(trimmed);
+    if let Some(val) = rec.get(clean).or_else(|| rec.get(&to_snake_case(clean))) {
+        return Some(val.clone());
+    }
+    if let Some((buf_name, sub_field)) = clean.split_once('.')
+        && let Some(val) = rec.get(buf_name).and_then(|buf| buf.get(sub_field))
+    {
+        return Some(val.clone());
+    }
+    if clean.eq_ignore_ascii_case("true") {
+        return Some(serde_json::Value::Bool(true));
+    }
+    if clean.eq_ignore_ascii_case("false") {
+        return Some(serde_json::Value::Bool(false));
+    }
+    if (clean.starts_with('\'') && clean.ends_with('\''))
+        || (clean.starts_with('"') && clean.ends_with('"'))
+    {
+        return Some(serde_json::Value::String(
+            clean[1..clean.len() - 1].to_string(),
+        ));
+    }
+    if let Ok(d) = rust_decimal::Decimal::from_str_exact(clean) {
+        return Some(serde_json::json!(d.to_string()));
+    }
+    Some(serde_json::Value::String(clean.to_string()))
+}
+
+fn eval_comparison(op: &str, v1: &serde_json::Value, v2: &serde_json::Value) -> bool {
+    // If both can be parsed as Decimal, use exact 128-bit Decimal arithmetic
+    let d1 = match v1 {
+        serde_json::Value::Number(n) => rust_decimal::Decimal::from_str_exact(&n.to_string()).ok(),
+        serde_json::Value::String(s) => rust_decimal::Decimal::from_str_exact(s).ok(),
+        _ => None,
+    };
+    let d2 = match v2 {
+        serde_json::Value::Number(n) => rust_decimal::Decimal::from_str_exact(&n.to_string()).ok(),
+        serde_json::Value::String(s) => rust_decimal::Decimal::from_str_exact(s).ok(),
+        _ => None,
+    };
+
+    if let (Some(num1), Some(num2)) = (d1, d2) {
+        return match op {
+            ">" => num1 > num2,
+            ">=" => num1 >= num2,
+            "<" => num1 < num2,
+            "<=" => num1 <= num2,
+            "==" => num1 == num2,
+            "!=" => num1 != num2,
+            _ => true,
+        };
+    }
+
+    if let (Some(b1), Some(b2)) = (v1.as_bool(), v2.as_bool()) {
+        return match op {
+            "==" => b1 == b2,
+            "!=" => b1 != b2,
+            _ => true,
+        };
+    }
+
+    let s1 = match v1 {
+        serde_json::Value::String(s) => s.as_str(),
+        _ => "",
+    };
+    let s2 = match v2 {
+        serde_json::Value::String(s) => s.as_str(),
+        _ => "",
+    };
+
+    match op {
+        "==" => s1 == s2,
+        "!=" => s1 != s2,
+        _ => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_decimal_exact_comparison() {
+        // Test standard floating-point precision hazards are avoided
+        let val1 = serde_json::json!("100.0000000000000001");
+        let val2 = serde_json::json!("100.0000000000000002");
+        assert!(eval_comparison("<", &val1, &val2));
+        assert!(eval_comparison("!=", &val1, &val2));
+        assert!(!eval_comparison("==", &val1, &val2));
+
+        // Test decimal numbers formatted as numbers or strings
+        let val3 = serde_json::json!(50.25);
+        let val4 = serde_json::json!("50.25");
+        assert!(eval_comparison("==", &val3, &val4));
+    }
+
+    #[test]
+    fn test_resolve_operand_with_xrec_and_rec() {
+        let mut rec_map = serde_json::Map::new();
+        rec_map.insert("credit_limit".to_string(), serde_json::json!("50000.00"));
+        rec_map.insert("status".to_string(), serde_json::json!("Released"));
+
+        let mut x_rec_map = serde_json::Map::new();
+        x_rec_map.insert("credit_limit".to_string(), serde_json::json!("25000.00"));
+        x_rec_map.insert("status".to_string(), serde_json::json!("Open"));
+        let x_rec_val = serde_json::Value::Object(x_rec_map);
+
+        // Access current record (rec / this)
+        let rec_credit = resolve_operand("this.credit_limit", &rec_map, Some(&x_rec_val));
+        assert_eq!(rec_credit, Some(serde_json::json!("50000.00")));
+
+        // Access prior record (xRec)
+        let prior_credit = resolve_operand("xRec.credit_limit", &rec_map, Some(&x_rec_val));
+        assert_eq!(prior_credit, Some(serde_json::json!("25000.00")));
+    }
+
+    #[tokio::test]
+    async fn test_sandboxed_fuel_exhaustion() {
+        let ctx = SessionContext::default();
+        let mut data = serde_json::json!({ "field": "val" });
+        let mut logs = Vec::new();
+        let actions = vec![
+            ActionIR::ValidateRequired {
+                field: "field".to_string(),
+                location: None,
+            },
+            ActionIR::ValidateRequired {
+                field: "field".to_string(),
+                location: None,
+            },
+        ];
+        let mut fuel = 1; // Only 1 fuel unit allocated
+        let res = ExecutionEngine::eval_actions(
+            &actions, &mut data, None, &ctx, None, &mut logs, &mut fuel, 0,
+        )
+        .await;
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("fuel exhausted"));
+    }
+
+    #[tokio::test]
+    async fn test_call_depth_limit() {
+        let ctx = SessionContext::default();
+        let mut data = serde_json::json!({});
+        let mut logs = Vec::new();
+        let mut fuel = 1000;
+        let actions = vec![];
+        let res = ExecutionEngine::eval_actions(
+            &actions, &mut data, None, &ctx, None, &mut logs, &mut fuel, 33,
+        )
+        .await;
+        assert!(res.is_err());
+        assert!(
+            res.unwrap_err()
+                .to_string()
+                .contains("stack depth limit exceeded")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_hash_password_action() {
+        let ctx = SessionContext::default();
+        let mut data = serde_json::json!({
+            "username": "alice",
+            "password": "SuperSecret123!"
+        });
+        let mut logs = Vec::new();
+        let mut fuel = 1000;
+        let actions = vec![
+            ActionIR::ValidateRequired {
+                field: "username".to_string(),
+                location: None,
+            },
+            ActionIR::HashPassword {
+                source_field: "password".to_string(),
+                target_field: "passwordHash".to_string(),
+                location: None,
+            },
+            ActionIR::ValidateRequired {
+                field: "passwordHash".to_string(),
+                location: None,
+            },
+        ];
+        let res = ExecutionEngine::eval_actions(
+            &actions, &mut data, None, &ctx, None, &mut logs, &mut fuel, 0,
+        )
+        .await;
+        assert!(res.is_ok());
+
+        // Verify plain password removed
+        assert!(data.get("password").is_none());
+
+        // Verify passwordHash computed
+        let hash = data.get("passwordHash").and_then(|v| v.as_str()).unwrap();
+        assert!(hash.starts_with("$sha256$"));
+
+        // Verify verification works
+        assert!(crate::verify_password("SuperSecret123!", hash));
+        assert!(!crate::verify_password("WrongPassword", hash));
+    }
+}

@@ -1,0 +1,35 @@
+# Caddyfile for BOS Enterprise Deployment
+{$DOMAIN_NAME:localhost} {
+    encode gzip zstd
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Content-Security-Policy "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:;"
+        -Server
+    }
+
+    # Reverse proxy to Axum Backend API and frontend
+    reverse_proxy bos-app:3000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+
+        # Health checks
+        health_uri /api/health
+        health_interval 15s
+        health_timeout 3s
+    }
+
+    # Logging
+    log {
+        output file /data/caddy_access.log {
+            roll_size 20mb
+            roll_keep 5
+        }
+    }
+}

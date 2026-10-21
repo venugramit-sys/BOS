@@ -1,0 +1,14 @@
+{
+  "package_id": "bos.auth",
+  "name": "BOS Enterprise User Management & Authentication",
+  "version": "1.0.0",
+  "publisher": "BOS Core Architecture Team",
+  "description": "Comprehensive enterprise identity, role-based access control (RBAC), multi-factor authentication (MFA), session lifecycle, and cryptographic audit log module for BOS.",
+  "dependencies": [],
+  "optional_features": [
+    "mfa_totp",
+    "session_ip_lock",
+    "password_complexity",
+    "immutable_audit"
+  ]
+}

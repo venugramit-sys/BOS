@@ -1,0 +1,12 @@
+[package]
+name = "bosc-codegen-db"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+bosc-ir = { path = "../bosc-ir" }
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true

@@ -1,0 +1,168 @@
+    /// Atomic State Machine Transition: guard, transition effect, draft-activation triggers,
+    /// the status update and the history row share one transaction.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn transition_state(
+        &self,
+        table: &str,
+        record_id: Uuid,
+        status_column: &str,
+        from_state: &str,
+        to_state: &str,
+        action: &str,
+        comments: Option<&str>,
+        params: Option<serde_json::Value>,
+        ctx: &SessionContext,
+    ) -> Result<(), RuntimeError> {
+        let scope = self.begin_scope(ctx).await?;
+        let outcome = self
+            .transition_in(&scope, table, record_id, status_column, from_state, to_state, action, comments, params)
+            .await;
+        scope.db.finish(outcome).await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn transition_in(
+        &self,
+        scope: &ExecScope,
+        table: &str,
+        record_id: Uuid,
+        status_column: &str,
+        from_state: &str,
+        to_state: &str,
+        action: &str,
+        comments: Option<&str>,
+        params: Option<serde_json::Value>,
+    ) -> Result<(), RuntimeError> {
+        let ctx = &scope.ctx;
+        let physical_table = self.resolve_physical_table(table, ctx).await?;
+        let safe_status_col = sanitize_identifier(status_column)?;
+        let current_rec = self.lock_for_write(scope, table, &physical_table, record_id).await?;
+
+        let sm_def = {
+            let mut conn = scope.db.conn().await?;
+            let res = sqlx::query_scalar::<_, serde_json::Value>(
+                "SELECT definition FROM \"_bos_meta_objects\" WHERE object_type = 'statemachine' AND status = 'active' AND LOWER(definition->>'target_table') = LOWER($1) LIMIT 1"
+            )
+            .bind(table)
+            .fetch_optional(&mut *conn)
+            .await;
+            scope.db.track(res)?
+        };
+
+        if let Some(tr) = sm_def.as_ref().and_then(|sm| {
+            sm.get("transitions").and_then(|v| v.as_array())?.iter().find(|tr| {
+                let tr_name = tr.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let tr_to = tr.get("to_state").and_then(|v| v.as_str()).unwrap_or("");
+                let from_ok = tr.get("from_states").and_then(|v| v.as_array()).is_none_or(|arr| {
+                    arr.iter().any(|f| f.as_str().is_some_and(|s| s.eq_ignore_ascii_case(from_state)))
+                });
+                (tr_name.eq_ignore_ascii_case(action) || tr_to.eq_ignore_ascii_case(to_state)) && from_ok
+            })
+        }) {
+            // 1. Enforce required_roles if specified
+            if let Some(req_roles) = tr.get("required_roles").and_then(|v| v.as_array()) {
+                let non_empty_roles: Vec<&str> = req_roles.iter().filter_map(|r| r.as_str()).filter(|s| !s.is_empty()).collect();
+                if !non_empty_roles.is_empty() {
+                    let has_role = ctx.roles.iter().any(|ur| {
+                        ur.eq_ignore_ascii_case("admin")
+                            || ur.eq_ignore_ascii_case("super_admin")
+                            || non_empty_roles.iter().any(|rr| rr.eq_ignore_ascii_case(ur))
+                    });
+                    if !has_role {
+                        return Err(RuntimeError::TransitionError(format!(
+                            "Transition '{}' requires one of roles {:?}, held roles: {:?}",
+                            action, non_empty_roles, ctx.roles
+                        )));
+                    }
+                }
+            }
+
+            // 2. Guard script must not throw / return false
+            if let Some(guard_src) = tr.get("guard_script").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()) {
+                let wrapped_guard = if guard_src.contains("return ") || guard_src.contains(';') {
+                    format!(
+                        "const __guardRes = (() => {{ {} }})(); if (__guardRes === false) {{ throw new Error('Transition guard returned false'); }}",
+                        guard_src
+                    )
+                } else {
+                    format!(
+                        "const __guardRes = ({}); if (!__guardRes) {{ throw new Error('Transition guard failed: ' + {}); }}",
+                        guard_src,
+                        serde_json::to_string(guard_src).map_err(|e| RuntimeError::Internal(e.to_string()))?
+                    )
+                };
+                QuickJsEngine::run_script(scope, ScriptCall {
+                    table_name: table.to_string(),
+                    trigger_name: format!("guard_{}", action),
+                    script: wrapped_guard,
+                    data: current_rec.clone(),
+                    x_rec: Some(current_rec.clone()),
+                    limits: ExecutionLimits::default(),
+                })
+                .await
+                .map_err(|e| RuntimeError::TransitionError(format!("Guard rejected transition '{}': {}", action, e)))?;
+            }
+
+            // 3. Transition effect script runs inside the same transaction
+            if let Some(effect_src) = tr.get("on_transition_script").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()) {
+                QuickJsEngine::run_script(scope, ScriptCall {
+                    table_name: table.to_string(),
+                    trigger_name: format!("onTransition_{}", action),
+                    script: effect_src.to_string(),
+                    data: current_rec.clone(),
+                    x_rec: Some(current_rec.clone()),
+                    limits: ExecutionLimits::default(),
+                })
+                .await?;
+            }
+        }
+
+        // 4. Activating a draft runs OnDraftActivate invariants
+        if from_state.eq_ignore_ascii_case("Draft") {
+            let mut draft_data = current_rec.clone();
+            ExecutionEngine::dispatch_triggers(scope, table, &TriggerEventIR::OnDraftActivate, &mut draft_data, Some(&current_rec)).await?;
+        }
+
+        // 5. Conditional status update (fails if the record is no longer in from_state)
+        let update_query = format!(
+            "UPDATE {} SET \"{}\" = $1, \"_system_version\" = COALESCE(\"_system_version\", 0) + 1, \"_updated_at\" = NOW() WHERE \"_id\" = $2 AND \"{}\" = $3",
+            quote_physical(&physical_table), safe_status_col, safe_status_col
+        );
+        let affected = {
+            let mut conn = scope.db.conn().await?;
+            let res = sqlx::query(&update_query)
+                .bind(to_state)
+                .bind(record_id)
+                .bind(from_state)
+                .execute(&mut *conn)
+                .await;
+            scope.db.track(res)?.rows_affected()
+        };
+        if affected == 0 {
+            return Err(RuntimeError::TransitionError(format!(
+                "Failed transition '{}' on {}: record not found or current state is not '{}'",
+                action, record_id, from_state
+            )));
+        }
+
+        // 6. State history row
+        let history_table = sanitize_identifier(&format!("{}_state_history", to_snake_case(table).to_lowercase()))?;
+        let history_query = format!(
+            "INSERT INTO \"{}\" (\"entity_id\", \"from_state\", \"to_state\", \"action\", \"actor_id\", \"comments\", \"params\") VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            history_table
+        );
+        let mut conn = scope.db.conn().await?;
+        let res = sqlx::query(&history_query)
+            .bind(record_id)
+            .bind(from_state)
+            .bind(to_state)
+            .bind(action)
+            .bind(ctx.user_id)
+            .bind(comments)
+            .bind(params)
+            .execute(&mut *conn)
+            .await;
+        scope.db.track(res)?;
+        Ok(())
+    }
+

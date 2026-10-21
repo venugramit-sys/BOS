@@ -1,0 +1,1017 @@
+{
+  "timestamp": "2026-10-12T03:25:20.573Z",
+  "serverBaseUrl": "http://localhost:3000",
+  "isOnline": true,
+  "totalEndpoints": 52,
+  "totalTests": 1408,
+  "passedTests": 1375,
+  "serverErrors": 32,
+  "verdict": "CRITICAL_FLAWS_DETECTED",
+  "summary": {
+    "endpointsTested": 52,
+    "inputVectors": 11,
+    "headerVectors": 4
+  },
+  "results": [
+    {
+      "endpoint": "/api/health",
+      "method": "GET",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "NONE",
+      "status": 200,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/health",
+      "method": "GET",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "NONE",
+      "status": 200,
+      "durationMs": 13,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/health",
+      "method": "GET",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "NONE",
+      "status": 200,
+      "durationMs": 15,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/health",
+      "method": "GET",
+      "headerVector": "NIL_UUID_HEADERS",
+      "payloadVector": "NONE",
+      "status": 200,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/detect-db",
+      "method": "GET",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "NONE",
+      "status": 200,
+      "durationMs": 1560,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/detect-db",
+      "method": "GET",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "NONE",
+      "status": 200,
+      "durationMs": 1553,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/detect-db",
+      "method": "GET",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "NONE",
+      "status": 200,
+      "durationMs": 1543,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/detect-db",
+      "method": "GET",
+      "headerVector": "NIL_UUID_HEADERS",
+      "payloadVector": "NONE",
+      "status": 200,
+      "durationMs": 1572,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/system/storage-strategies",
+      "method": "GET",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "NONE",
+      "status": 200,
+      "durationMs": 4,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/system/storage-strategies",
+      "method": "GET",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "NONE",
+      "status": 200,
+      "durationMs": 11,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/system/storage-strategies",
+      "method": "GET",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "NONE",
+      "status": 200,
+      "durationMs": 14,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/system/storage-strategies",
+      "method": "GET",
+      "headerVector": "NIL_UUID_HEADERS",
+      "payloadVector": "NONE",
+      "status": 200,
+      "durationMs": 16,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "GET",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "NONE",
+      "status": 0,
+      "durationMs": 4020,
+      "isServerError": false,
+      "passed": false
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "GET",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "NONE",
+      "status": 200,
+      "durationMs": 3219,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "GET",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "NONE",
+      "status": 200,
+      "durationMs": 3025,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "GET",
+      "headerVector": "NIL_UUID_HEADERS",
+      "payloadVector": "NONE",
+      "status": 200,
+      "durationMs": 3220,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "EMPTY_OBJECT",
+      "status": 422,
+      "durationMs": 10,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "EMPTY_STRING_BODY",
+      "status": 400,
+      "durationMs": 4,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "MALFORMED_SYNTAX",
+      "status": 400,
+      "durationMs": 9,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "TYPE_MISMATCH_ARRAY",
+      "status": 422,
+      "durationMs": 5,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "TYPE_MISMATCH_PRIMITIVE",
+      "status": 422,
+      "durationMs": 8,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "EXTREME_NUMBERS",
+      "status": 422,
+      "durationMs": 4,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "BOUNDARY_STRING_10K",
+      "status": 400,
+      "durationMs": 4,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "EMOJI_UNICODE",
+      "status": 422,
+      "durationMs": 4,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "SQLI_PAYLOAD",
+      "status": 400,
+      "durationMs": 6,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "XSS_PAYLOAD",
+      "status": 400,
+      "durationMs": 4,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "PATH_TRAVERSAL",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "EMPTY_OBJECT",
+      "status": 422,
+      "durationMs": 4,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "EMPTY_STRING_BODY",
+      "status": 400,
+      "durationMs": 5,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "MALFORMED_SYNTAX",
+      "status": 400,
+      "durationMs": 4,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "TYPE_MISMATCH_ARRAY",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "TYPE_MISMATCH_PRIMITIVE",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "EXTREME_NUMBERS",
+      "status": 422,
+      "durationMs": 6,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "BOUNDARY_STRING_10K",
+      "status": 400,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "EMOJI_UNICODE",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "SQLI_PAYLOAD",
+      "status": 400,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "XSS_PAYLOAD",
+      "status": 400,
+      "durationMs": 4,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "PATH_TRAVERSAL",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "EMPTY_OBJECT",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "EMPTY_STRING_BODY",
+      "status": 400,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "MALFORMED_SYNTAX",
+      "status": 400,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "TYPE_MISMATCH_ARRAY",
+      "status": 422,
+      "durationMs": 6,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "TYPE_MISMATCH_PRIMITIVE",
+      "status": 422,
+      "durationMs": 4,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "EXTREME_NUMBERS",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "BOUNDARY_STRING_10K",
+      "status": 400,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "EMOJI_UNICODE",
+      "status": 422,
+      "durationMs": 5,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "SQLI_PAYLOAD",
+      "status": 400,
+      "durationMs": 4,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "XSS_PAYLOAD",
+      "status": 400,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "PATH_TRAVERSAL",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "NIL_UUID_HEADERS",
+      "payloadVector": "EMPTY_OBJECT",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "NIL_UUID_HEADERS",
+      "payloadVector": "EMPTY_STRING_BODY",
+      "status": 400,
+      "durationMs": 6,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "NIL_UUID_HEADERS",
+      "payloadVector": "MALFORMED_SYNTAX",
+      "status": 400,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "NIL_UUID_HEADERS",
+      "payloadVector": "TYPE_MISMATCH_ARRAY",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "NIL_UUID_HEADERS",
+      "payloadVector": "TYPE_MISMATCH_PRIMITIVE",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "NIL_UUID_HEADERS",
+      "payloadVector": "EXTREME_NUMBERS",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "NIL_UUID_HEADERS",
+      "payloadVector": "BOUNDARY_STRING_10K",
+      "status": 400,
+      "durationMs": 5,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "NIL_UUID_HEADERS",
+      "payloadVector": "EMOJI_UNICODE",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "NIL_UUID_HEADERS",
+      "payloadVector": "SQLI_PAYLOAD",
+      "status": 400,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "NIL_UUID_HEADERS",
+      "payloadVector": "XSS_PAYLOAD",
+      "status": 400,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases",
+      "method": "POST",
+      "headerVector": "NIL_UUID_HEADERS",
+      "payloadVector": "PATH_TRAVERSAL",
+      "status": 422,
+      "durationMs": 4,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/current",
+      "method": "GET",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "NONE",
+      "status": 200,
+      "durationMs": 532,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/current",
+      "method": "GET",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "NONE",
+      "status": 200,
+      "durationMs": 307,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/current",
+      "method": "GET",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "NONE",
+      "status": 200,
+      "durationMs": 334,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/current",
+      "method": "GET",
+      "headerVector": "NIL_UUID_HEADERS",
+      "payloadVector": "NONE",
+      "status": 200,
+      "durationMs": 343,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "EMPTY_OBJECT",
+      "status": 422,
+      "durationMs": 4,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "EMPTY_STRING_BODY",
+      "status": 400,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "MALFORMED_SYNTAX",
+      "status": 400,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "TYPE_MISMATCH_ARRAY",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "TYPE_MISMATCH_PRIMITIVE",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "EXTREME_NUMBERS",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "BOUNDARY_STRING_10K",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "EMOJI_UNICODE",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "SQLI_PAYLOAD",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "XSS_PAYLOAD",
+      "status": 422,
+      "durationMs": 4,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "VALID_ENTERPRISE_HEADERS",
+      "payloadVector": "PATH_TRAVERSAL",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "EMPTY_OBJECT",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "EMPTY_STRING_BODY",
+      "status": 400,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "MALFORMED_SYNTAX",
+      "status": 400,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "TYPE_MISMATCH_ARRAY",
+      "status": 422,
+      "durationMs": 4,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "TYPE_MISMATCH_PRIMITIVE",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "EXTREME_NUMBERS",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "BOUNDARY_STRING_10K",
+      "status": 422,
+      "durationMs": 4,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "EMOJI_UNICODE",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "SQLI_PAYLOAD",
+      "status": 422,
+      "durationMs": 4,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "XSS_PAYLOAD",
+      "status": 422,
+      "durationMs": 4,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "MISSING_ALL_HEADERS",
+      "payloadVector": "PATH_TRAVERSAL",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "EMPTY_OBJECT",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "EMPTY_STRING_BODY",
+      "status": 400,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "MALFORMED_SYNTAX",
+      "status": 400,
+      "durationMs": 4,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "TYPE_MISMATCH_ARRAY",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "TYPE_MISMATCH_PRIMITIVE",
+      "status": 422,
+      "durationMs": 2,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "EXTREME_NUMBERS",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "BOUNDARY_STRING_10K",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "EMOJI_UNICODE",
+      "status": 422,
+      "durationMs": 2,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "SQLI_PAYLOAD",
+      "status": 422,
+      "durationMs": 4,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "XSS_PAYLOAD",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "MALFORMED_UUID_HEADERS",
+      "payloadVector": "PATH_TRAVERSAL",
+      "status": 422,
+      "durationMs": 3,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "NIL_UUID_HEADERS",
+      "payloadVector": "EMPTY_OBJECT",
+      "status": 422,
+      "durationMs": 4,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "NIL_UUID_HEADERS",
+      "payloadVector": "EMPTY_STRING_BODY",
+      "status": 400,
+      "durationMs": 2,
+      "isServerError": false,
+      "passed": true
+    },
+    {
+      "endpoint": "/api/databases/test-connection",
+      "method": "POST",
+      "headerVector": "NIL_UUID_HEADERS",
+      "payloadVector": "MALFORMED_SYNTAX",
+      "status": 400,
+      "durationMs": 4,
+      "isServerError": false,
+      "passed": true
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+[workspace]
+members = [
+    "crates/bosc-syntax",
+    "crates/bosc-analyzer",
+    "crates/bosc-ir",
+    "crates/bosc-codegen-db",
+    "crates/bosc-runtime",
+    "crates/bosc-cli",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["BOS Core Engineering Team"]
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+anyhow = "1.0"
+uuid = { version = "1.10", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+tokio = { version = "1.40", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+clap = { version = "4.5", features = ["derive"] }
+async-trait = "0.1"
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "json"] }
+dashmap = "6.1"
+regex = "1.11"
+axum = { version = "0.8", features = ["json", "macros"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
+rust_decimal = { version = "1.36", features = ["serde"] }
+wasmi = "2.0"
+toml = "0.8"
+sha2 = "0.10"
+crc32fast = "1.4"
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+memmap2 = "0.9"
+arc-swap = "1.7"
+rquickjs = { version = "0.14", features = ["classes", "properties"] }
+

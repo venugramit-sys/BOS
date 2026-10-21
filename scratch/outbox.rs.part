@@ -1,0 +1,117 @@
+    /// Process a batch of pending outbox events using FOR UPDATE SKIP LOCKED.
+    ///
+    /// The batch runs in one transaction; each event gets its own savepoint. A subscriber
+    /// failure rolls back only that event's side effects, then the retry bookkeeping for it
+    /// is written, so status updates and subscriber writes always commit together.
+    pub async fn process_outbox_batch(
+        &self,
+        pool: &PgPool,
+        services: &ScriptServices,
+        batch_size: i64,
+    ) -> Result<ProcessOutboxSummary, RuntimeError> {
+        Self::init_table(pool).await?;
+        let db = DbSession::begin(pool).await?;
+        let outcome = self.process_outbox_in(&db, services, batch_size).await;
+        let (succeeded, failed) = db.finish(outcome).await?;
+
+        let remaining: i64 = sqlx::query_scalar(
+            r#"SELECT COUNT(*)::bigint FROM "_bos_event_outbox" WHERE "status" = 'pending';"#
+        )
+        .fetch_one(pool)
+        .await?;
+
+        Ok(ProcessOutboxSummary {
+            processed: succeeded + failed,
+            succeeded,
+            failed,
+            remaining: remaining as usize,
+        })
+    }
+
+    async fn process_outbox_in(
+        &self,
+        db: &DbSession,
+        services: &ScriptServices,
+        batch_size: i64,
+    ) -> Result<(usize, usize), RuntimeError> {
+        let rows = {
+            let mut conn = db.conn().await?;
+            let res = sqlx::query(
+                r#"
+                SELECT id, tenant_id, company_id, publisher, event_name, payload, retry_count, max_retries
+                FROM "_bos_event_outbox"
+                WHERE "status" = 'pending' AND "retry_count" < "max_retries"
+                ORDER BY "created_at" ASC
+                LIMIT $1
+                FOR UPDATE SKIP LOCKED;
+                "#,
+            )
+            .bind(batch_size.clamp(1, 100))
+            .fetch_all(&mut *conn)
+            .await;
+            db.track(res)?
+        };
+
+        let mut succeeded = 0;
+        let mut failed = 0;
+        for r in &rows {
+            let id: Uuid = r.try_get("id")?;
+            let tenant_id: Uuid = r.try_get("tenant_id")?;
+            let company_id: Option<Uuid> = r.try_get("company_id")?;
+            let publisher: String = r.try_get("publisher")?;
+            let event_name: String = r.try_get("event_name")?;
+            let payload: serde_json::Value = r.try_get("payload")?;
+            let retry_count: i32 = r.try_get("retry_count")?;
+            let max_retries: i32 = r.try_get("max_retries")?;
+
+            let ctx = SessionContext {
+                tenant_id,
+                company_id: company_id.unwrap_or_default(),
+                user_id: Uuid::nil(),
+                roles: vec!["SystemWorker".to_string()],
+            };
+            let scope = ExecScope::new(db.clone(), ctx.clone(), services.clone());
+
+            let savepoint = format!("bos_outbox_{}", id.simple());
+            db.savepoint(&savepoint).await?;
+            let dispatch_res = match db.apply_identity(&ctx).await {
+                Ok(()) => self.dispatch_in(&publisher, &event_name, payload, None, &scope).await.map(|_| ()),
+                Err(e) => Err(e),
+            };
+            if dispatch_res.is_err() {
+                db.rollback_to_savepoint(&savepoint).await?;
+            }
+            db.release_savepoint(&savepoint).await?;
+
+            let mut conn = db.conn().await?;
+            match dispatch_res {
+                Ok(()) => {
+                    let res = sqlx::query(
+                        r#"UPDATE "_bos_event_outbox" SET "status" = 'completed', "processed_at" = NOW() WHERE "id" = $1"#,
+                    )
+                    .bind(id)
+                    .execute(&mut *conn)
+                    .await;
+                    db.track(res)?;
+                    succeeded += 1;
+                }
+                Err(e) => {
+                    let new_retry = retry_count + 1;
+                    let new_status = if new_retry >= max_retries { "failed" } else { "pending" };
+                    let res = sqlx::query(
+                        r#"UPDATE "_bos_event_outbox" SET "retry_count" = $2, "status" = $3, "last_error" = $4 WHERE "id" = $1"#,
+                    )
+                    .bind(id)
+                    .bind(new_retry)
+                    .bind(new_status)
+                    .bind(e.to_string())
+                    .execute(&mut *conn)
+                    .await;
+                    db.track(res)?;
+                    failed += 1;
+                }
+            }
+        }
+        Ok((succeeded, failed))
+    }
+}

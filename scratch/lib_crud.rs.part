@@ -1,0 +1,529 @@
+    /// Insert record with tenant and audit isolation and business logic trigger dispatch
+    pub async fn insert_record(
+        &self,
+        table: &str,
+        data: serde_json::Value,
+        ctx: &SessionContext,
+    ) -> Result<Uuid, RuntimeError> {
+        self.insert_record_with_messages(table, data, ctx)
+            .await
+            .map(|(id, _)| id)
+    }
+
+    /// Insert one record as a single unit of work: validation cascades, before-triggers, the
+    /// INSERT, after-triggers and event subscribers all commit together or not at all.
+    pub async fn insert_record_with_messages(
+        &self,
+        table: &str,
+        data: serde_json::Value,
+        ctx: &SessionContext,
+    ) -> Result<(Uuid, Vec<serde_json::Value>), RuntimeError> {
+        let scope = self.begin_scope(ctx).await?;
+        let outcome = self.insert_in(&scope, table, data).await;
+        scope.db.finish(outcome).await
+    }
+
+    /// Insert inside an existing unit of work.
+    pub async fn insert_in(
+        &self,
+        scope: &ExecScope,
+        table: &str,
+        data: serde_json::Value,
+    ) -> Result<(Uuid, Vec<serde_json::Value>), RuntimeError> {
+        let mut payload = data;
+        let is_draft_insert = payload.get("status").and_then(|v| v.as_str()) == Some("Draft")
+            || payload.get("is_draft").and_then(|v| v.as_bool()) == Some(true);
+
+        let incoming: Vec<String> = payload
+            .as_object()
+            .map(|o| o.keys().filter(|k| !k.starts_with('_')).cloned().collect())
+            .unwrap_or_default();
+        for k in incoming {
+            ExecutionEngine::dispatch_triggers(scope, table, &TriggerEventIR::OnValidate(k), &mut payload, None).await?;
+        }
+        if is_draft_insert {
+            ExecutionEngine::dispatch_triggers(scope, table, &TriggerEventIR::OnDraftSave, &mut payload, None).await?;
+        }
+        ExecutionEngine::dispatch_triggers(scope, table, &TriggerEventIR::OnBeforeInsert, &mut payload, None).await?;
+        self.publish_record_event(scope, table, "OnBeforeInsert", &mut payload, None).await?;
+
+        let (physical_table, data_per_company) = self.resolve_table_info(table, &scope.ctx).await?;
+        let id = payload
+            .get("_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .unwrap_or_else(Uuid::new_v4);
+        let obj = payload.as_object().ok_or_else(|| {
+            RuntimeError::Internal(format!("Record for '{}' must be a JSON object", table))
+        })?;
+
+        let (columns, values) = Self::insert_tuple(obj, id, &scope.ctx, data_per_company)?;
+        let query = format!(
+            "INSERT INTO {} ({}) VALUES ({})",
+            quote_physical(&physical_table),
+            columns.join(", "),
+            values.join(", ")
+        );
+        {
+            let mut conn = scope.db.conn().await?;
+            let res = sqlx::query(&query).execute(&mut *conn).await;
+            scope.db.track(res)?;
+        }
+
+        if let Some(o) = payload.as_object_mut() {
+            o.insert("_id".to_string(), serde_json::json!(id.to_string()));
+        }
+        ExecutionEngine::dispatch_triggers(scope, table, &TriggerEventIR::OnAfterInsert, &mut payload, None).await?;
+        self.publish_record_event(scope, table, "OnAfterInsert", &mut payload, None).await?;
+
+        let messages = payload
+            .as_object_mut()
+            .and_then(|o| o.remove("_system_messages"))
+            .and_then(|m| m.as_array().cloned())
+            .unwrap_or_default();
+        Ok((id, messages))
+    }
+
+    /// Column list and SQL literals for one INSERT row (system columns first).
+    fn insert_tuple(
+        obj: &serde_json::Map<String, serde_json::Value>,
+        id: Uuid,
+        ctx: &SessionContext,
+        data_per_company: bool,
+    ) -> Result<(Vec<String>, Vec<String>), RuntimeError> {
+        let mut added = std::collections::HashSet::new();
+        let mut columns = vec!["\"_id\"".to_string(), "\"_tenant_id\"".to_string()];
+        let mut values = vec![format!("'{}'::uuid", id), format!("'{}'::uuid", ctx.tenant_id)];
+        added.insert("_id".to_string());
+        added.insert("_tenant_id".to_string());
+        if data_per_company {
+            columns.push("\"_company_id\"".to_string());
+            values.push(format!("'{}'::uuid", ctx.company_id));
+            added.insert("_company_id".to_string());
+        }
+
+        for (k, v) in obj {
+            let col_name = if k.starts_with('_') { k.clone() } else { to_snake_case(k) };
+            if added.contains(&col_name) || col_name == "_system_messages" || col_name == "_messages" {
+                continue;
+            }
+            if (col_name == "_created_at" || col_name == "_updated_at") && v.as_str().is_none() {
+                continue;
+            }
+            if (col_name == "_created_by" || col_name == "_updated_by") && v.is_null() {
+                continue;
+            }
+            if col_name == "_system_version" {
+                continue;
+            }
+            let safe_col = sanitize_identifier(&col_name)?;
+            columns.push(format!("\"{}\"", safe_col));
+            values.push(sql_literal(v));
+            added.insert(col_name);
+        }
+        Ok((columns, values))
+    }
+
+    /// Bulk insert records in a single multi-row statement (Salesforce/BC bulkification pattern).
+    /// Triggers for every record and the INSERT share one transaction.
+    pub async fn insert_records_batch(
+        &self,
+        table: &str,
+        records: Vec<serde_json::Value>,
+        ctx: &SessionContext,
+    ) -> Result<Vec<Uuid>, RuntimeError> {
+        if records.is_empty() {
+            return Ok(Vec::new());
+        }
+        let scope = self.begin_scope(ctx).await?;
+        let outcome = self.insert_batch_in(&scope, table, records).await;
+        scope.db.finish(outcome).await
+    }
+
+    async fn insert_batch_in(
+        &self,
+        scope: &ExecScope,
+        table: &str,
+        records: Vec<serde_json::Value>,
+    ) -> Result<Vec<Uuid>, RuntimeError> {
+        let mut payloads = records;
+        for payload in &mut payloads {
+            ExecutionEngine::dispatch_triggers(scope, table, &TriggerEventIR::OnBeforeInsert, payload, None).await?;
+            self.publish_record_event(scope, table, "OnBeforeInsert", payload, None).await?;
+        }
+
+        let (physical_table, data_per_company) = self.resolve_table_info(table, &scope.ctx).await?;
+
+        let mut column_set = std::collections::BTreeSet::new();
+        for p in &payloads {
+            let obj = p.as_object().ok_or_else(|| {
+                RuntimeError::Internal(format!("Every record for '{}' must be a JSON object", table))
+            })?;
+            for k in obj.keys().filter(|k| !k.starts_with('_')) {
+                column_set.insert(to_snake_case(k));
+            }
+        }
+        let user_columns: Vec<String> = column_set.into_iter().collect();
+
+        let mut cols = vec!["\"_id\"".to_string(), "\"_tenant_id\"".to_string()];
+        if data_per_company {
+            cols.push("\"_company_id\"".to_string());
+        }
+        for c in &user_columns {
+            cols.push(format!("\"{}\"", sanitize_identifier(c)?));
+        }
+
+        let mut generated_ids = Vec::with_capacity(payloads.len());
+        let mut row_tuples = Vec::with_capacity(payloads.len());
+        for p in &mut payloads {
+            let id = p
+                .get("_id")
+                .and_then(|v| v.as_str())
+                .and_then(|s| Uuid::parse_str(s).ok())
+                .unwrap_or_else(Uuid::new_v4);
+            generated_ids.push(id);
+            let mut val_tokens = vec![format!("'{}'::uuid", id), format!("'{}'::uuid", scope.ctx.tenant_id)];
+            if data_per_company {
+                val_tokens.push(format!("'{}'::uuid", scope.ctx.company_id));
+            }
+            let obj = p.as_object();
+            for c in &user_columns {
+                let v_opt = obj.and_then(|o| {
+                    o.iter()
+                        .find(|(k, _)| k.chars().any(|ch| ch.is_ascii_uppercase()) && &to_snake_case(k) == c)
+                        .map(|(_, v)| v)
+                        .or_else(|| o.get(c))
+                });
+                val_tokens.push(v_opt.map(sql_literal).unwrap_or_else(|| "DEFAULT".to_string()));
+            }
+            row_tuples.push(format!("({})", val_tokens.join(", ")));
+            if let Some(o) = p.as_object_mut() {
+                o.insert("_id".to_string(), serde_json::json!(id.to_string()));
+            }
+        }
+
+        let insert_query = format!(
+            "INSERT INTO {} ({}) VALUES {}",
+            quote_physical(&physical_table),
+            cols.join(", "),
+            row_tuples.join(", ")
+        );
+        {
+            let mut conn = scope.db.conn().await?;
+            let res = sqlx::query(&insert_query).execute(&mut *conn).await;
+            scope.db.track(res)?;
+        }
+
+        for payload in &mut payloads {
+            ExecutionEngine::dispatch_triggers(scope, table, &TriggerEventIR::OnAfterInsert, payload, None).await?;
+            self.publish_record_event(scope, table, "OnAfterInsert", payload, None).await?;
+        }
+        Ok(generated_ids)
+    }
+
+    /// Update one record as a single unit of work with mandatory optimistic concurrency:
+    /// the patch must carry the `_system_version` the client last read.
+    pub async fn update_record(
+        &self,
+        table: &str,
+        record_id: Uuid,
+        patch: serde_json::Value,
+        ctx: &SessionContext,
+    ) -> Result<serde_json::Value, RuntimeError> {
+        let scope = self.begin_scope(ctx).await?;
+        let outcome = self.update_in(&scope, table, record_id, patch).await;
+        scope.db.finish(outcome).await
+    }
+
+    /// Fetch a record by `_id` inside the session, locking it against concurrent writers.
+    async fn lock_for_write(
+        &self,
+        scope: &ExecScope,
+        table: &str,
+        physical_table: &str,
+        record_id: Uuid,
+    ) -> Result<serde_json::Value, RuntimeError> {
+        let get_query = format!(
+            "SELECT to_jsonb(t.*) FROM {} t WHERE t.\"_id\" = $1 FOR UPDATE",
+            quote_physical(physical_table)
+        );
+        let mut conn = scope.db.conn().await?;
+        let res = sqlx::query_scalar::<_, serde_json::Value>(&get_query)
+            .bind(record_id)
+            .fetch_optional(&mut *conn)
+            .await;
+        scope
+            .db
+            .track(res)?
+            .ok_or_else(|| RuntimeError::NotFound(table.to_string(), record_id.to_string()))
+    }
+
+    /// Reject the write when the record's current state forbids it (`allowModify` / `allowDelete`).
+    async fn enforce_state_policy(
+        &self,
+        scope: &ExecScope,
+        table: &str,
+        x_rec: &serde_json::Value,
+        policy: &str,
+        label: &str,
+    ) -> Result<(), RuntimeError> {
+        let sm_def = {
+            let mut conn = scope.db.conn().await?;
+            let res = sqlx::query_scalar::<_, serde_json::Value>(
+                "SELECT definition FROM \"_bos_meta_objects\" WHERE object_type = 'statemachine' AND status = 'active' AND LOWER(definition->>'target_table') = LOWER($1) LIMIT 1",
+            )
+            .bind(table)
+            .fetch_optional(&mut *conn)
+            .await;
+            scope.db.track(res)?
+        };
+        let Some(sm_def) = sm_def else {
+            return Ok(());
+        };
+        let status_col = sm_def.get("status_field").and_then(|v| v.as_str()).unwrap_or("status");
+        let Some(cur_state) = x_rec.get(status_col).and_then(|v| v.as_str()) else {
+            return Ok(());
+        };
+        let forbidden = sm_def
+            .get("states")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+            .any(|st| {
+                st.get("name").and_then(|v| v.as_str()).is_some_and(|n| n.eq_ignore_ascii_case(cur_state))
+                    && st.get(policy).and_then(|v| v.as_bool()) == Some(false)
+            });
+        if forbidden {
+            return Err(RuntimeError::TransitionError(format!(
+                "State Machine Policy Violation: Record in table '{}' is in state '{}' which sets {} = false.",
+                table, cur_state, label
+            )));
+        }
+        Ok(())
+    }
+
+    /// Update inside an existing unit of work.
+    pub async fn update_in(
+        &self,
+        scope: &ExecScope,
+        table: &str,
+        record_id: Uuid,
+        patch: serde_json::Value,
+    ) -> Result<serde_json::Value, RuntimeError> {
+        if self.is_immutable_ledger(table).await {
+            return Err(RuntimeError::ImmutableLedger(format!(
+                "Table '{}' is an immutable ledger. Updates and in-place modifications are forbidden by accounting design. Compensating or reversal entries must be posted instead.",
+                table
+            )));
+        }
+        let mut patch = patch;
+        if !patch.is_object() {
+            return Err(RuntimeError::Internal(format!("Patch for '{}' must be a JSON object", table)));
+        }
+        let physical_table = self.resolve_physical_table(table, &scope.ctx).await?;
+
+        // 1. Lock the pristine record (xRec) for the rest of the unit of work
+        let x_rec = self.lock_for_write(scope, table, &physical_table, record_id).await?;
+
+        // 2. Optimistic concurrency: the client must prove it saw the current version
+        let versioned = x_rec.get("_system_version").is_some();
+        let expected_version = match patch.get("_system_version") {
+            None | Some(serde_json::Value::Null) => None,
+            Some(v) => Some(
+                v.as_i64()
+                    .or_else(|| v.as_str().and_then(|s| s.trim().parse::<i64>().ok()))
+                    .ok_or_else(|| RuntimeError::VersionRequired(format!("'_system_version' must be an integer, got {}", v)))?,
+            ),
+        };
+        if versioned {
+            let current = x_rec.get("_system_version").and_then(|v| v.as_i64()).unwrap_or(0);
+            match expected_version {
+                None => {
+                    return Err(RuntimeError::VersionRequired(format!(
+                        "Updates to '{}' must include the record's current '_system_version' (currently {})",
+                        table, current
+                    )))
+                }
+                Some(ver) if ver != current => {
+                    return Err(RuntimeError::ConcurrencyConflict(format!(
+                        "Record {} in table '{}' was changed by another user (you have version {}, current version is {})",
+                        record_id, table, ver, current
+                    )))
+                }
+                Some(_) => {}
+            }
+        }
+
+        self.enforce_state_policy(scope, table, &x_rec, "allow_modify", "allowModify").await?;
+
+        // 3. Stage Rec and run field-level OnValidate cascades for changed fields
+        let mut rec = x_rec.clone();
+        let changed_fields: Vec<(String, serde_json::Value)> = match (patch.as_object(), x_rec.as_object()) {
+            (Some(p), Some(x)) => p
+                .iter()
+                .filter(|(k, v)| !k.starts_with('_') && x.get(*k) != Some(*v))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+            _ => Vec::new(),
+        };
+        for (k, v) in changed_fields {
+            if let Some(rec_obj) = rec.as_object_mut() {
+                rec_obj.insert(k.clone(), v);
+            }
+            ExecutionEngine::dispatch_triggers(scope, table, &TriggerEventIR::OnValidate(k.clone()), &mut rec, Some(&x_rec)).await?;
+            self.publish_record_event(scope, table, &format!("OnValidate{}", k), &mut rec, Some(&x_rec)).await?;
+        }
+
+        // 4. Compute-first: OnDraftSave (drafts) and OnBeforeModify with (Rec, xRec)
+        let is_draft_edit = rec.get("status").and_then(|v| v.as_str()) == Some("Draft")
+            || rec.get("is_draft").and_then(|v| v.as_bool()) == Some(true);
+        if is_draft_edit {
+            ExecutionEngine::dispatch_triggers(scope, table, &TriggerEventIR::OnDraftSave, &mut rec, Some(&x_rec)).await?;
+        }
+        ExecutionEngine::dispatch_triggers(scope, table, &TriggerEventIR::OnBeforeModify, &mut rec, Some(&x_rec)).await?;
+        self.publish_record_event(scope, table, "OnBeforeModify", &mut rec, Some(&x_rec)).await?;
+
+        // Fields mutated or stripped by triggers (e.g. hashPassword) flow back into the patch
+        if let (Some(rec_obj), Some(patch_obj)) = (rec.as_object(), patch.as_object_mut()) {
+            for (k, v) in rec_obj {
+                if !k.starts_with('_') && x_rec.as_object().and_then(|x| x.get(k)) != Some(v) {
+                    patch_obj.insert(k.clone(), v.clone());
+                }
+            }
+            patch_obj.retain(|k, _| rec_obj.contains_key(k) || k.starts_with('_'));
+        }
+
+        // 5. Write with the version predicate (the row lock makes this a final safety net)
+        let mut set_clauses = Vec::new();
+        if let Some(obj) = patch.as_object() {
+            for (k, v) in obj {
+                let col_name = if k.starts_with('_') { k.clone() } else { to_snake_case(k) };
+                if SYSTEM_WRITE_PROTECTED.contains(&col_name.as_str()) {
+                    continue;
+                }
+                let safe_col = sanitize_identifier(&col_name)?;
+                set_clauses.push(format!("\"{}\" = {}", safe_col, sql_literal(v)));
+            }
+        }
+        if x_rec.get("_updated_at").is_some() {
+            set_clauses.push("\"_updated_at\" = NOW()".to_string());
+        }
+        if x_rec.get("_updated_by").is_some() {
+            set_clauses.push(format!("\"_updated_by\" = '{}'::uuid", scope.ctx.user_id));
+        }
+        if versioned {
+            set_clauses.push("\"_system_version\" = COALESCE(t.\"_system_version\", 0) + 1".to_string());
+        }
+        if set_clauses.is_empty() {
+            return Ok(x_rec);
+        }
+        let mut where_clause = format!("t.\"_id\" = '{}'::uuid", record_id);
+        if let (true, Some(ver)) = (versioned, expected_version) {
+            where_clause.push_str(&format!(" AND COALESCE(t.\"_system_version\", 0) = {}", ver));
+        }
+        let update_query = format!(
+            "UPDATE {} AS t SET {} WHERE {} RETURNING to_jsonb(t.*)",
+            quote_physical(&physical_table),
+            set_clauses.join(", "),
+            where_clause
+        );
+        let updated = {
+            let mut conn = scope.db.conn().await?;
+            let res = sqlx::query_scalar::<_, serde_json::Value>(&update_query)
+                .fetch_optional(&mut *conn)
+                .await;
+            scope.db.track(res)?
+        };
+        let mut updated = updated.ok_or_else(|| {
+            RuntimeError::ConcurrencyConflict(format!(
+                "Record {} in table '{}' was modified by a concurrent transaction",
+                record_id, physical_table
+            ))
+        })?;
+
+        // 6. OnAfterModify and subscribers see the persisted row; failures roll everything back
+        let mut after = updated.clone();
+        if let (Some(a), Some(msgs)) = (after.as_object_mut(), rec.get("_system_messages")) {
+            a.insert("_system_messages".to_string(), msgs.clone());
+        }
+        ExecutionEngine::dispatch_triggers(scope, table, &TriggerEventIR::OnAfterModify, &mut after, Some(&x_rec)).await?;
+        self.publish_record_event(scope, table, "OnAfterModify", &mut after, Some(&x_rec)).await?;
+
+        if let (Some(u), Some(msgs)) = (updated.as_object_mut(), after.get("_system_messages")) {
+            u.insert("_system_messages".to_string(), msgs.clone());
+        }
+        Ok(updated)
+    }
+
+    /// Delete one record as a single unit of work (triggers, delete and subscribers together).
+    pub async fn delete_record(
+        &self,
+        table: &str,
+        record_id: Uuid,
+        ctx: &SessionContext,
+    ) -> Result<serde_json::Value, RuntimeError> {
+        let scope = self.begin_scope(ctx).await?;
+        let outcome = self.delete_in(&scope, table, record_id).await;
+        scope.db.finish(outcome).await
+    }
+
+    /// Delete inside an existing unit of work.
+    pub async fn delete_in(
+        &self,
+        scope: &ExecScope,
+        table: &str,
+        record_id: Uuid,
+    ) -> Result<serde_json::Value, RuntimeError> {
+        if self.is_immutable_ledger(table).await {
+            return Err(RuntimeError::ImmutableLedger(format!(
+                "Table '{}' is an immutable ledger. Deletions are strictly prohibited. Correcting or reversal entries must be posted instead.",
+                table
+            )));
+        }
+        let physical_table = self.resolve_physical_table(table, &scope.ctx).await?;
+        let x_rec = self.lock_for_write(scope, table, &physical_table, record_id).await?;
+        self.enforce_state_policy(scope, table, &x_rec, "allow_delete", "allowDelete").await?;
+
+        let mut data = x_rec.clone();
+        let is_draft = x_rec.get("status").and_then(|v| v.as_str()) == Some("Draft")
+            || x_rec.get("is_draft").and_then(|v| v.as_bool()) == Some(true);
+        if is_draft {
+            ExecutionEngine::dispatch_triggers(scope, table, &TriggerEventIR::OnDraftDiscard, &mut data, Some(&x_rec)).await?;
+        }
+        ExecutionEngine::dispatch_triggers(scope, table, &TriggerEventIR::OnBeforeDelete, &mut data, Some(&x_rec)).await?;
+        self.publish_record_event(scope, table, "OnBeforeDelete", &mut data, Some(&x_rec)).await?;
+
+        let del_query = format!("DELETE FROM {} WHERE \"_id\" = $1", quote_physical(&physical_table));
+        let affected = {
+            let mut conn = scope.db.conn().await?;
+            let res = sqlx::query(&del_query).bind(record_id).execute(&mut *conn).await;
+            scope.db.track(res)?.rows_affected()
+        };
+        if affected == 0 {
+            return Err(RuntimeError::NotFound(table.to_string(), record_id.to_string()));
+        }
+
+        ExecutionEngine::dispatch_triggers(scope, table, &TriggerEventIR::OnAfterDelete, &mut data, Some(&x_rec)).await?;
+        self.publish_record_event(scope, table, "OnAfterDelete", &mut data, Some(&x_rec)).await?;
+        Ok(x_rec)
+    }
+
+    /// Run event subscribers for a record lifecycle event inside the unit of work.
+    async fn publish_record_event(
+        &self,
+        scope: &ExecScope,
+        table: &str,
+        event: &str,
+        data: &mut serde_json::Value,
+        x_rec: Option<&serde_json::Value>,
+    ) -> Result<(), RuntimeError> {
+        if self.event_registry.get_subscribers(table, event).is_empty() {
+            return Ok(());
+        }
+        let (out, _) = self
+            .event_registry
+            .dispatch_in(table, event, data.clone(), x_rec.cloned(), scope)
+            .await?;
+        *data = out;
+        Ok(())
+    }

@@ -1,0 +1,232 @@
+// ============================================================
+// BOS Security Package: Identity, Roles & Session Management
+// ============================================================
+
+table User {
+    caption = "Security User Master";
+    tableType = Normal;
+    dataPerCompany = false;
+
+    username: String(50) {
+        notNull = true;
+        unique = true;
+    };
+    passwordHash: String(255) {
+        notNull = true;
+    };
+    email: String(100) {
+        notNull = true;
+    };
+    fullName: String(100);
+    isActive: Boolean {
+        default = true;
+    };
+    failedAttempts: Integer {
+        default = 0;
+    };
+
+    primaryKey(username);
+}
+
+tablelogic UserLogic for User {
+    onInsert(rec, ctx) {
+        if (!rec.username || rec.username.trim().length === 0) {
+            throw new Error("Field 'username' is required");
+        }
+        if (!rec.email || rec.email.trim().length === 0) {
+            throw new Error("Field 'email' is required");
+        }
+        rec.email = rec.email.toLowerCase().trim();
+
+        if (rec.password) {
+            rec.passwordHash = String(rec.password).startsWith("$argon2")
+                ? String(rec.password)
+                : ctx.crypto.argon2Hash(rec.password);
+            delete rec.password;
+        } else if (rec.passwordHash && !String(rec.passwordHash).startsWith("$argon2")) {
+            rec.passwordHash = ctx.crypto.argon2Hash(rec.passwordHash);
+        }
+
+        if (!rec.passwordHash) {
+            throw new Error("Field 'passwordHash' is required");
+        }
+
+        ctx.audit.log("Security identity master record inserted");
+    }
+
+    onModify(rec, ctx) {
+        if (!rec.username || rec.username.trim().length === 0) {
+            throw new Error("Field 'username' is required");
+        }
+        if (rec.email) {
+            rec.email = rec.email.toLowerCase().trim();
+        }
+        if (rec.password) {
+            rec.passwordHash = String(rec.password).startsWith("$argon2")
+                ? String(rec.password)
+                : ctx.crypto.argon2Hash(rec.password);
+            delete rec.password;
+        }
+        ctx.audit.log("Security identity master record modified");
+    }
+
+    onDelete(rec, ctx) {
+        if (rec.username === "admin") {
+            throw new Error("Cannot delete master administrator account");
+        }
+        ctx.audit.log("Security identity master record deleted");
+    }
+}
+
+table Role {
+    caption = "Security Role";
+    tableType = Normal;
+    dataPerCompany = false;
+
+    code: String(30) {
+        notNull = true;
+        unique = true;
+    };
+    name: String(100);
+    description: String(255);
+
+    primaryKey(code);
+}
+
+tablelogic RoleLogic for Role {
+    onInsert(rec, ctx) {
+        if (!rec.code || rec.code.trim().length === 0) {
+            throw new Error("Field 'code' is required");
+        }
+        if (!rec.name || rec.name.trim().length === 0) {
+            throw new Error("Field 'name' is required");
+        }
+        ctx.audit.log("Security role created");
+    }
+
+    onDelete(rec, ctx) {
+        if (rec.code === "SUPER") {
+            throw new Error("Cannot delete SUPER administrator role");
+        }
+        ctx.audit.log("Security role deleted");
+    }
+}
+
+table UserRole {
+    caption = "User Role Mapping";
+    tableType = Normal;
+    dataPerCompany = false;
+
+    username: String(50) {
+        notNull = true;
+    };
+    roleCode: String(30) {
+        notNull = true;
+    };
+
+    primaryKey(username, roleCode);
+}
+
+tablelogic UserRoleLogic for UserRole {
+    onInsert(rec, ctx) {
+        if (!rec.username || rec.username.trim().length === 0) {
+            throw new Error("Field 'username' is required");
+        }
+        if (!rec.roleCode || rec.roleCode.trim().length === 0) {
+            throw new Error("Field 'roleCode' is required");
+        }
+        ctx.audit.log("User role assignment granted");
+    }
+
+    onDelete(rec, ctx) {
+        ctx.audit.log("User role assignment revoked");
+    }
+}
+
+table SessionToken {
+    caption = "Active Session Tokens";
+    tableType = Normal;
+    dataPerCompany = false;
+
+    token: String(128) {
+        notNull = true;
+        unique = true;
+    };
+    username: String(50) {
+        notNull = true;
+    };
+    ipAddress: String(45);
+    isRevoked: Boolean {
+        default = false;
+    };
+
+    primaryKey(token);
+}
+
+tablelogic SessionTokenLogic for SessionToken {
+    onInsert(rec, ctx) {
+        if (!rec.token || rec.token.trim().length === 0) {
+            throw new Error("Field 'token' is required");
+        }
+        if (!rec.username || rec.username.trim().length === 0) {
+            throw new Error("Field 'username' is required");
+        }
+        ctx.audit.log("Session token created");
+    }
+
+    onDelete(rec, ctx) {
+        ctx.audit.log("Session token removed");
+    }
+}
+
+codeunit AuthManager {
+    ValidateUserRegistration(username: String, email: String) {
+        const u = (rec && rec.username !== undefined) ? rec.username : username;
+        const e = (rec && rec.email !== undefined) ? rec.email : email;
+
+        if (!u || String(u).trim().length === 0) {
+            throw new Error("Username must not be empty");
+        }
+        if (!e || String(e).trim().length === 0) {
+            throw new Error("Email must not be empty");
+        }
+
+        const normalizedUser = String(u).trim();
+        const normalizedEmail = String(e).toLowerCase().trim();
+
+        if (User.exists({ username: normalizedUser })) {
+            throw new Error(`Username '${normalizedUser}' is already registered`);
+        }
+        if (User.exists({ email: normalizedEmail })) {
+            throw new Error(`Email '${normalizedEmail}' is already registered`);
+        }
+
+        ctx.audit.log(`User registration parameters verified for '${normalizedUser}'`);
+        return { valid: true, username: normalizedUser, email: normalizedEmail };
+    }
+
+    CheckTokenStatus(token: String) {
+        const t = (rec && rec.token !== undefined) ? rec.token : token;
+
+        if (!t || String(t).trim().length === 0) {
+            throw new Error("Token cannot be empty");
+        }
+
+        const tokenKey = String(t).trim();
+        const sessionRec = SessionToken.get(tokenKey);
+        if (!sessionRec) {
+            return { valid: false, reason: "NOT_FOUND" };
+        }
+        if (sessionRec.isRevoked === true) {
+            return { valid: false, reason: "REVOKED", username: sessionRec.username };
+        }
+
+        const userRec = User.get(sessionRec.username);
+        if (!userRec || userRec.isActive === false) {
+            return { valid: false, reason: "USER_INACTIVE", username: sessionRec.username };
+        }
+
+        ctx.audit.log(`Session token validity verified for '${sessionRec.username}'`);
+        return { valid: true, username: sessionRec.username, ipAddress: sessionRec.ipAddress };
+    }
+}

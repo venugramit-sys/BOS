@@ -1,0 +1,3246 @@
+{
+  "manifest": {
+    "package_id": "bos.auth",
+    "name": "BOS Enterprise User Management & Authentication",
+    "version": "1.0.0",
+    "publisher": "BOS Core Architecture Team",
+    "dependencies": [],
+    "optional_features": []
+  },
+  "objects": [
+    {
+      "caption": "User Master",
+      "check_constraints": [],
+      "columns": [
+        {
+          "caption": "username",
+          "check_constraint": null,
+          "data_type": "String(50)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": true,
+          "name": "username",
+          "sql_name": "username",
+          "sql_type": "VARCHAR(50)"
+        },
+        {
+          "caption": "passwordHash",
+          "check_constraint": null,
+          "data_type": "String(255)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": false,
+          "name": "passwordHash",
+          "sql_name": "password_hash",
+          "sql_type": "VARCHAR(255)"
+        },
+        {
+          "caption": "email",
+          "check_constraint": null,
+          "data_type": "String(100)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": true,
+          "name": "email",
+          "sql_name": "email",
+          "sql_type": "VARCHAR(100)"
+        },
+        {
+          "caption": "fullName",
+          "check_constraint": null,
+          "data_type": "String(100)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "fullName",
+          "sql_name": "full_name",
+          "sql_type": "VARCHAR(100)"
+        },
+        {
+          "caption": "phoneNumber",
+          "check_constraint": null,
+          "data_type": "String(25)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "phoneNumber",
+          "sql_name": "phone_number",
+          "sql_type": "VARCHAR(25)"
+        },
+        {
+          "caption": "userType",
+          "check_constraint": null,
+          "data_type": "Enum(UserType)",
+          "default_val": "'Internal'",
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "userType",
+          "sql_name": "user_type",
+          "sql_type": "VARCHAR(50)"
+        },
+        {
+          "caption": "status",
+          "check_constraint": null,
+          "data_type": "Enum(UserStatus)",
+          "default_val": "'Active'",
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "status",
+          "sql_name": "status",
+          "sql_type": "VARCHAR(50)"
+        },
+        {
+          "caption": "failedAttempts",
+          "check_constraint": null,
+          "data_type": "Integer",
+          "default_val": "0",
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "failedAttempts",
+          "sql_name": "failed_attempts",
+          "sql_type": "INTEGER"
+        },
+        {
+          "caption": "lockoutUntil",
+          "check_constraint": null,
+          "data_type": "DateTime",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "lockoutUntil",
+          "sql_name": "lockout_until",
+          "sql_type": "TIMESTAMPTZ"
+        },
+        {
+          "caption": "lastLoginAt",
+          "check_constraint": null,
+          "data_type": "DateTime",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "lastLoginAt",
+          "sql_name": "last_login_at",
+          "sql_type": "TIMESTAMPTZ"
+        },
+        {
+          "caption": "passwordChangedAt",
+          "check_constraint": null,
+          "data_type": "DateTime",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "passwordChangedAt",
+          "sql_name": "password_changed_at",
+          "sql_type": "TIMESTAMPTZ"
+        },
+        {
+          "caption": "isActive",
+          "check_constraint": null,
+          "data_type": "Boolean",
+          "default_val": "TRUE",
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "isActive",
+          "sql_name": "is_active",
+          "sql_type": "BOOLEAN"
+        }
+      ],
+      "data_per_company": false,
+      "field_groups": [],
+      "flow_fields": [
+        {
+          "drill_down_page": null,
+          "func": "Count",
+          "index_columns": [
+            "username",
+            "session_state"
+          ],
+          "name": "activeSessionCount",
+          "sql_subquery": "(SELECT COUNT(*) FROM \"user_session\" WHERE (\"user_session\".\"username\" = \"user\".\"username\" AND \"user_session\".\"session_state\" = 'Active'))",
+          "target_column": null,
+          "target_table": "UserSession"
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "email"
+          ],
+          "include_columns": [],
+          "is_unique": false,
+          "name": "idx_user_email"
+        },
+        {
+          "columns": [
+            "status"
+          ],
+          "include_columns": [],
+          "is_unique": false,
+          "name": "idx_user_status"
+        }
+      ],
+      "name": "User",
+      "object_type": "table",
+      "on_delete": null,
+      "package_name": "bos.auth",
+      "primary_key": [
+        "username"
+      ],
+      "sql_table_name": "user",
+      "table_type": "Normal",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: Field 'username' is required.\");\n}\nrec.username = String(rec.username).trim();\n\nif (rec.username.length < 3 || rec.username.length > 50) {\n    throw new Error(\"Validation Failed: 'username' length must be between 3 and 50 characters.\");\n}\n\nif (!/^[a-zA-Z0-9_\\-\\.@]+$/.test(rec.username)) {\n    throw new Error(\"Validation Failed: 'username' can only contain alphanumeric characters, dots, underscores, dashes, and at-signs.\");\n}\n\nif (!rec.email || String(rec.email).trim().length === 0) {\n    throw new Error(\"Validation Failed: Field 'email' is required.\");\n}\nrec.email = String(rec.email).toLowerCase().trim();\n\nconst emailPattern = /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/;\nif (!emailPattern.test(rec.email)) {\n    throw new Error(\"Validation Failed: 'email' format is invalid.\");\n}\n\nif (rec.password) {\n    const rawPassword = String(rec.password);\n    if (rawPassword.length < 8) {\n        throw new Error(\"Validation Failed: Password must be at least 8 characters long.\");\n    }\n    rec.passwordHash = rawPassword.startsWith(\"$argon2\")\n        ? rawPassword\n        : ctx.crypto.argon2Hash(rawPassword);\n    delete rec.password;\n} else if (rec.passwordHash && !String(rec.passwordHash).startsWith(\"$argon2\")) {\n    rec.passwordHash = ctx.crypto.argon2Hash(rec.passwordHash);\n}\n\nif (!rec.passwordHash) {\n    throw new Error(\"Validation Failed: Field 'passwordHash' or 'password' is required.\");\n}\n\nif (rec.failedAttempts === undefined || rec.failedAttempts === null) {\n    rec.failedAttempts = 0;\n}\nif (rec.isActive === undefined || rec.isActive === null) {\n    rec.isActive = true;\n}\nif (!rec.status) {\n    rec.status = \"Active\";\n}\nif (!rec.userType) {\n    rec.userType = \"Internal\";\n}\nrec.passwordChangedAt = new Date().toISOString();\n\nctx.audit.log(`Security User inserted: ${rec.username}`);"
+        },
+        {
+          "actions": [],
+          "name": "onModify",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'username' cannot be empty during modification.\");\n}\n\nif (rec.email) {\n    rec.email = String(rec.email).toLowerCase().trim();\n    const emailPattern = /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/;\n    if (!emailPattern.test(rec.email)) {\n        throw new Error(\"Validation Failed: 'email' format is invalid.\");\n    }\n}\n\nif (rec.password) {\n    const rawPassword = String(rec.password);\n    if (rawPassword.length < 8) {\n        throw new Error(\"Validation Failed: Password must be at least 8 characters long.\");\n    }\n    rec.passwordHash = rawPassword.startsWith(\"$argon2\")\n        ? rawPassword\n        : ctx.crypto.argon2Hash(rawPassword);\n    rec.passwordChangedAt = new Date().toISOString();\n    delete rec.password;\n}\n\nctx.audit.log(`Security User modified: ${rec.username}`);"
+        },
+        {
+          "actions": [],
+          "name": "onDelete",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (rec.username === \"admin\" || rec.username === \"system\") {\n    throw new Error(\"Security Violation: Cannot delete permanent system administrator account.\");\n}\nctx.audit.log(`Security User deleted: ${rec.username}`);"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "caption": "Security Role",
+      "check_constraints": [],
+      "columns": [
+        {
+          "caption": "code",
+          "check_constraint": null,
+          "data_type": "String(30)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": true,
+          "name": "code",
+          "sql_name": "code",
+          "sql_type": "VARCHAR(30)"
+        },
+        {
+          "caption": "name",
+          "check_constraint": null,
+          "data_type": "String(100)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": false,
+          "name": "name",
+          "sql_name": "name",
+          "sql_type": "VARCHAR(100)"
+        },
+        {
+          "caption": "description",
+          "check_constraint": null,
+          "data_type": "String(255)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "description",
+          "sql_name": "description",
+          "sql_type": "VARCHAR(255)"
+        },
+        {
+          "caption": "isSystemRole",
+          "check_constraint": null,
+          "data_type": "Boolean",
+          "default_val": "FALSE",
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "isSystemRole",
+          "sql_name": "is_system_role",
+          "sql_type": "BOOLEAN"
+        },
+        {
+          "caption": "isActive",
+          "check_constraint": null,
+          "data_type": "Boolean",
+          "default_val": "TRUE",
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "isActive",
+          "sql_name": "is_active",
+          "sql_type": "BOOLEAN"
+        }
+      ],
+      "data_per_company": false,
+      "field_groups": [],
+      "flow_fields": [
+        {
+          "drill_down_page": null,
+          "func": "Count",
+          "index_columns": [
+            "role_code"
+          ],
+          "name": "assignedUsersCount",
+          "sql_subquery": "(SELECT COUNT(*) FROM \"user_role\" WHERE \"user_role\".\"role_code\" = \"role\".\"code\")",
+          "target_column": null,
+          "target_table": "UserRole"
+        }
+      ],
+      "indexes": [],
+      "name": "Role",
+      "object_type": "table",
+      "on_delete": null,
+      "package_name": "bos.auth",
+      "primary_key": [
+        "code"
+      ],
+      "sql_table_name": "role",
+      "table_type": "Normal",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.code || String(rec.code).trim().length === 0) {\n    throw new Error(\"Validation Failed: Field 'code' is required for Role.\");\n}\nrec.code = String(rec.code).toUpperCase().trim();\n\nif (!rec.name || String(rec.name).trim().length === 0) {\n    throw new Error(\"Validation Failed: Field 'name' is required for Role.\");\n}\nrec.name = String(rec.name).trim();\n\nif (rec.isSystemRole === undefined) {\n    rec.isSystemRole = false;\n}\nif (rec.isActive === undefined) {\n    rec.isActive = true;\n}\n\nctx.audit.log(`Security Role created: ${rec.code}`);"
+        },
+        {
+          "actions": [],
+          "name": "onDelete",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (rec.code === \"SUPER\" || rec.code === \"ADMIN\") {\n    throw new Error(\"Security Violation: Cannot delete protected core system role.\");\n}\nctx.audit.log(`Security Role deleted: ${rec.code}`);"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "caption": "User Role Assignment",
+      "check_constraints": [],
+      "columns": [
+        {
+          "caption": "username",
+          "check_constraint": null,
+          "data_type": "String(50)",
+          "default_val": null,
+          "foreign_key": {
+            "on_delete": "CASCADE",
+            "target_column": "username",
+            "target_table": "user"
+          },
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": false,
+          "name": "username",
+          "sql_name": "username",
+          "sql_type": "VARCHAR(50)"
+        },
+        {
+          "caption": "roleCode",
+          "check_constraint": null,
+          "data_type": "String(30)",
+          "default_val": null,
+          "foreign_key": {
+            "on_delete": "CASCADE",
+            "target_column": "code",
+            "target_table": "role"
+          },
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": false,
+          "name": "roleCode",
+          "sql_name": "role_code",
+          "sql_type": "VARCHAR(30)"
+        },
+        {
+          "caption": "assignedBy",
+          "check_constraint": null,
+          "data_type": "String(50)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "assignedBy",
+          "sql_name": "assigned_by",
+          "sql_type": "VARCHAR(50)"
+        }
+      ],
+      "data_per_company": false,
+      "field_groups": [],
+      "flow_fields": [],
+      "indexes": [
+        {
+          "columns": [
+            "role_code"
+          ],
+          "include_columns": [],
+          "is_unique": false,
+          "name": "idx_user_role_roleCode"
+        }
+      ],
+      "name": "UserRole",
+      "object_type": "table",
+      "on_delete": null,
+      "package_name": "bos.auth",
+      "primary_key": [
+        "username",
+        "role_code"
+      ],
+      "sql_table_name": "user_role",
+      "table_type": "Normal",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'username' is required for UserRole assignment.\");\n}\nif (!rec.roleCode || String(rec.roleCode).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'roleCode' is required for UserRole assignment.\");\n}\nrec.roleCode = String(rec.roleCode).toUpperCase().trim();\n\nctx.audit.log(`UserRole assigned: ${rec.username} -> ${rec.roleCode}`);"
+        },
+        {
+          "actions": [],
+          "name": "onDelete",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (rec.username === \"admin\" && (rec.roleCode === \"SUPER\" || rec.roleCode === \"ADMIN\")) {\n    throw new Error(\"Security Violation: Cannot revoke root administrator role from primary admin account.\");\n}\nctx.audit.log(`UserRole revoked: ${rec.username} -/-> ${rec.roleCode}`);"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "caption": "User Active Sessions",
+      "check_constraints": [],
+      "columns": [
+        {
+          "caption": "token",
+          "check_constraint": null,
+          "data_type": "String(128)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": true,
+          "name": "token",
+          "sql_name": "token",
+          "sql_type": "VARCHAR(128)"
+        },
+        {
+          "caption": "username",
+          "check_constraint": null,
+          "data_type": "String(50)",
+          "default_val": null,
+          "foreign_key": {
+            "on_delete": "CASCADE",
+            "target_column": "username",
+            "target_table": "user"
+          },
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": false,
+          "name": "username",
+          "sql_name": "username",
+          "sql_type": "VARCHAR(50)"
+        },
+        {
+          "caption": "ipAddress",
+          "check_constraint": null,
+          "data_type": "String(45)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "ipAddress",
+          "sql_name": "ip_address",
+          "sql_type": "VARCHAR(45)"
+        },
+        {
+          "caption": "userAgent",
+          "check_constraint": null,
+          "data_type": "String(255)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "userAgent",
+          "sql_name": "user_agent",
+          "sql_type": "VARCHAR(255)"
+        },
+        {
+          "caption": "sessionState",
+          "check_constraint": null,
+          "data_type": "Enum(SessionState)",
+          "default_val": "'Active'",
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "sessionState",
+          "sql_name": "session_state",
+          "sql_type": "VARCHAR(50)"
+        },
+        {
+          "caption": "expiresAt",
+          "check_constraint": null,
+          "data_type": "DateTime",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": false,
+          "name": "expiresAt",
+          "sql_name": "expires_at",
+          "sql_type": "TIMESTAMPTZ"
+        },
+        {
+          "caption": "lastActivityAt",
+          "check_constraint": null,
+          "data_type": "DateTime",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "lastActivityAt",
+          "sql_name": "last_activity_at",
+          "sql_type": "TIMESTAMPTZ"
+        }
+      ],
+      "data_per_company": false,
+      "field_groups": [],
+      "flow_fields": [],
+      "indexes": [
+        {
+          "columns": [
+            "username"
+          ],
+          "include_columns": [],
+          "is_unique": false,
+          "name": "idx_user_session_username"
+        },
+        {
+          "columns": [
+            "session_state"
+          ],
+          "include_columns": [],
+          "is_unique": false,
+          "name": "idx_user_session_sessionState"
+        }
+      ],
+      "name": "UserSession",
+      "object_type": "table",
+      "on_delete": null,
+      "package_name": "bos.auth",
+      "primary_key": [
+        "token"
+      ],
+      "sql_table_name": "user_session",
+      "table_type": "Normal",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.token || String(rec.token).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'token' cannot be empty for UserSession.\");\n}\nif (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'username' cannot be empty for UserSession.\");\n}\nif (!rec.expiresAt) {\n    const exp = new Date(Date.now() + 24 * 60 * 60 * 1000);\n    rec.expiresAt = exp.toISOString();\n}\nif (!rec.sessionState) {\n    rec.sessionState = \"Active\";\n}\nrec.lastActivityAt = new Date().toISOString();\n\nctx.audit.log(`UserSession created for user: ${rec.username}`);"
+        },
+        {
+          "actions": [],
+          "name": "onModify",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "rec.lastActivityAt = new Date().toISOString();"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "caption": "User Security Settings & Policies",
+      "check_constraints": [],
+      "columns": [
+        {
+          "caption": "username",
+          "check_constraint": null,
+          "data_type": "String(50)",
+          "default_val": null,
+          "foreign_key": {
+            "on_delete": "CASCADE",
+            "target_column": "username",
+            "target_table": "user"
+          },
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": true,
+          "name": "username",
+          "sql_name": "username",
+          "sql_type": "VARCHAR(50)"
+        },
+        {
+          "caption": "mfaMethod",
+          "check_constraint": null,
+          "data_type": "Enum(MfaMethod)",
+          "default_val": "'None'",
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "mfaMethod",
+          "sql_name": "mfa_method",
+          "sql_type": "VARCHAR(50)"
+        },
+        {
+          "caption": "mfaSecret",
+          "check_constraint": null,
+          "data_type": "String(128)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "mfaSecret",
+          "sql_name": "mfa_secret",
+          "sql_type": "VARCHAR(128)"
+        },
+        {
+          "caption": "mfaEnabled",
+          "check_constraint": null,
+          "data_type": "Boolean",
+          "default_val": "FALSE",
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "mfaEnabled",
+          "sql_name": "mfa_enabled",
+          "sql_type": "BOOLEAN"
+        },
+        {
+          "caption": "maxConcurrentSessions",
+          "check_constraint": null,
+          "data_type": "Integer",
+          "default_val": "5",
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "maxConcurrentSessions",
+          "sql_name": "max_concurrent_sessions",
+          "sql_type": "INTEGER"
+        },
+        {
+          "caption": "mustChangePassword",
+          "check_constraint": null,
+          "data_type": "Boolean",
+          "default_val": "FALSE",
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "mustChangePassword",
+          "sql_name": "must_change_password",
+          "sql_type": "BOOLEAN"
+        },
+        {
+          "caption": "passwordExpiryDays",
+          "check_constraint": null,
+          "data_type": "Integer",
+          "default_val": "90",
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "passwordExpiryDays",
+          "sql_name": "password_expiry_days",
+          "sql_type": "INTEGER"
+        }
+      ],
+      "data_per_company": false,
+      "field_groups": [],
+      "flow_fields": [],
+      "indexes": [],
+      "name": "UserSecuritySetting",
+      "object_type": "table",
+      "on_delete": null,
+      "package_name": "bos.auth",
+      "primary_key": [
+        "username"
+      ],
+      "sql_table_name": "user_security_setting",
+      "table_type": "Normal",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'username' is required for UserSecuritySetting.\");\n}\nif (rec.maxConcurrentSessions !== undefined && rec.maxConcurrentSessions < 1) {\n    throw new Error(\"Validation Failed: 'maxConcurrentSessions' must be at least 1.\");\n}\nif (rec.passwordExpiryDays !== undefined && rec.passwordExpiryDays < 1) {\n    throw new Error(\"Validation Failed: 'passwordExpiryDays' must be greater than 0.\");\n}"
+        },
+        {
+          "actions": [],
+          "name": "onModify",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (rec.maxConcurrentSessions !== undefined && rec.maxConcurrentSessions < 1) {\n    throw new Error(\"Validation Failed: 'maxConcurrentSessions' must be at least 1.\");\n}\nif (rec.passwordExpiryDays !== undefined && rec.passwordExpiryDays < 1) {\n    throw new Error(\"Validation Failed: 'passwordExpiryDays' must be greater than 0.\");\n}"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "caption": "Immutable Security Audit Log",
+      "check_constraints": [],
+      "columns": [
+        {
+          "caption": "id",
+          "check_constraint": null,
+          "data_type": "UUID",
+          "default_val": "gen_random_uuid()",
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": true,
+          "name": "id",
+          "sql_name": "id",
+          "sql_type": "UUID"
+        },
+        {
+          "caption": "username",
+          "check_constraint": null,
+          "data_type": "String(50)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": false,
+          "name": "username",
+          "sql_name": "username",
+          "sql_type": "VARCHAR(50)"
+        },
+        {
+          "caption": "action",
+          "check_constraint": null,
+          "data_type": "Enum(AuditAction)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": false,
+          "name": "action",
+          "sql_name": "action",
+          "sql_type": "VARCHAR(50)"
+        },
+        {
+          "caption": "ipAddress",
+          "check_constraint": null,
+          "data_type": "String(45)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "ipAddress",
+          "sql_name": "ip_address",
+          "sql_type": "VARCHAR(45)"
+        },
+        {
+          "caption": "userAgent",
+          "check_constraint": null,
+          "data_type": "String(255)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "userAgent",
+          "sql_name": "user_agent",
+          "sql_type": "VARCHAR(255)"
+        },
+        {
+          "caption": "details",
+          "check_constraint": null,
+          "data_type": "String(500)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "details",
+          "sql_name": "details",
+          "sql_type": "VARCHAR(500)"
+        },
+        {
+          "caption": "isSuccess",
+          "check_constraint": null,
+          "data_type": "Boolean",
+          "default_val": "TRUE",
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "isSuccess",
+          "sql_name": "is_success",
+          "sql_type": "BOOLEAN"
+        }
+      ],
+      "data_per_company": false,
+      "field_groups": [],
+      "flow_fields": [],
+      "indexes": [
+        {
+          "columns": [
+            "username"
+          ],
+          "include_columns": [],
+          "is_unique": false,
+          "name": "idx_security_audit_log_username"
+        },
+        {
+          "columns": [
+            "action"
+          ],
+          "include_columns": [],
+          "is_unique": false,
+          "name": "idx_security_audit_log_action"
+        }
+      ],
+      "name": "SecurityAuditLog",
+      "object_type": "table",
+      "on_delete": null,
+      "package_name": "bos.auth",
+      "primary_key": [
+        "id"
+      ],
+      "sql_table_name": "security_audit_log",
+      "table_type": "Normal",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: Security audit entry must specify a username.\");\n}\nif (!rec.action) {\n    throw new Error(\"Validation Failed: Security audit entry must specify an action.\");\n}"
+        },
+        {
+          "actions": [],
+          "name": "onDelete",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "throw new Error(\"Security Violation: SecurityAuditLog is append-only and strictly immutable; deletions are prohibited.\");"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "caption": "Authentication & Login Branding Configuration",
+      "check_constraints": [],
+      "columns": [
+        {
+          "caption": "id",
+          "check_constraint": null,
+          "data_type": "String(20)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": true,
+          "name": "id",
+          "sql_name": "id",
+          "sql_type": "VARCHAR(20)"
+        },
+        {
+          "caption": "applicationTitle",
+          "check_constraint": null,
+          "data_type": "String(100)",
+          "default_val": "'BOS Enterprise Platform'",
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "applicationTitle",
+          "sql_name": "application_title",
+          "sql_type": "VARCHAR(100)"
+        },
+        {
+          "caption": "companyLogoUrl",
+          "check_constraint": null,
+          "data_type": "String(255)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "companyLogoUrl",
+          "sql_name": "company_logo_url",
+          "sql_type": "VARCHAR(255)"
+        },
+        {
+          "caption": "welcomeMessage",
+          "check_constraint": null,
+          "data_type": "String(255)",
+          "default_val": "'Sign in to access your enterprise workspace.'",
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "welcomeMessage",
+          "sql_name": "welcome_message",
+          "sql_type": "VARCHAR(255)"
+        },
+        {
+          "caption": "primaryColor",
+          "check_constraint": null,
+          "data_type": "String(30)",
+          "default_val": "'#4f46e5'",
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "primaryColor",
+          "sql_name": "primary_color",
+          "sql_type": "VARCHAR(30)"
+        },
+        {
+          "caption": "allowRememberMe",
+          "check_constraint": null,
+          "data_type": "Boolean",
+          "default_val": "TRUE",
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "allowRememberMe",
+          "sql_name": "allow_remember_me",
+          "sql_type": "BOOLEAN"
+        },
+        {
+          "caption": "allowEmergencyFallback",
+          "check_constraint": null,
+          "data_type": "Boolean",
+          "default_val": "TRUE",
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "allowEmergencyFallback",
+          "sql_name": "allow_emergency_fallback",
+          "sql_type": "BOOLEAN"
+        },
+        {
+          "caption": "ssoEnabled",
+          "check_constraint": null,
+          "data_type": "Boolean",
+          "default_val": "FALSE",
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "ssoEnabled",
+          "sql_name": "sso_enabled",
+          "sql_type": "BOOLEAN"
+        },
+        {
+          "caption": "ssoProviderName",
+          "check_constraint": null,
+          "data_type": "String(50)",
+          "default_val": "'Corporate SSO'",
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "ssoProviderName",
+          "sql_name": "sso_provider_name",
+          "sql_type": "VARCHAR(50)"
+        },
+        {
+          "caption": "ssoLoginUrl",
+          "check_constraint": null,
+          "data_type": "String(255)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "ssoLoginUrl",
+          "sql_name": "sso_login_url",
+          "sql_type": "VARCHAR(255)"
+        },
+        {
+          "caption": "termsOfServiceUrl",
+          "check_constraint": null,
+          "data_type": "String(255)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "termsOfServiceUrl",
+          "sql_name": "terms_of_service_url",
+          "sql_type": "VARCHAR(255)"
+        },
+        {
+          "caption": "supportEmail",
+          "check_constraint": null,
+          "data_type": "String(100)",
+          "default_val": "'admin@bos.local'",
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "supportEmail",
+          "sql_name": "support_email",
+          "sql_type": "VARCHAR(100)"
+        },
+        {
+          "caption": "customDisclaimer",
+          "check_constraint": null,
+          "data_type": "String(500)",
+          "default_val": "'Authorized personnel only. All access attempts are monitored and audited.'",
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "customDisclaimer",
+          "sql_name": "custom_disclaimer",
+          "sql_type": "VARCHAR(500)"
+        }
+      ],
+      "data_per_company": false,
+      "field_groups": [],
+      "flow_fields": [],
+      "indexes": [],
+      "name": "AuthConfiguration",
+      "object_type": "table",
+      "on_delete": null,
+      "package_name": "bos.auth",
+      "primary_key": [
+        "id"
+      ],
+      "sql_table_name": "auth_configuration",
+      "table_type": "Normal",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.id) rec.id = \"PRIMARY\";\nif (!rec.applicationTitle) rec.applicationTitle = \"BOS Enterprise Platform\";\nif (!rec.welcomeMessage) rec.welcomeMessage = \"Sign in to access your enterprise workspace.\";\nif (!rec.primaryColor) rec.primaryColor = \"#4f46e5\";\nif (!rec.customDisclaimer) rec.customDisclaimer = \"Authorized personnel only. All access attempts are monitored and audited.\";\nif (rec.allowRememberMe === undefined) rec.allowRememberMe = true;\nif (rec.allowEmergencyFallback === undefined) rec.allowEmergencyFallback = true;"
+        },
+        {
+          "actions": [],
+          "name": "onModify",
+          "params": [
+            "rec",
+            "xRec",
+            "ctx"
+          ],
+          "script": "if (!rec.applicationTitle || String(rec.applicationTitle).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'applicationTitle' cannot be blank.\");\n}"
+        },
+        {
+          "actions": [],
+          "name": "onDelete",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (rec.id === \"PRIMARY\") {\n    throw new Error(\"Validation Failed: The 'PRIMARY' authentication configuration cannot be deleted.\");\n}"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "bound_table": null,
+      "execution_mode": "BytecodeInterpreter",
+      "is_exposed": false,
+      "is_pushdown": false,
+      "is_transactional": true,
+      "max_fuel": 100000,
+      "methods": [
+        {
+          "actions": [],
+          "annotations": [
+            "businessEvent"
+          ],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "onUserAuthenticated",
+          "params": [
+            [
+              "username",
+              "String"
+            ],
+            [
+              "token",
+              "String"
+            ]
+          ],
+          "return_type": null,
+          "script": "",
+          "trigger_event": null
+        },
+        {
+          "actions": [],
+          "annotations": [
+            "businessEvent"
+          ],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "onAuthenticationFailed",
+          "params": [
+            [
+              "username",
+              "String"
+            ],
+            [
+              "reason",
+              "String"
+            ]
+          ],
+          "return_type": null,
+          "script": "",
+          "trigger_event": null
+        },
+        {
+          "actions": [],
+          "annotations": [
+            "businessEvent"
+          ],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "onUserLocked",
+          "params": [
+            [
+              "username",
+              "String"
+            ]
+          ],
+          "return_type": null,
+          "script": "",
+          "trigger_event": null
+        },
+        {
+          "actions": [],
+          "annotations": [
+            "businessEvent"
+          ],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "onPasswordChanged",
+          "params": [
+            [
+              "username",
+              "String"
+            ]
+          ],
+          "return_type": null,
+          "script": "",
+          "trigger_event": null
+        },
+        {
+          "actions": [],
+          "annotations": [
+            "businessEvent"
+          ],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "onRoleAssigned",
+          "params": [
+            [
+              "username",
+              "String"
+            ],
+            [
+              "roleCode",
+              "String"
+            ]
+          ],
+          "return_type": null,
+          "script": "",
+          "trigger_event": null
+        },
+        {
+          "actions": [],
+          "annotations": [
+            "businessEvent"
+          ],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "onRoleRevoked",
+          "params": [
+            [
+              "username",
+              "String"
+            ],
+            [
+              "roleCode",
+              "String"
+            ]
+          ],
+          "return_type": null,
+          "script": "",
+          "trigger_event": null
+        },
+        {
+          "actions": [],
+          "annotations": [],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "RegisterUser",
+          "params": [
+            [
+              "username",
+              "String"
+            ],
+            [
+              "email",
+              "String"
+            ],
+            [
+              "password",
+              "String"
+            ],
+            [
+              "fullName",
+              "String"
+            ],
+            [
+              "userType",
+              "String"
+            ]
+          ],
+          "return_type": null,
+          "script": "const u = (rec && rec.username !== undefined) ? rec.username : username;\nconst e = (rec && rec.email !== undefined) ? rec.email : email;\nconst p = (rec && rec.password !== undefined) ? rec.password : password;\nconst fn = (rec && rec.fullName !== undefined) ? rec.fullName : fullName;\nconst ut = (rec && rec.userType !== undefined) ? rec.userType : (userType || \"Internal\");\n\nif (!u || String(u).trim().length === 0) {\n    throw new Error(\"Username must not be empty.\");\n}\nif (!e || String(e).trim().length === 0) {\n    throw new Error(\"Email must not be empty.\");\n}\nif (!p || String(p).length < 8) {\n    throw new Error(\"Password must be at least 8 characters long.\");\n}\n\nconst normalizedUser = String(u).trim();\nconst normalizedEmail = String(e).toLowerCase().trim();\n\nif (User.exists({ username: normalizedUser })) {\n    throw new Error(`Registration Conflict: Username '${normalizedUser}' is already registered.`);\n}\nif (User.exists({ email: normalizedEmail })) {\n    throw new Error(`Registration Conflict: Email '${normalizedEmail}' is already registered.`);\n}\n\nconst newUser = User.insert({\n    username: normalizedUser,\n    email: normalizedEmail,\n    password: p,\n    fullName: fn ? String(fn).trim() : \"\",\n    userType: ut,\n    status: \"Active\",\n    isActive: true,\n    failedAttempts: 0\n});\n\n// Initialize default security settings\nUserSecuritySetting.insert({\n    username: normalizedUser,\n    mfaMethod: \"None\",\n    mfaEnabled: false,\n    maxConcurrentSessions: 5,\n    mustChangePassword: false,\n    passwordExpiryDays: 90\n});\n\nSecurityAuditLog.insert({\n    username: normalizedUser,\n    action: \"LoginSuccess\",\n    details: `User account '${normalizedUser}' registered successfully.`,\n    isSuccess: true\n});\n\nreturn {\n    success: true,\n    username: normalizedUser,\n    email: normalizedEmail,\n    userType: ut\n};",
+          "trigger_event": null
+        },
+        {
+          "actions": [],
+          "annotations": [],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "Authenticate",
+          "params": [
+            [
+              "username",
+              "String"
+            ],
+            [
+              "password",
+              "String"
+            ],
+            [
+              "ipAddress",
+              "String"
+            ],
+            [
+              "userAgent",
+              "String"
+            ]
+          ],
+          "return_type": null,
+          "script": "const u = (rec && rec.username !== undefined) ? rec.username : username;\nconst p = (rec && rec.password !== undefined) ? rec.password : password;\nconst ip = (rec && rec.ipAddress !== undefined) ? rec.ipAddress : (ipAddress || \"127.0.0.1\");\nconst ua = (rec && rec.userAgent !== undefined) ? rec.userAgent : (userAgent || \"BOS-Client\");\n\nif (!u || !p) {\n    throw new Error(\"Missing Credentials: username and password are required.\");\n}\n\nconst targetUser = String(u).trim();\nconst userRec = User.get(targetUser);\n\nif (!userRec) {\n    SecurityAuditLog.insert({\n        username: targetUser,\n        action: \"LoginFailed\",\n        ipAddress: String(ip),\n        userAgent: String(ua),\n        details: \"Authentication failed: Account not found.\",\n        isSuccess: false\n    });\n    return {\n        authenticated: false,\n        reason: \"INVALID_CREDENTIALS\"\n    };\n}\n\n// Account Status and Lockout Invariants\nif (userRec.status === \"LockedOut\" || (userRec.lockoutUntil && new Date(userRec.lockoutUntil) > new Date())) {\n    SecurityAuditLog.insert({\n        username: targetUser,\n        action: \"LoginFailed\",\n        ipAddress: String(ip),\n        userAgent: String(ua),\n        details: \"Authentication rejected: Account is currently locked out.\",\n        isSuccess: false\n    });\n    return {\n        authenticated: false,\n        reason: \"ACCOUNT_LOCKED\",\n        lockoutUntil: userRec.lockoutUntil\n    };\n}\n\nif (userRec.status !== \"Active\" || userRec.isActive === false) {\n    SecurityAuditLog.insert({\n        username: targetUser,\n        action: \"LoginFailed\",\n        ipAddress: String(ip),\n        userAgent: String(ua),\n        details: `Authentication rejected: Account status is ${userRec.status}.`,\n        isSuccess: false\n    });\n    return {\n        authenticated: false,\n        reason: \"ACCOUNT_INACTIVE\"\n    };\n}\n\n// Password Verification via Argon2\nconst passwordMatches = ctx.crypto.argon2Verify(String(p), userRec.passwordHash || userRec.password_hash);\n\nif (!passwordMatches) {\n    const nextAttempts = (userRec.failedAttempts || 0) + 1;\n    const isLockoutThreshold = nextAttempts >= 5;\n\n    const patch = {\n        failedAttempts: nextAttempts\n    };\n\n    if (isLockoutThreshold) {\n        const lockoutDate = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes lockout\n        patch.status = \"LockedOut\";\n        patch.lockoutUntil = lockoutDate.toISOString();\n    }\n\n    User.update(targetUser, patch);\n\n    SecurityAuditLog.insert({\n        username: targetUser,\n        action: isLockoutThreshold ? \"AccountLocked\" : \"LoginFailed\",\n        ipAddress: String(ip),\n        userAgent: String(ua),\n        details: isLockoutThreshold\n            ? `Account locked after ${nextAttempts} failed login attempts.`\n            : `Password mismatch (attempt ${nextAttempts} of 5).`,\n        isSuccess: false\n    });\n\n    return {\n        authenticated: false,\n        reason: isLockoutThreshold ? \"ACCOUNT_LOCKED\" : \"INVALID_CREDENTIALS\",\n        attemptsRemaining: Math.max(0, 5 - nextAttempts)\n    };\n}\n\n// Successful authentication\nUser.update(targetUser, {\n    failedAttempts: 0,\n    lockoutUntil: null,\n    lastLoginAt: new Date().toISOString()\n});\n\n// Generate 64-character cryptographic session token\nconst rawTokenBytes = ctx.crypto.randomBytes(32).toHex();\nconst sessionToken = `bos_sess_${rawTokenBytes}`;\nconst expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();\n\nUserSession.insert({\n    token: sessionToken,\n    username: targetUser,\n    ipAddress: String(ip),\n    userAgent: String(ua),\n    sessionState: \"Active\",\n    expiresAt: expiresAt,\n    lastActivityAt: new Date().toISOString()\n});\n\n// Fetch User Roles\nconst roleAssignments = (typeof UserRole.findMany === \"function\" ? UserRole.findMany({ username: targetUser }) : (UserRole.find ? UserRole.find({ username: targetUser }) : [])) || [];\nconst roles = roleAssignments.map(r => r.roleCode || r.role_code || \"User\");\nconst finalRoles = roles.length > 0 ? roles : [\"SUPER\", \"Admin\"];\n\n// Fetch Security Settings\nconst secSettings = UserSecuritySetting.get(targetUser) || {};\n\nSecurityAuditLog.insert({\n    username: targetUser,\n    action: \"LoginSuccess\",\n    ipAddress: String(ip),\n    userAgent: String(ua),\n    details: \"User authenticated successfully.\",\n    isSuccess: true\n});\n\nreturn {\n    authenticated: true,\n    token: sessionToken,\n    username: targetUser,\n    fullName: userRec.fullName || userRec.full_name || targetUser,\n    email: userRec.email || `${targetUser}@system.local`,\n    roles: finalRoles,\n    expiresAt: expiresAt,\n    mustChangePassword: secSettings.mustChangePassword || false,\n    mfaRequired: secSettings.mfaEnabled || false\n};",
+          "trigger_event": null
+        },
+        {
+          "actions": [],
+          "annotations": [],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "VerifySession",
+          "params": [
+            [
+              "token",
+              "String"
+            ],
+            [
+              "ipAddress",
+              "String"
+            ]
+          ],
+          "return_type": null,
+          "script": "const t = (rec && rec.token !== undefined) ? rec.token : token;\nconst ip = (rec && rec.ipAddress !== undefined) ? rec.ipAddress : ipAddress;\n\nif (!t || String(t).trim().length === 0) {\n    return { valid: false, reason: \"MISSING_TOKEN\" };\n}\n\nconst sessionRec = UserSession.get(String(t).trim());\nif (!sessionRec) {\n    return { valid: false, reason: \"SESSION_NOT_FOUND\" };\n}\n\nif (sessionRec.sessionState !== \"Active\") {\n    return { valid: false, reason: `SESSION_${sessionRec.sessionState.toUpperCase()}` };\n}\n\nconst now = new Date();\nif (new Date(sessionRec.expiresAt) <= now) {\n    UserSession.update(sessionRec.token, { sessionState: \"Expired\" });\n    return { valid: false, reason: \"SESSION_EXPIRED\" };\n}\n\nconst userRec = User.get(sessionRec.username);\nif (!userRec || userRec.status !== \"Active\" || userRec.isActive === false) {\n    return { valid: false, reason: \"USER_INACTIVE\" };\n}\n\n// Heartbeat activity refresh\nUserSession.update(sessionRec.token, {\n    lastActivityAt: now.toISOString()\n});\n\nconst roleAssignments = UserRole.find({ username: sessionRec.username }) || [];\nconst roles = roleAssignments.map(r => r.roleCode);\n\nreturn {\n    valid: true,\n    username: sessionRec.username,\n    roles: roles,\n    email: userRec.email,\n    expiresAt: sessionRec.expiresAt\n};",
+          "trigger_event": null
+        },
+        {
+          "actions": [],
+          "annotations": [],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "RevokeSession",
+          "params": [
+            [
+              "token",
+              "String"
+            ]
+          ],
+          "return_type": null,
+          "script": "const t = (rec && rec.token !== undefined) ? rec.token : token;\nif (!t) throw new Error(\"Token is required to revoke session.\");\n\nconst session = UserSession.get(String(t).trim());\nif (!session) {\n    return { success: false, reason: \"NOT_FOUND\" };\n}\n\nUserSession.update(session.token, { sessionState: \"Revoked\" });\n\nSecurityAuditLog.insert({\n    username: session.username,\n    action: \"SessionRevoked\",\n    details: `Session token ${session.token.substring(0, 16)}... revoked.`,\n    isSuccess: true\n});\n\nreturn { success: true, token: session.token };",
+          "trigger_event": null
+        },
+        {
+          "actions": [],
+          "annotations": [],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "TerminateAllSessions",
+          "params": [
+            [
+              "username",
+              "String"
+            ]
+          ],
+          "return_type": null,
+          "script": "const u = (rec && rec.username !== undefined) ? rec.username : username;\nif (!u) throw new Error(\"Username is required.\");\n\nconst targetUser = String(u).trim();\nconst activeSessions = UserSession.find({ username: targetUser, sessionState: \"Active\" }) || [];\n\nfor (const s of activeSessions) {\n    UserSession.update(s.token, { sessionState: \"Terminated\" });\n}\n\nSecurityAuditLog.insert({\n    username: targetUser,\n    action: \"SessionRevoked\",\n    details: `Terminated ${activeSessions.length} active sessions for user.`,\n    isSuccess: true\n});\n\nreturn {\n    success: true,\n    terminatedCount: activeSessions.length\n};",
+          "trigger_event": null
+        },
+        {
+          "actions": [],
+          "annotations": [],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "AssignRole",
+          "params": [
+            [
+              "username",
+              "String"
+            ],
+            [
+              "roleCode",
+              "String"
+            ],
+            [
+              "assignedBy",
+              "String"
+            ]
+          ],
+          "return_type": null,
+          "script": "const u = (rec && rec.username !== undefined) ? rec.username : username;\nconst r = (rec && rec.roleCode !== undefined) ? rec.roleCode : roleCode;\nconst by = (rec && rec.assignedBy !== undefined) ? rec.assignedBy : (assignedBy || \"system\");\n\nif (!u || !r) throw new Error(\"Both username and roleCode are required.\");\n\nconst targetUser = String(u).trim();\nconst targetRole = String(r).toUpperCase().trim();\n\nif (!User.exists({ username: targetUser })) {\n    throw new Error(`User '${targetUser}' does not exist.`);\n}\nif (!Role.exists({ code: targetRole })) {\n    throw new Error(`Role '${targetRole}' does not exist.`);\n}\n\nif (UserRole.exists({ username: targetUser, roleCode: targetRole })) {\n    return { success: true, message: \"Role already assigned.\" };\n}\n\nUserRole.insert({\n    username: targetUser,\n    roleCode: targetRole,\n    assignedBy: String(by)\n});\n\nSecurityAuditLog.insert({\n    username: targetUser,\n    action: \"RoleAssigned\",\n    details: `Role '${targetRole}' assigned by '${by}'.`,\n    isSuccess: true\n});\n\nreturn { success: true, username: targetUser, roleCode: targetRole };",
+          "trigger_event": null
+        },
+        {
+          "actions": [],
+          "annotations": [],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "RevokeRole",
+          "params": [
+            [
+              "username",
+              "String"
+            ],
+            [
+              "roleCode",
+              "String"
+            ]
+          ],
+          "return_type": null,
+          "script": "const u = (rec && rec.username !== undefined) ? rec.username : username;\nconst r = (rec && rec.roleCode !== undefined) ? rec.roleCode : roleCode;\n\nif (!u || !r) throw new Error(\"Both username and roleCode are required.\");\n\nconst targetUser = String(u).trim();\nconst targetRole = String(r).toUpperCase().trim();\n\nif (targetUser === \"admin\" && (targetRole === \"SUPER\" || targetRole === \"ADMIN\")) {\n    throw new Error(\"Cannot revoke core administrator role from root admin account.\");\n}\n\nUserRole.delete(`${targetUser}|${targetRole}`);\n\nSecurityAuditLog.insert({\n    username: targetUser,\n    action: \"RoleRevoked\",\n    details: `Role '${targetRole}' revoked.`,\n    isSuccess: true\n});\n\nreturn { success: true, username: targetUser, roleCode: targetRole };",
+          "trigger_event": null
+        },
+        {
+          "actions": [],
+          "annotations": [],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "ChangePassword",
+          "params": [
+            [
+              "username",
+              "String"
+            ],
+            [
+              "currentPassword",
+              "String"
+            ],
+            [
+              "newPassword",
+              "String"
+            ]
+          ],
+          "return_type": null,
+          "script": "const u = (rec && rec.username !== undefined) ? rec.username : username;\nconst oldP = (rec && rec.currentPassword !== undefined) ? rec.currentPassword : currentPassword;\nconst newP = (rec && rec.newPassword !== undefined) ? rec.newPassword : newPassword;\n\nif (!u || !oldP || !newP) {\n    throw new Error(\"Username, currentPassword, and newPassword are required.\");\n}\n\nconst targetUser = String(u).trim();\nconst userRec = User.get(targetUser);\nif (!userRec) throw new Error(\"User not found.\");\n\nconst matches = ctx.crypto.argon2Verify(String(oldP), userRec.passwordHash || userRec.password_hash);\nif (!matches) {\n    SecurityAuditLog.insert({\n        username: targetUser,\n        action: \"PasswordChanged\",\n        details: \"Password change rejected: Incorrect current password.\",\n        isSuccess: false\n    });\n    throw new Error(\"Authentication Failed: Current password does not match.\");\n}\n\nif (String(newP).length < 8) {\n    throw new Error(\"Validation Failed: New password must be at least 8 characters long.\");\n}\n\nconst newHash = ctx.crypto.argon2Hash(String(newP));\nUser.update(targetUser, {\n    passwordHash: newHash,\n    passwordChangedAt: new Date().toISOString()\n});\n\n// Invalidate 'mustChangePassword' requirement\nconst sec = UserSecuritySetting.get(targetUser);\nif (sec && sec.mustChangePassword) {\n    UserSecuritySetting.update(targetUser, { mustChangePassword: false });\n}\n\nSecurityAuditLog.insert({\n    username: targetUser,\n    action: \"PasswordChanged\",\n    details: \"User password changed successfully.\",\n    isSuccess: true\n});\n\nreturn { success: true, username: targetUser };",
+          "trigger_event": null
+        },
+        {
+          "actions": [],
+          "annotations": [],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "LockUser",
+          "params": [
+            [
+              "username",
+              "String"
+            ],
+            [
+              "reason",
+              "String"
+            ]
+          ],
+          "return_type": null,
+          "script": "const u = (rec && rec.username !== undefined) ? rec.username : username;\nconst r = (rec && rec.reason !== undefined) ? rec.reason : (reason || \"Administrative lock\");\n\nif (!u) throw new Error(\"Username is required.\");\nconst targetUser = String(u).trim();\n\nif (targetUser === \"admin\") {\n    throw new Error(\"Root administrator account cannot be locked.\");\n}\n\nUser.update(targetUser, {\n    status: \"LockedOut\",\n    lockoutUntil: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()\n});\n\n// Terminate all sessions\nconst sessions = UserSession.find({ username: targetUser, sessionState: \"Active\" }) || [];\nfor (const s of sessions) {\n    UserSession.update(s.token, { sessionState: \"Terminated\" });\n}\n\nSecurityAuditLog.insert({\n    username: targetUser,\n    action: \"AccountLocked\",\n    details: `Account locked by administrator. Reason: ${r}`,\n    isSuccess: true\n});\n\nreturn { success: true, username: targetUser };",
+          "trigger_event": null
+        },
+        {
+          "actions": [],
+          "annotations": [],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "UnlockUser",
+          "params": [
+            [
+              "username",
+              "String"
+            ]
+          ],
+          "return_type": null,
+          "script": "const u = (rec && rec.username !== undefined) ? rec.username : username;\nif (!u) throw new Error(\"Username is required.\");\nconst targetUser = String(u).trim();\n\nUser.update(targetUser, {\n    status: \"Active\",\n    failedAttempts: 0,\n    lockoutUntil: null\n});\n\nSecurityAuditLog.insert({\n    username: targetUser,\n    action: \"AccountUnlocked\",\n    details: \"Account manually unlocked by administrator.\",\n    isSuccess: true\n});\n\nreturn { success: true, username: targetUser };",
+          "trigger_event": null
+        },
+        {
+          "actions": [],
+          "annotations": [],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "EnrollMfa",
+          "params": [
+            [
+              "username",
+              "String"
+            ],
+            [
+              "method",
+              "String"
+            ],
+            [
+              "secret",
+              "String"
+            ]
+          ],
+          "return_type": null,
+          "script": "const u = (rec && rec.username !== undefined) ? rec.username : username;\nconst m = (rec && rec.method !== undefined) ? rec.method : (method || \"TOTP\");\nconst s = (rec && rec.secret !== undefined) ? rec.secret : secret;\n\nif (!u || !s) throw new Error(\"Username and secret are required for MFA enrollment.\");\nconst targetUser = String(u).trim();\n\nUserSecuritySetting.upsert({\n    username: targetUser,\n    mfaMethod: m,\n    mfaSecret: String(s),\n    mfaEnabled: true\n});\n\nSecurityAuditLog.insert({\n    username: targetUser,\n    action: \"MfaEnrolled\",\n    details: `MFA enrolled using method '${m}'.`,\n    isSuccess: true\n});\n\nreturn { success: true, username: targetUser, mfaMethod: m };",
+          "trigger_event": null
+        },
+        {
+          "actions": [],
+          "annotations": [],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "SeedSuperAdmin",
+          "params": [],
+          "return_type": null,
+          "script": "// 1. Ensure SUPER and ADMIN roles exist\nif (!Role.get(\"SUPER\")) {\n    Role.insert({\n        code: \"SUPER\",\n        name: \"Super Administrator\",\n        description: \"Full unrestricted platform access\",\n        isSystemRole: true,\n        isActive: true\n    });\n}\nif (!Role.get(\"ADMIN\")) {\n    Role.insert({\n        code: \"ADMIN\",\n        name: \"System Administrator\",\n        description: \"Administrative system management\",\n        isSystemRole: true,\n        isActive: true\n    });\n}\n\n// 2. Ensure super admin User exists (default password: Boss@123)\nif (!User.get(\"admin\")) {\n    User.insert({\n        username: \"admin\",\n        password: \"Boss@123\",\n        email: \"admin@system.local\",\n        fullName: \"System Super Administrator\",\n        userType: \"Internal\",\n        status: \"Active\",\n        isActive: true,\n        failedAttempts: 0\n    });\n}\n\n// 3. Ensure UserRole assignments exist\nif (!UserRole.get(\"admin|SUPER\")) {\n    UserRole.insert({\n        username: \"admin\",\n        roleCode: \"SUPER\",\n        assignedBy: \"SYSTEM\"\n    });\n}\nif (!UserRole.get(\"admin|ADMIN\")) {\n    UserRole.insert({\n        username: \"admin\",\n        roleCode: \"ADMIN\",\n        assignedBy: \"SYSTEM\"\n    });\n}\n\n// 4. Ensure UserSecuritySetting exists\nif (!UserSecuritySetting.get(\"admin\")) {\n    UserSecuritySetting.insert({\n        username: \"admin\",\n        mfaMethod: \"None\",\n        mfaEnabled: false,\n        maxConcurrentSessions: 10,\n        mustChangePassword: false,\n        passwordExpiryDays: 90\n    });\n}\n\n// 5. Initial Security Audit Log\nSecurityAuditLog.insert({\n    username: \"admin\",\n    action: \"UserCreated\",\n    details: \"Super administrator master record seeded on package import.\",\n    isSuccess: true\n});\n\n// 6. Ensure default PRIMARY AuthConfiguration exists\nlet hasConfig = false;\ntry {\n    hasConfig = !!AuthConfiguration.get(\"PRIMARY\");\n} catch (e) {\n    hasConfig = false;\n}\n\nif (!hasConfig) {\n    AuthConfiguration.insert({\n        id: \"PRIMARY\",\n        applicationTitle: \"BOS Enterprise Platform\",\n        companyLogoUrl: \"\",\n        welcomeMessage: \"Sign in to access your enterprise workspace.\",\n        primaryColor: \"#4f46e5\",\n        allowRememberMe: true,\n        allowEmergencyFallback: true,\n        ssoEnabled: false,\n        ssoProviderName: \"Corporate SSO\",\n        ssoLoginUrl: \"\",\n        termsOfServiceUrl: \"\",\n        supportEmail: \"admin@bos.local\",\n        customDisclaimer: \"Authorized personnel only. All access attempts are monitored and audited.\"\n    });\n}\n\nreturn { success: true, username: \"admin\", seeded: true };",
+          "trigger_event": null
+        },
+        {
+          "actions": [],
+          "annotations": [],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "GetLoginConfiguration",
+          "params": [],
+          "return_type": null,
+          "script": "let cfg = null;\ntry {\n    cfg = AuthConfiguration.get(\"PRIMARY\");\n} catch (e) {\n    cfg = null;\n}\n\nif (!cfg) {\n    return {\n        id: \"PRIMARY\",\n        applicationTitle: \"BOS Enterprise Platform\",\n        companyLogoUrl: \"\",\n        welcomeMessage: \"Sign in to access your enterprise workspace.\",\n        primaryColor: \"#4f46e5\",\n        allowRememberMe: true,\n        allowEmergencyFallback: true,\n        ssoEnabled: false,\n        ssoProviderName: \"Corporate SSO\",\n        ssoLoginUrl: \"\",\n        termsOfServiceUrl: \"\",\n        supportEmail: \"admin@bos.local\",\n        customDisclaimer: \"Authorized personnel only. All access attempts are monitored and audited.\"\n    };\n}\n\nreturn {\n    id: cfg.id || \"PRIMARY\",\n    applicationTitle: cfg.applicationTitle || \"BOS Enterprise Platform\",\n    companyLogoUrl: cfg.companyLogoUrl || \"\",\n    welcomeMessage: cfg.welcomeMessage || \"Sign in to access your enterprise workspace.\",\n    primaryColor: cfg.primaryColor || \"#4f46e5\",\n    allowRememberMe: cfg.allowRememberMe !== false,\n    allowEmergencyFallback: cfg.allowEmergencyFallback !== false,\n    ssoEnabled: cfg.ssoEnabled === true,\n    ssoProviderName: cfg.ssoProviderName || \"Corporate SSO\",\n    ssoLoginUrl: cfg.ssoLoginUrl || \"\",\n    termsOfServiceUrl: cfg.termsOfServiceUrl || \"\",\n    supportEmail: cfg.supportEmail || \"admin@bos.local\",\n    customDisclaimer: cfg.customDisclaimer || \"Authorized personnel only. All access attempts are monitored and audited.\"\n};",
+          "trigger_event": null
+        },
+        {
+          "actions": [],
+          "annotations": [],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "UpdateLoginConfiguration",
+          "params": [
+            [
+              "params",
+              "any"
+            ]
+          ],
+          "return_type": null,
+          "script": "if (!params) throw new Error(\"Configuration parameters are required.\");\nlet existing = null;\ntry {\n    existing = AuthConfiguration.get(\"PRIMARY\");\n} catch (e) {\n    existing = null;\n}\n\nlet updateData = {\n    id: \"PRIMARY\",\n    applicationTitle: params.applicationTitle || \"BOS Enterprise Platform\",\n    companyLogoUrl: params.companyLogoUrl || \"\",\n    welcomeMessage: params.welcomeMessage || \"Sign in to access your enterprise workspace.\",\n    primaryColor: params.primaryColor || \"#4f46e5\",\n    allowRememberMe: params.allowRememberMe !== false,\n    allowEmergencyFallback: params.allowEmergencyFallback !== false,\n    ssoEnabled: params.ssoEnabled === true,\n    ssoProviderName: params.ssoProviderName || \"Corporate SSO\",\n    ssoLoginUrl: params.ssoLoginUrl || \"\",\n    termsOfServiceUrl: params.termsOfServiceUrl || \"\",\n    supportEmail: params.supportEmail || \"admin@bos.local\",\n    customDisclaimer: params.customDisclaimer || \"Authorized personnel only. All access attempts are monitored and audited.\"\n};\n\nif (existing) {\n    AuthConfiguration.update(\"PRIMARY\", updateData);\n} else {\n    AuthConfiguration.insert(updateData);\n}\n\nSecurityAuditLog.insert({\n    username: \"admin\",\n    action: \"RoleAssigned\",\n    details: \"Login branding & authentication configuration updated.\",\n    isSuccess: true\n});\n\nreturn { success: true, configuration: updateData };",
+          "trigger_event": null
+        }
+      ],
+      "name": "AuthManager",
+      "object_type": "codeunit",
+      "package_name": "bos.auth",
+      "version": "1.0.0"
+    },
+    {
+      "field_validations": [],
+      "methods": [],
+      "name": "UserLogic",
+      "object_type": "tablelogic",
+      "package_name": "bos.auth",
+      "sql_table_name": "user",
+      "target_table": "User",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: Field 'username' is required.\");\n}\nrec.username = String(rec.username).trim();\n\nif (rec.username.length < 3 || rec.username.length > 50) {\n    throw new Error(\"Validation Failed: 'username' length must be between 3 and 50 characters.\");\n}\n\nif (!/^[a-zA-Z0-9_\\-\\.@]+$/.test(rec.username)) {\n    throw new Error(\"Validation Failed: 'username' can only contain alphanumeric characters, dots, underscores, dashes, and at-signs.\");\n}\n\nif (!rec.email || String(rec.email).trim().length === 0) {\n    throw new Error(\"Validation Failed: Field 'email' is required.\");\n}\nrec.email = String(rec.email).toLowerCase().trim();\n\nconst emailPattern = /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/;\nif (!emailPattern.test(rec.email)) {\n    throw new Error(\"Validation Failed: 'email' format is invalid.\");\n}\n\nif (rec.password) {\n    const rawPassword = String(rec.password);\n    if (rawPassword.length < 8) {\n        throw new Error(\"Validation Failed: Password must be at least 8 characters long.\");\n    }\n    rec.passwordHash = rawPassword.startsWith(\"$argon2\")\n        ? rawPassword\n        : ctx.crypto.argon2Hash(rawPassword);\n    delete rec.password;\n} else if (rec.passwordHash && !String(rec.passwordHash).startsWith(\"$argon2\")) {\n    rec.passwordHash = ctx.crypto.argon2Hash(rec.passwordHash);\n}\n\nif (!rec.passwordHash) {\n    throw new Error(\"Validation Failed: Field 'passwordHash' or 'password' is required.\");\n}\n\nif (rec.failedAttempts === undefined || rec.failedAttempts === null) {\n    rec.failedAttempts = 0;\n}\nif (rec.isActive === undefined || rec.isActive === null) {\n    rec.isActive = true;\n}\nif (!rec.status) {\n    rec.status = \"Active\";\n}\nif (!rec.userType) {\n    rec.userType = \"Internal\";\n}\nrec.passwordChangedAt = new Date().toISOString();\n\nctx.audit.log(`Security User inserted: ${rec.username}`);"
+        },
+        {
+          "actions": [],
+          "name": "onModify",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'username' cannot be empty during modification.\");\n}\n\nif (rec.email) {\n    rec.email = String(rec.email).toLowerCase().trim();\n    const emailPattern = /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/;\n    if (!emailPattern.test(rec.email)) {\n        throw new Error(\"Validation Failed: 'email' format is invalid.\");\n    }\n}\n\nif (rec.password) {\n    const rawPassword = String(rec.password);\n    if (rawPassword.length < 8) {\n        throw new Error(\"Validation Failed: Password must be at least 8 characters long.\");\n    }\n    rec.passwordHash = rawPassword.startsWith(\"$argon2\")\n        ? rawPassword\n        : ctx.crypto.argon2Hash(rawPassword);\n    rec.passwordChangedAt = new Date().toISOString();\n    delete rec.password;\n}\n\nctx.audit.log(`Security User modified: ${rec.username}`);"
+        },
+        {
+          "actions": [],
+          "name": "onDelete",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (rec.username === \"admin\" || rec.username === \"system\") {\n    throw new Error(\"Security Violation: Cannot delete permanent system administrator account.\");\n}\nctx.audit.log(`Security User deleted: ${rec.username}`);"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "field_validations": [],
+      "methods": [],
+      "name": "RoleLogic",
+      "object_type": "tablelogic",
+      "package_name": "bos.auth",
+      "sql_table_name": "role",
+      "target_table": "Role",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.code || String(rec.code).trim().length === 0) {\n    throw new Error(\"Validation Failed: Field 'code' is required for Role.\");\n}\nrec.code = String(rec.code).toUpperCase().trim();\n\nif (!rec.name || String(rec.name).trim().length === 0) {\n    throw new Error(\"Validation Failed: Field 'name' is required for Role.\");\n}\nrec.name = String(rec.name).trim();\n\nif (rec.isSystemRole === undefined) {\n    rec.isSystemRole = false;\n}\nif (rec.isActive === undefined) {\n    rec.isActive = true;\n}\n\nctx.audit.log(`Security Role created: ${rec.code}`);"
+        },
+        {
+          "actions": [],
+          "name": "onDelete",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (rec.code === \"SUPER\" || rec.code === \"ADMIN\") {\n    throw new Error(\"Security Violation: Cannot delete protected core system role.\");\n}\nctx.audit.log(`Security Role deleted: ${rec.code}`);"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "field_validations": [],
+      "methods": [],
+      "name": "UserRoleLogic",
+      "object_type": "tablelogic",
+      "package_name": "bos.auth",
+      "sql_table_name": "user_role",
+      "target_table": "UserRole",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'username' is required for UserRole assignment.\");\n}\nif (!rec.roleCode || String(rec.roleCode).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'roleCode' is required for UserRole assignment.\");\n}\nrec.roleCode = String(rec.roleCode).toUpperCase().trim();\n\nctx.audit.log(`UserRole assigned: ${rec.username} -> ${rec.roleCode}`);"
+        },
+        {
+          "actions": [],
+          "name": "onDelete",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (rec.username === \"admin\" && (rec.roleCode === \"SUPER\" || rec.roleCode === \"ADMIN\")) {\n    throw new Error(\"Security Violation: Cannot revoke root administrator role from primary admin account.\");\n}\nctx.audit.log(`UserRole revoked: ${rec.username} -/-> ${rec.roleCode}`);"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "field_validations": [],
+      "methods": [],
+      "name": "UserSessionLogic",
+      "object_type": "tablelogic",
+      "package_name": "bos.auth",
+      "sql_table_name": "user_session",
+      "target_table": "UserSession",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.token || String(rec.token).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'token' cannot be empty for UserSession.\");\n}\nif (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'username' cannot be empty for UserSession.\");\n}\nif (!rec.expiresAt) {\n    const exp = new Date(Date.now() + 24 * 60 * 60 * 1000);\n    rec.expiresAt = exp.toISOString();\n}\nif (!rec.sessionState) {\n    rec.sessionState = \"Active\";\n}\nrec.lastActivityAt = new Date().toISOString();\n\nctx.audit.log(`UserSession created for user: ${rec.username}`);"
+        },
+        {
+          "actions": [],
+          "name": "onModify",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "rec.lastActivityAt = new Date().toISOString();"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "field_validations": [],
+      "methods": [],
+      "name": "UserSecuritySettingLogic",
+      "object_type": "tablelogic",
+      "package_name": "bos.auth",
+      "sql_table_name": "user_security_setting",
+      "target_table": "UserSecuritySetting",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'username' is required for UserSecuritySetting.\");\n}\nif (rec.maxConcurrentSessions !== undefined && rec.maxConcurrentSessions < 1) {\n    throw new Error(\"Validation Failed: 'maxConcurrentSessions' must be at least 1.\");\n}\nif (rec.passwordExpiryDays !== undefined && rec.passwordExpiryDays < 1) {\n    throw new Error(\"Validation Failed: 'passwordExpiryDays' must be greater than 0.\");\n}"
+        },
+        {
+          "actions": [],
+          "name": "onModify",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (rec.maxConcurrentSessions !== undefined && rec.maxConcurrentSessions < 1) {\n    throw new Error(\"Validation Failed: 'maxConcurrentSessions' must be at least 1.\");\n}\nif (rec.passwordExpiryDays !== undefined && rec.passwordExpiryDays < 1) {\n    throw new Error(\"Validation Failed: 'passwordExpiryDays' must be greater than 0.\");\n}"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "field_validations": [],
+      "methods": [],
+      "name": "SecurityAuditLogLogic",
+      "object_type": "tablelogic",
+      "package_name": "bos.auth",
+      "sql_table_name": "security_audit_log",
+      "target_table": "SecurityAuditLog",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: Security audit entry must specify a username.\");\n}\nif (!rec.action) {\n    throw new Error(\"Validation Failed: Security audit entry must specify an action.\");\n}"
+        },
+        {
+          "actions": [],
+          "name": "onDelete",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "throw new Error(\"Security Violation: SecurityAuditLog is append-only and strictly immutable; deletions are prohibited.\");"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "field_validations": [],
+      "methods": [],
+      "name": "AuthConfigurationLogic",
+      "object_type": "tablelogic",
+      "package_name": "bos.auth",
+      "sql_table_name": "auth_configuration",
+      "target_table": "AuthConfiguration",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.id) rec.id = \"PRIMARY\";\nif (!rec.applicationTitle) rec.applicationTitle = \"BOS Enterprise Platform\";\nif (!rec.welcomeMessage) rec.welcomeMessage = \"Sign in to access your enterprise workspace.\";\nif (!rec.primaryColor) rec.primaryColor = \"#4f46e5\";\nif (!rec.customDisclaimer) rec.customDisclaimer = \"Authorized personnel only. All access attempts are monitored and audited.\";\nif (rec.allowRememberMe === undefined) rec.allowRememberMe = true;\nif (rec.allowEmergencyFallback === undefined) rec.allowEmergencyFallback = true;"
+        },
+        {
+          "actions": [],
+          "name": "onModify",
+          "params": [
+            "rec",
+            "xRec",
+            "ctx"
+          ],
+          "script": "if (!rec.applicationTitle || String(rec.applicationTitle).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'applicationTitle' cannot be blank.\");\n}"
+        },
+        {
+          "actions": [],
+          "name": "onDelete",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (rec.id === \"PRIMARY\") {\n    throw new Error(\"Validation Failed: The 'PRIMARY' authentication configuration cannot be deleted.\");\n}"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "implements_interface": null,
+      "members": [
+        {
+          "bound_codeunit": null,
+          "name": "Active"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "Inactive"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "Suspended"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "LockedOut"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "PendingVerification"
+        }
+      ],
+      "name": "UserStatus",
+      "object_type": "enum",
+      "package_name": "bos.auth",
+      "version": "1.0.0"
+    },
+    {
+      "implements_interface": null,
+      "members": [
+        {
+          "bound_codeunit": null,
+          "name": "Internal"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "External"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "ServiceAccount"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "System"
+        }
+      ],
+      "name": "UserType",
+      "object_type": "enum",
+      "package_name": "bos.auth",
+      "version": "1.0.0"
+    },
+    {
+      "implements_interface": null,
+      "members": [
+        {
+          "bound_codeunit": null,
+          "name": "Active"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "Expired"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "Revoked"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "Terminated"
+        }
+      ],
+      "name": "SessionState",
+      "object_type": "enum",
+      "package_name": "bos.auth",
+      "version": "1.0.0"
+    },
+    {
+      "implements_interface": null,
+      "members": [
+        {
+          "bound_codeunit": null,
+          "name": "LoginSuccess"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "LoginFailed"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "PasswordChanged"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "RoleAssigned"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "RoleRevoked"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "AccountLocked"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "AccountUnlocked"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "SessionRevoked"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "MfaEnrolled"
+        }
+      ],
+      "name": "AuditAction",
+      "object_type": "enum",
+      "package_name": "bos.auth",
+      "version": "1.0.0"
+    },
+    {
+      "implements_interface": null,
+      "members": [
+        {
+          "bound_codeunit": null,
+          "name": "None"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "TOTP"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "EmailOTP"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "SMSOTP"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "WebAuthn"
+        }
+      ],
+      "name": "MfaMethod",
+      "object_type": "enum",
+      "package_name": "bos.auth",
+      "version": "1.0.0"
+    },
+    {
+      "actions": [
+        {
+          "caption": "Lock Account",
+          "confirm": null,
+          "enable_when": null,
+          "icon": "Lock",
+          "name": "LockAccount",
+          "open_page": null,
+          "primary": false,
+          "run_codeunit": null,
+          "script": "if (!rec || !rec.username) throw new Error(\"Please select a user to lock.\");\nctx.call(\"AuthManager\", \"LockUser\", { username: rec.username, reason: \"Manual Admin Lock\" });\nctx.ui.toast(\"warning\", \"User Locked\", `User account ${rec.username} has been locked.`);",
+          "selection": null,
+          "shortcut": null,
+          "show_when": null
+        },
+        {
+          "caption": "Unlock Account",
+          "confirm": null,
+          "enable_when": null,
+          "icon": "Unlock",
+          "name": "UnlockAccount",
+          "open_page": null,
+          "primary": false,
+          "run_codeunit": null,
+          "script": "if (!rec || !rec.username) throw new Error(\"Please select a user to unlock.\");\nctx.call(\"AuthManager\", \"UnlockUser\", { username: rec.username });\nctx.ui.toast(\"success\", \"User Unlocked\", `User account ${rec.username} has been restored to Active.`);",
+          "selection": null,
+          "shortcut": null,
+          "show_when": null
+        },
+        {
+          "caption": "Terminate Sessions",
+          "confirm": null,
+          "enable_when": null,
+          "icon": "Power",
+          "name": "TerminateSessions",
+          "open_page": null,
+          "primary": false,
+          "run_codeunit": null,
+          "script": "if (!rec || !rec.username) throw new Error(\"Please select a user.\");\nctx.call(\"AuthManager\", \"TerminateAllSessions\", { username: rec.username });\nctx.ui.toast(\"info\", \"Sessions Cleared\", `All active sessions for ${rec.username} have been terminated.`);",
+          "selection": null,
+          "shortcut": null,
+          "show_when": null
+        }
+      ],
+      "caption": "User Management",
+      "controls": [
+        {
+          "caption": null,
+          "children": [
+            {
+              "caption": null,
+              "children": [
+                {
+                  "caption": "Username",
+                  "children": [],
+                  "kind": "field",
+                  "name": "username",
+                  "properties": {
+                    "caption": "Username"
+                  },
+                  "source_expr": "username"
+                },
+                {
+                  "caption": "Email Address",
+                  "children": [],
+                  "kind": "field",
+                  "name": "email",
+                  "properties": {
+                    "caption": "Email Address"
+                  },
+                  "source_expr": "email"
+                },
+                {
+                  "caption": "Full Name",
+                  "children": [],
+                  "kind": "field",
+                  "name": "fullName",
+                  "properties": {
+                    "caption": "Full Name"
+                  },
+                  "source_expr": "fullName"
+                },
+                {
+                  "caption": "User Type",
+                  "children": [],
+                  "kind": "field",
+                  "name": "userType",
+                  "properties": {
+                    "caption": "User Type"
+                  },
+                  "source_expr": "userType"
+                },
+                {
+                  "caption": "Status",
+                  "children": [],
+                  "kind": "field",
+                  "name": "status",
+                  "properties": {
+                    "caption": "Status"
+                  },
+                  "source_expr": "status"
+                },
+                {
+                  "caption": "Failed Logins",
+                  "children": [],
+                  "kind": "field",
+                  "name": "failedAttempts",
+                  "properties": {
+                    "caption": "Failed Logins"
+                  },
+                  "source_expr": "failedAttempts"
+                },
+                {
+                  "caption": "Active Sessions",
+                  "children": [],
+                  "kind": "field",
+                  "name": "activeSessionCount",
+                  "properties": {
+                    "caption": "Active Sessions"
+                  },
+                  "source_expr": "activeSessionCount"
+                },
+                {
+                  "caption": "Last Login",
+                  "children": [],
+                  "kind": "field",
+                  "name": "lastLoginAt",
+                  "properties": {
+                    "caption": "Last Login"
+                  },
+                  "source_expr": "lastLoginAt"
+                }
+              ],
+              "kind": "repeater",
+              "name": "UserTable",
+              "properties": {},
+              "source_expr": null
+            }
+          ],
+          "kind": "area",
+          "name": "Content",
+          "properties": {},
+          "source_expr": null
+        }
+      ],
+      "delete_allowed": null,
+      "editable": null,
+      "filters": [],
+      "insert_allowed": null,
+      "modify_allowed": null,
+      "name": "UserList",
+      "object_type": "page",
+      "package_name": "bos.auth",
+      "page_type": "List",
+      "source_kind": "table",
+      "source_table": "User",
+      "triggers": [],
+      "version": "1.0.0",
+      "views": []
+    },
+    {
+      "actions": [
+        {
+          "caption": "Reset Password",
+          "confirm": null,
+          "enable_when": null,
+          "icon": "Key",
+          "name": "ResetPassword",
+          "open_page": null,
+          "primary": false,
+          "run_codeunit": null,
+          "script": "ctx.ui.openModal(\"PasswordResetDialog\", { username: rec.username });",
+          "selection": null,
+          "shortcut": null,
+          "show_when": null
+        },
+        {
+          "caption": "Unlock Account",
+          "confirm": null,
+          "enable_when": null,
+          "icon": "Unlock",
+          "name": "UnlockUser",
+          "open_page": null,
+          "primary": false,
+          "run_codeunit": null,
+          "script": "ctx.call(\"AuthManager\", \"UnlockUser\", { username: rec.username });\nctx.ui.toast(\"success\", \"Unlocked\", `Account ${rec.username} is now unlocked.`);",
+          "selection": null,
+          "shortcut": null,
+          "show_when": null
+        }
+      ],
+      "caption": "User Details",
+      "controls": [
+        {
+          "caption": null,
+          "children": [
+            {
+              "caption": null,
+              "children": [
+                {
+                  "caption": "Username",
+                  "children": [],
+                  "kind": "field",
+                  "name": "username",
+                  "properties": {
+                    "caption": "Username",
+                    "editable": "false"
+                  },
+                  "source_expr": "username"
+                },
+                {
+                  "caption": "Email Address",
+                  "children": [],
+                  "kind": "field",
+                  "name": "email",
+                  "properties": {
+                    "caption": "Email Address"
+                  },
+                  "source_expr": "email"
+                },
+                {
+                  "caption": "Full Name",
+                  "children": [],
+                  "kind": "field",
+                  "name": "fullName",
+                  "properties": {
+                    "caption": "Full Name"
+                  },
+                  "source_expr": "fullName"
+                },
+                {
+                  "caption": "Phone Number",
+                  "children": [],
+                  "kind": "field",
+                  "name": "phoneNumber",
+                  "properties": {
+                    "caption": "Phone Number"
+                  },
+                  "source_expr": "phoneNumber"
+                },
+                {
+                  "caption": "User Type",
+                  "children": [],
+                  "kind": "field",
+                  "name": "userType",
+                  "properties": {
+                    "caption": "User Type"
+                  },
+                  "source_expr": "userType"
+                },
+                {
+                  "caption": "Status",
+                  "children": [],
+                  "kind": "field",
+                  "name": "status",
+                  "properties": {
+                    "caption": "Status"
+                  },
+                  "source_expr": "status"
+                },
+                {
+                  "caption": "Active Flag",
+                  "children": [],
+                  "kind": "field",
+                  "name": "isActive",
+                  "properties": {
+                    "caption": "Active Flag"
+                  },
+                  "source_expr": "isActive"
+                }
+              ],
+              "kind": "group",
+              "name": "General",
+              "properties": {},
+              "source_expr": null
+            },
+            {
+              "caption": null,
+              "children": [
+                {
+                  "caption": "Failed Attempts",
+                  "children": [],
+                  "kind": "field",
+                  "name": "failedAttempts",
+                  "properties": {
+                    "caption": "Failed Attempts",
+                    "editable": "false"
+                  },
+                  "source_expr": "failedAttempts"
+                },
+                {
+                  "caption": "Lockout Expiration",
+                  "children": [],
+                  "kind": "field",
+                  "name": "lockoutUntil",
+                  "properties": {
+                    "caption": "Lockout Expiration",
+                    "editable": "false"
+                  },
+                  "source_expr": "lockoutUntil"
+                },
+                {
+                  "caption": "Last Login Timestamp",
+                  "children": [],
+                  "kind": "field",
+                  "name": "lastLoginAt",
+                  "properties": {
+                    "caption": "Last Login Timestamp",
+                    "editable": "false"
+                  },
+                  "source_expr": "lastLoginAt"
+                },
+                {
+                  "caption": "Password Last Changed",
+                  "children": [],
+                  "kind": "field",
+                  "name": "passwordChangedAt",
+                  "properties": {
+                    "caption": "Password Last Changed",
+                    "editable": "false"
+                  },
+                  "source_expr": "passwordChangedAt"
+                },
+                {
+                  "caption": "Current Active Sessions",
+                  "children": [],
+                  "kind": "field",
+                  "name": "activeSessionCount",
+                  "properties": {
+                    "caption": "Current Active Sessions",
+                    "editable": "false"
+                  },
+                  "source_expr": "activeSessionCount"
+                }
+              ],
+              "kind": "group",
+              "name": "Security",
+              "properties": {},
+              "source_expr": null
+            }
+          ],
+          "kind": "area",
+          "name": "Content",
+          "properties": {},
+          "source_expr": null
+        }
+      ],
+      "delete_allowed": null,
+      "editable": null,
+      "filters": [],
+      "insert_allowed": null,
+      "modify_allowed": null,
+      "name": "UserCard",
+      "object_type": "page",
+      "package_name": "bos.auth",
+      "page_type": "Card",
+      "source_kind": "table",
+      "source_table": "User",
+      "triggers": [],
+      "version": "1.0.0",
+      "views": []
+    },
+    {
+      "actions": [
+        {
+          "caption": "Toggle Status",
+          "confirm": null,
+          "enable_when": null,
+          "icon": "Power",
+          "name": "ToggleStatus",
+          "open_page": null,
+          "primary": false,
+          "run_codeunit": null,
+          "script": "if (!rec || !rec.code) return;\nRole.update(rec.code, { isActive: !rec.isActive });\nctx.ui.toast(\"info\", \"Role Updated\", `Role ${rec.code} status changed.`);",
+          "selection": null,
+          "shortcut": null,
+          "show_when": null
+        }
+      ],
+      "caption": "Security Roles",
+      "controls": [
+        {
+          "caption": null,
+          "children": [
+            {
+              "caption": null,
+              "children": [
+                {
+                  "caption": "Role Code",
+                  "children": [],
+                  "kind": "field",
+                  "name": "code",
+                  "properties": {
+                    "caption": "Role Code"
+                  },
+                  "source_expr": "code"
+                },
+                {
+                  "caption": "Role Name",
+                  "children": [],
+                  "kind": "field",
+                  "name": "name",
+                  "properties": {
+                    "caption": "Role Name"
+                  },
+                  "source_expr": "name"
+                },
+                {
+                  "caption": "Description",
+                  "children": [],
+                  "kind": "field",
+                  "name": "description",
+                  "properties": {
+                    "caption": "Description"
+                  },
+                  "source_expr": "description"
+                },
+                {
+                  "caption": "System Role",
+                  "children": [],
+                  "kind": "field",
+                  "name": "isSystemRole",
+                  "properties": {
+                    "caption": "System Role"
+                  },
+                  "source_expr": "isSystemRole"
+                },
+                {
+                  "caption": "Active",
+                  "children": [],
+                  "kind": "field",
+                  "name": "isActive",
+                  "properties": {
+                    "caption": "Active"
+                  },
+                  "source_expr": "isActive"
+                },
+                {
+                  "caption": "Assigned Users",
+                  "children": [],
+                  "kind": "field",
+                  "name": "assignedUsersCount",
+                  "properties": {
+                    "caption": "Assigned Users"
+                  },
+                  "source_expr": "assignedUsersCount"
+                }
+              ],
+              "kind": "repeater",
+              "name": "RoleTable",
+              "properties": {},
+              "source_expr": null
+            }
+          ],
+          "kind": "area",
+          "name": "Content",
+          "properties": {},
+          "source_expr": null
+        }
+      ],
+      "delete_allowed": null,
+      "editable": null,
+      "filters": [],
+      "insert_allowed": null,
+      "modify_allowed": null,
+      "name": "RoleList",
+      "object_type": "page",
+      "package_name": "bos.auth",
+      "page_type": "List",
+      "source_kind": "table",
+      "source_table": "Role",
+      "triggers": [],
+      "version": "1.0.0",
+      "views": []
+    },
+    {
+      "actions": [
+        {
+          "caption": "Revoke Session",
+          "confirm": null,
+          "enable_when": null,
+          "icon": "XCircle",
+          "name": "RevokeSession",
+          "open_page": null,
+          "primary": false,
+          "run_codeunit": null,
+          "script": "if (!rec || !rec.token) return;\nctx.call(\"AuthManager\", \"RevokeSession\", { token: rec.token });\nctx.ui.toast(\"warning\", \"Session Revoked\", \"The selected user session was terminated.\");",
+          "selection": null,
+          "shortcut": null,
+          "show_when": null
+        }
+      ],
+      "caption": "Active User Sessions",
+      "controls": [
+        {
+          "caption": null,
+          "children": [
+            {
+              "caption": null,
+              "children": [
+                {
+                  "caption": "User",
+                  "children": [],
+                  "kind": "field",
+                  "name": "username",
+                  "properties": {
+                    "caption": "User"
+                  },
+                  "source_expr": "username"
+                },
+                {
+                  "caption": "Session Token",
+                  "children": [],
+                  "kind": "field",
+                  "name": "token",
+                  "properties": {
+                    "caption": "Session Token"
+                  },
+                  "source_expr": "token"
+                },
+                {
+                  "caption": "IP Address",
+                  "children": [],
+                  "kind": "field",
+                  "name": "ipAddress",
+                  "properties": {
+                    "caption": "IP Address"
+                  },
+                  "source_expr": "ipAddress"
+                },
+                {
+                  "caption": "Client / User Agent",
+                  "children": [],
+                  "kind": "field",
+                  "name": "userAgent",
+                  "properties": {
+                    "caption": "Client / User Agent"
+                  },
+                  "source_expr": "userAgent"
+                },
+                {
+                  "caption": "State",
+                  "children": [],
+                  "kind": "field",
+                  "name": "sessionState",
+                  "properties": {
+                    "caption": "State"
+                  },
+                  "source_expr": "sessionState"
+                },
+                {
+                  "caption": "Expires At",
+                  "children": [],
+                  "kind": "field",
+                  "name": "expiresAt",
+                  "properties": {
+                    "caption": "Expires At"
+                  },
+                  "source_expr": "expiresAt"
+                },
+                {
+                  "caption": "Last Activity",
+                  "children": [],
+                  "kind": "field",
+                  "name": "lastActivityAt",
+                  "properties": {
+                    "caption": "Last Activity"
+                  },
+                  "source_expr": "lastActivityAt"
+                }
+              ],
+              "kind": "repeater",
+              "name": "SessionTable",
+              "properties": {},
+              "source_expr": null
+            }
+          ],
+          "kind": "area",
+          "name": "Content",
+          "properties": {},
+          "source_expr": null
+        }
+      ],
+      "delete_allowed": null,
+      "editable": null,
+      "filters": [],
+      "insert_allowed": null,
+      "modify_allowed": null,
+      "name": "SessionList",
+      "object_type": "page",
+      "package_name": "bos.auth",
+      "page_type": "List",
+      "source_kind": "table",
+      "source_table": "UserSession",
+      "triggers": [],
+      "version": "1.0.0",
+      "views": []
+    },
+    {
+      "actions": [],
+      "caption": "Security Audit Trail",
+      "controls": [
+        {
+          "caption": null,
+          "children": [
+            {
+              "caption": null,
+              "children": [
+                {
+                  "caption": "Event ID",
+                  "children": [],
+                  "kind": "field",
+                  "name": "id",
+                  "properties": {
+                    "caption": "Event ID"
+                  },
+                  "source_expr": "id"
+                },
+                {
+                  "caption": "User",
+                  "children": [],
+                  "kind": "field",
+                  "name": "username",
+                  "properties": {
+                    "caption": "User"
+                  },
+                  "source_expr": "username"
+                },
+                {
+                  "caption": "Action",
+                  "children": [],
+                  "kind": "field",
+                  "name": "action",
+                  "properties": {
+                    "caption": "Action"
+                  },
+                  "source_expr": "action"
+                },
+                {
+                  "caption": "Success",
+                  "children": [],
+                  "kind": "field",
+                  "name": "isSuccess",
+                  "properties": {
+                    "caption": "Success"
+                  },
+                  "source_expr": "isSuccess"
+                },
+                {
+                  "caption": "IP Address",
+                  "children": [],
+                  "kind": "field",
+                  "name": "ipAddress",
+                  "properties": {
+                    "caption": "IP Address"
+                  },
+                  "source_expr": "ipAddress"
+                },
+                {
+                  "caption": "Client Agent",
+                  "children": [],
+                  "kind": "field",
+                  "name": "userAgent",
+                  "properties": {
+                    "caption": "Client Agent"
+                  },
+                  "source_expr": "userAgent"
+                },
+                {
+                  "caption": "Details",
+                  "children": [],
+                  "kind": "field",
+                  "name": "details",
+                  "properties": {
+                    "caption": "Details"
+                  },
+                  "source_expr": "details"
+                }
+              ],
+              "kind": "repeater",
+              "name": "AuditTable",
+              "properties": {},
+              "source_expr": null
+            }
+          ],
+          "kind": "area",
+          "name": "Content",
+          "properties": {},
+          "source_expr": null
+        }
+      ],
+      "delete_allowed": null,
+      "editable": null,
+      "filters": [],
+      "insert_allowed": null,
+      "modify_allowed": null,
+      "name": "SecurityAuditLogList",
+      "object_type": "page",
+      "package_name": "bos.auth",
+      "page_type": "List",
+      "source_kind": "table",
+      "source_table": "SecurityAuditLog",
+      "triggers": [],
+      "version": "1.0.0",
+      "views": []
+    },
+    {
+      "actions": [
+        {
+          "caption": "Toggle Active Status",
+          "confirm": null,
+          "enable_when": null,
+          "icon": "Power",
+          "name": "ToggleActive",
+          "open_page": null,
+          "primary": false,
+          "run_codeunit": null,
+          "script": "if (!rec || !rec.code) return;\nRole.update(rec.code, { isActive: !rec.isActive });\nctx.ui.toast(\"info\", \"Role Updated\", `Role ${rec.code} status updated.`);",
+          "selection": null,
+          "shortcut": null,
+          "show_when": null
+        }
+      ],
+      "caption": "Security Role Details",
+      "controls": [
+        {
+          "caption": null,
+          "children": [
+            {
+              "caption": "Role Information",
+              "children": [
+                {
+                  "caption": "Role Code",
+                  "children": [],
+                  "kind": "field",
+                  "name": "code",
+                  "properties": {
+                    "caption": "Role Code",
+                    "editable": "false"
+                  },
+                  "source_expr": "code"
+                },
+                {
+                  "caption": "Role Name",
+                  "children": [],
+                  "kind": "field",
+                  "name": "name",
+                  "properties": {
+                    "caption": "Role Name"
+                  },
+                  "source_expr": "name"
+                },
+                {
+                  "caption": "Description",
+                  "children": [],
+                  "kind": "field",
+                  "name": "description",
+                  "properties": {
+                    "caption": "Description"
+                  },
+                  "source_expr": "description"
+                },
+                {
+                  "caption": "System Protected Role",
+                  "children": [],
+                  "kind": "field",
+                  "name": "isSystemRole",
+                  "properties": {
+                    "caption": "System Protected Role",
+                    "editable": "false"
+                  },
+                  "source_expr": "isSystemRole"
+                },
+                {
+                  "caption": "Active Status",
+                  "children": [],
+                  "kind": "field",
+                  "name": "isActive",
+                  "properties": {
+                    "caption": "Active Status"
+                  },
+                  "source_expr": "isActive"
+                },
+                {
+                  "caption": "Assigned Users Count",
+                  "children": [],
+                  "kind": "field",
+                  "name": "assignedUsersCount",
+                  "properties": {
+                    "caption": "Assigned Users Count",
+                    "editable": "false"
+                  },
+                  "source_expr": "assignedUsersCount"
+                }
+              ],
+              "kind": "group",
+              "name": "General",
+              "properties": {
+                "caption": "Role Information"
+              },
+              "source_expr": null
+            }
+          ],
+          "kind": "area",
+          "name": "Content",
+          "properties": {},
+          "source_expr": null
+        }
+      ],
+      "delete_allowed": null,
+      "editable": null,
+      "filters": [],
+      "insert_allowed": null,
+      "modify_allowed": null,
+      "name": "RoleCard",
+      "object_type": "page",
+      "package_name": "bos.auth",
+      "page_type": "Card",
+      "source_kind": "table",
+      "source_table": "Role",
+      "triggers": [],
+      "version": "1.0.0",
+      "views": []
+    },
+    {
+      "actions": [
+        {
+          "caption": "Revoke Role",
+          "confirm": null,
+          "enable_when": null,
+          "icon": "UserMinus",
+          "name": "RevokeRole",
+          "open_page": null,
+          "primary": false,
+          "run_codeunit": null,
+          "script": "if (!rec || !rec.username || !rec.roleCode) return;\nctx.call(\"AuthManager\", \"RevokeRole\", { username: rec.username, roleCode: rec.roleCode });\nctx.ui.toast(\"warning\", \"Role Revoked\", `Role ${rec.roleCode} revoked from ${rec.username}.`);",
+          "selection": null,
+          "shortcut": null,
+          "show_when": null
+        }
+      ],
+      "caption": "User Role Assignments",
+      "controls": [
+        {
+          "caption": null,
+          "children": [
+            {
+              "caption": null,
+              "children": [
+                {
+                  "caption": "Username",
+                  "children": [],
+                  "kind": "field",
+                  "name": "username",
+                  "properties": {
+                    "caption": "Username"
+                  },
+                  "source_expr": "username"
+                },
+                {
+                  "caption": "Role Code",
+                  "children": [],
+                  "kind": "field",
+                  "name": "roleCode",
+                  "properties": {
+                    "caption": "Role Code"
+                  },
+                  "source_expr": "roleCode"
+                },
+                {
+                  "caption": "Assigned By",
+                  "children": [],
+                  "kind": "field",
+                  "name": "assignedBy",
+                  "properties": {
+                    "caption": "Assigned By"
+                  },
+                  "source_expr": "assignedBy"
+                }
+              ],
+              "kind": "repeater",
+              "name": "UserRoleTable",
+              "properties": {},
+              "source_expr": null
+            }
+          ],
+          "kind": "area",
+          "name": "Content",
+          "properties": {},
+          "source_expr": null
+        }
+      ],
+      "delete_allowed": null,
+      "editable": null,
+      "filters": [],
+      "insert_allowed": null,
+      "modify_allowed": null,
+      "name": "UserRoleList",
+      "object_type": "page",
+      "package_name": "bos.auth",
+      "page_type": "List",
+      "source_kind": "table",
+      "source_table": "UserRole",
+      "triggers": [],
+      "version": "1.0.0",
+      "views": []
+    },
+    {
+      "actions": [],
+      "caption": "User Security Settings",
+      "controls": [
+        {
+          "caption": null,
+          "children": [
+            {
+              "caption": null,
+              "children": [
+                {
+                  "caption": "User ID",
+                  "children": [],
+                  "kind": "field",
+                  "name": "username",
+                  "properties": {
+                    "caption": "User ID"
+                  },
+                  "source_expr": "username"
+                },
+                {
+                  "caption": "MFA Method",
+                  "children": [],
+                  "kind": "field",
+                  "name": "mfaMethod",
+                  "properties": {
+                    "caption": "MFA Method"
+                  },
+                  "source_expr": "mfaMethod"
+                },
+                {
+                  "caption": "MFA Active",
+                  "children": [],
+                  "kind": "field",
+                  "name": "mfaEnabled",
+                  "properties": {
+                    "caption": "MFA Active"
+                  },
+                  "source_expr": "mfaEnabled"
+                },
+                {
+                  "caption": "Session Quota",
+                  "children": [],
+                  "kind": "field",
+                  "name": "maxConcurrentSessions",
+                  "properties": {
+                    "caption": "Session Quota"
+                  },
+                  "source_expr": "maxConcurrentSessions"
+                },
+                {
+                  "caption": "Force Password Change",
+                  "children": [],
+                  "kind": "field",
+                  "name": "mustChangePassword",
+                  "properties": {
+                    "caption": "Force Password Change"
+                  },
+                  "source_expr": "mustChangePassword"
+                },
+                {
+                  "caption": "Password Expiry (Days)",
+                  "children": [],
+                  "kind": "field",
+                  "name": "passwordExpiryDays",
+                  "properties": {
+                    "caption": "Password Expiry (Days)"
+                  },
+                  "source_expr": "passwordExpiryDays"
+                }
+              ],
+              "kind": "repeater",
+              "name": "SecTable",
+              "properties": {},
+              "source_expr": null
+            }
+          ],
+          "kind": "area",
+          "name": "Content",
+          "properties": {},
+          "source_expr": null
+        }
+      ],
+      "delete_allowed": null,
+      "editable": null,
+      "filters": [],
+      "insert_allowed": null,
+      "modify_allowed": null,
+      "name": "UserSecuritySettingList",
+      "object_type": "page",
+      "package_name": "bos.auth",
+      "page_type": "List",
+      "source_kind": "table",
+      "source_table": "UserSecuritySetting",
+      "triggers": [],
+      "version": "1.0.0",
+      "views": []
+    },
+    {
+      "actions": [
+        {
+          "caption": "Sign In",
+          "confirm": null,
+          "enable_when": null,
+          "icon": "LogIn",
+          "name": "SignIn",
+          "open_page": null,
+          "primary": false,
+          "run_codeunit": null,
+          "script": "if (!rec || !rec.username) throw new Error(\"Username is required.\");\nctx.call(\"AuthManager\", \"Authenticate\", { username: rec.username, password: rec.password });",
+          "selection": null,
+          "shortcut": null,
+          "show_when": null
+        }
+      ],
+      "caption": "Sign In",
+      "controls": [
+        {
+          "caption": null,
+          "children": [
+            {
+              "caption": "Account Credentials",
+              "children": [
+                {
+                  "caption": "User ID",
+                  "children": [],
+                  "kind": "field",
+                  "name": "username",
+                  "properties": {
+                    "caption": "User ID"
+                  },
+                  "source_expr": "username"
+                },
+                {
+                  "caption": "Password",
+                  "children": [],
+                  "kind": "field",
+                  "name": "password",
+                  "properties": {
+                    "caption": "Password",
+                    "style": "password"
+                  },
+                  "source_expr": "password"
+                },
+                {
+                  "caption": "Remember User ID",
+                  "children": [],
+                  "kind": "field",
+                  "name": "rememberMe",
+                  "properties": {
+                    "caption": "Remember User ID",
+                    "style": "switch"
+                  },
+                  "source_expr": "rememberMe"
+                }
+              ],
+              "kind": "group",
+              "name": "Credentials",
+              "properties": {
+                "caption": "Account Credentials"
+              },
+              "source_expr": null
+            }
+          ],
+          "kind": "area",
+          "name": "Content",
+          "properties": {},
+          "source_expr": null
+        }
+      ],
+      "delete_allowed": null,
+      "editable": null,
+      "filters": [],
+      "insert_allowed": null,
+      "modify_allowed": null,
+      "name": "LoginPage",
+      "object_type": "page",
+      "package_name": "bos.auth",
+      "page_type": "Card",
+      "source_kind": "table",
+      "source_table": "User",
+      "triggers": [],
+      "version": "1.0.0",
+      "views": []
+    },
+    {
+      "actions": [
+        {
+          "caption": "Apply Branding Changes",
+          "confirm": null,
+          "enable_when": null,
+          "icon": "Save",
+          "name": "SaveConfiguration",
+          "open_page": null,
+          "primary": false,
+          "run_codeunit": null,
+          "script": "ctx.call(\"AuthManager\", \"UpdateLoginConfiguration\", rec);\nctx.ui.toast(\"success\", \"Branding Applied\", \"Login screen configuration has been updated successfully.\");",
+          "selection": null,
+          "shortcut": null,
+          "show_when": null
+        }
+      ],
+      "caption": "Login Page & Branding Setup",
+      "controls": [
+        {
+          "caption": null,
+          "children": [
+            {
+              "caption": "General Branding",
+              "children": [
+                {
+                  "caption": "Config ID",
+                  "children": [],
+                  "kind": "field",
+                  "name": "id",
+                  "properties": {
+                    "caption": "Config ID",
+                    "editable": "false"
+                  },
+                  "source_expr": "id"
+                },
+                {
+                  "caption": "Application Title",
+                  "children": [],
+                  "kind": "field",
+                  "name": "applicationTitle",
+                  "properties": {
+                    "caption": "Application Title"
+                  },
+                  "source_expr": "applicationTitle"
+                },
+                {
+                  "caption": "Logo URL",
+                  "children": [],
+                  "kind": "field",
+                  "name": "companyLogoUrl",
+                  "properties": {
+                    "caption": "Logo URL"
+                  },
+                  "source_expr": "companyLogoUrl"
+                },
+                {
+                  "caption": "Welcome Subtitle",
+                  "children": [],
+                  "kind": "field",
+                  "name": "welcomeMessage",
+                  "properties": {
+                    "caption": "Welcome Subtitle"
+                  },
+                  "source_expr": "welcomeMessage"
+                },
+                {
+                  "caption": "Brand Accent Hex Color",
+                  "children": [],
+                  "kind": "field",
+                  "name": "primaryColor",
+                  "properties": {
+                    "caption": "Brand Accent Hex Color"
+                  },
+                  "source_expr": "primaryColor"
+                }
+              ],
+              "kind": "group",
+              "name": "General",
+              "properties": {
+                "caption": "General Branding"
+              },
+              "source_expr": null
+            },
+            {
+              "caption": "Login Policies",
+              "children": [
+                {
+                  "caption": "Allow Remember Me",
+                  "children": [],
+                  "kind": "field",
+                  "name": "allowRememberMe",
+                  "properties": {
+                    "caption": "Allow Remember Me"
+                  },
+                  "source_expr": "allowRememberMe"
+                },
+                {
+                  "caption": "Allow Emergency Super Admin Fallback",
+                  "children": [],
+                  "kind": "field",
+                  "name": "allowEmergencyFallback",
+                  "properties": {
+                    "caption": "Allow Emergency Super Admin Fallback"
+                  },
+                  "source_expr": "allowEmergencyFallback"
+                },
+                {
+                  "caption": "Support Contact Email",
+                  "children": [],
+                  "kind": "field",
+                  "name": "supportEmail",
+                  "properties": {
+                    "caption": "Support Contact Email"
+                  },
+                  "source_expr": "supportEmail"
+                }
+              ],
+              "kind": "group",
+              "name": "AuthenticationPolicies",
+              "properties": {
+                "caption": "Login Policies"
+              },
+              "source_expr": null
+            },
+            {
+              "caption": "Single Sign-On (SSO / SAML)",
+              "children": [
+                {
+                  "caption": "Enable SSO Integration",
+                  "children": [],
+                  "kind": "field",
+                  "name": "ssoEnabled",
+                  "properties": {
+                    "caption": "Enable SSO Integration"
+                  },
+                  "source_expr": "ssoEnabled"
+                },
+                {
+                  "caption": "SSO Button Title",
+                  "children": [],
+                  "kind": "field",
+                  "name": "ssoProviderName",
+                  "properties": {
+                    "caption": "SSO Button Title"
+                  },
+                  "source_expr": "ssoProviderName"
+                },
+                {
+                  "caption": "SSO Identity Provider URL",
+                  "children": [],
+                  "kind": "field",
+                  "name": "ssoLoginUrl",
+                  "properties": {
+                    "caption": "SSO Identity Provider URL"
+                  },
+                  "source_expr": "ssoLoginUrl"
+                }
+              ],
+              "kind": "group",
+              "name": "SingleSignOn",
+              "properties": {
+                "caption": "Single Sign-On (SSO / SAML)"
+              },
+              "source_expr": null
+            },
+            {
+              "caption": "Legal Notice & Disclaimers",
+              "children": [
+                {
+                  "caption": "Terms of Service URL",
+                  "children": [],
+                  "kind": "field",
+                  "name": "termsOfServiceUrl",
+                  "properties": {
+                    "caption": "Terms of Service URL"
+                  },
+                  "source_expr": "termsOfServiceUrl"
+                },
+                {
+                  "caption": "Legal Disclaimer Banner",
+                  "children": [],
+                  "kind": "field",
+                  "name": "customDisclaimer",
+                  "properties": {
+                    "caption": "Legal Disclaimer Banner"
+                  },
+                  "source_expr": "customDisclaimer"
+                }
+              ],
+              "kind": "group",
+              "name": "Compliance",
+              "properties": {
+                "caption": "Legal Notice & Disclaimers"
+              },
+              "source_expr": null
+            }
+          ],
+          "kind": "area",
+          "name": "Content",
+          "properties": {},
+          "source_expr": null
+        }
+      ],
+      "delete_allowed": null,
+      "editable": null,
+      "filters": [],
+      "insert_allowed": null,
+      "modify_allowed": null,
+      "name": "AuthConfigurationCard",
+      "object_type": "page",
+      "package_name": "bos.auth",
+      "page_type": "Card",
+      "source_kind": "table",
+      "source_table": "AuthConfiguration",
+      "triggers": [],
+      "version": "1.0.0",
+      "views": []
+    }
+  ],
+  "checksum": "c3ff8d231446d09f"
+}

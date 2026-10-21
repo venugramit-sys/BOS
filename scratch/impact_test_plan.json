@@ -1,0 +1,300 @@
+{
+  "timestamp": "2026-10-12T03:27:10.422Z",
+  "gitActive": false,
+  "changedFilesCount": 79,
+  "recentFiles": [
+    ".agents/detector.md",
+    ".agents/package-developer.md",
+    ".agents/planner.md",
+    ".agents/rust-developer.md",
+    ".agents/supervisor.md",
+    ".agents/svelte-developer.md",
+    ".agents/tester.md",
+    "AGENTS.md",
+    "audit_keywords.json",
+    "Cargo.lock",
+    "Cargo.toml",
+    "crates/bosc-analyzer/Cargo.toml",
+    "crates/bosc-analyzer/src/lib.rs",
+    "crates/bosc-analyzer/src/ts_stripper.rs",
+    "crates/bosc-cli/src/main.rs",
+    "crates/bosc-codegen-db/Cargo.toml",
+    "crates/bosc-codegen-db/src/lib.rs",
+    "crates/bosc-ir/src/lib.rs",
+    "crates/bosc-runtime/Cargo.toml",
+    "crates/bosc-runtime/src/detector.rs",
+    "crates/bosc-runtime/src/event_engine.rs",
+    "crates/bosc-runtime/src/execution_engine.rs",
+    "crates/bosc-runtime/src/lib.rs",
+    "crates/bosc-runtime/src/meta_manager.rs",
+    "crates/bosc-runtime/src/quickjs_engine.rs"
+  ],
+  "impactedSubsystems": [
+    "Semantic Analyzer",
+    "CLI Tooling",
+    "Database Engine Codegen",
+    "IR & Type Stripper",
+    "Core Runtime Engine",
+    "Axum HTTP REST API",
+    "Compiler AST & Grammar",
+    "Architectural Documentation",
+    "Business Packages & Meta-Objects",
+    "Frontend Assets & Config",
+    "Svelte 5 API Studio Frontend"
+  ],
+  "impactedTasksCount": 36,
+  "recommendedTasks": [
+    {
+      "id": "SYN-01",
+      "title": "Parse 12 Meta-Object Declarations",
+      "type": "UNIT",
+      "priority": "CRITICAL",
+      "verification": "cargo test -p bosc-syntax test_meta_object_parsing"
+    },
+    {
+      "id": "SYN-02",
+      "title": "Parse Non-Invasive Table & Page Extensions",
+      "type": "UNIT",
+      "priority": "HIGH",
+      "verification": "cargo test -p bosc-syntax test_extension_parsing"
+    },
+    {
+      "id": "SYN-03",
+      "title": "Parse Field Validation Blocks validate(val)",
+      "type": "UNIT",
+      "priority": "HIGH",
+      "verification": "cargo test -p bosc-syntax test_field_validation_syntax"
+    },
+    {
+      "id": "SYN-04",
+      "title": "Parse Declarative State Machines & Transitions",
+      "type": "UNIT",
+      "priority": "HIGH",
+      "verification": "cargo test -p bosc-syntax test_statemachine_syntax"
+    },
+    {
+      "id": "ANA-01",
+      "title": "Validate Table Primary Key Constraints",
+      "type": "UNIT",
+      "priority": "CRITICAL",
+      "verification": "cargo test -p bosc-analyzer test_pk_constraints"
+    },
+    {
+      "id": "ANA-02",
+      "title": "Validate FlowField Formula References & Cycle Detection",
+      "type": "UNIT",
+      "priority": "CRITICAL",
+      "verification": "cargo test -p bosc-analyzer test_flowfield_cycles"
+    },
+    {
+      "id": "ANA-03",
+      "title": "Validate Extensible Enum Strategy Mapping",
+      "type": "UNIT",
+      "priority": "HIGH",
+      "verification": "cargo test -p bosc-analyzer test_enum_extension_bindings"
+    },
+    {
+      "id": "ANA-04",
+      "title": "Validate Non-Invasive Field Conflict Protection",
+      "type": "UNIT",
+      "priority": "HIGH",
+      "verification": "cargo test -p bosc-analyzer test_field_name_collisions"
+    },
+    {
+      "id": "IR-01",
+      "title": "Strip TypeScript Types from BOS-Script to JS",
+      "type": "UNIT",
+      "priority": "CRITICAL",
+      "verification": "cargo test -p bosc-ir test_typescript_stripping"
+    },
+    {
+      "id": "IR-02",
+      "title": "Compile Declarative AST to Relational IR Schema",
+      "type": "UNIT",
+      "priority": "CRITICAL",
+      "verification": "cargo test -p bosc-ir test_ir_lowering"
+    },
+    {
+      "id": "DB-01",
+      "title": "Generate PostgreSQL Tables with RLS Policies",
+      "type": "INTEGRATION",
+      "priority": "CRITICAL",
+      "verification": "cargo test -p bosc-codegen-db test_ddl_generation"
+    },
+    {
+      "id": "DB-02",
+      "title": "Generate Stored Generated Formula Columns",
+      "type": "INTEGRATION",
+      "priority": "HIGH",
+      "verification": "cargo test -p bosc-codegen-db test_generated_columns"
+    },
+    {
+      "id": "DB-03",
+      "title": "Generate SIFT Pushdown Aggregation Views",
+      "type": "INTEGRATION",
+      "priority": "HIGH",
+      "verification": "cargo test -p bosc-codegen-db test_sift_views"
+    },
+    {
+      "id": "DB-04",
+      "title": "Generate Immutable Ledger Reversal Triggers",
+      "type": "INTEGRATION",
+      "priority": "CRITICAL",
+      "verification": "cargo test -p bosc-codegen-db test_immutable_ledger_triggers"
+    },
+    {
+      "id": "API-01",
+      "title": "Health & Database Detector Endpoints (/api/health, /api/detect-db)",
+      "type": "API_CONTRACT",
+      "priority": "CRITICAL",
+      "verification": "curl http://localhost:3000/api/health"
+    },
+    {
+      "id": "API-02",
+      "title": "Dynamic Database Lifecycle (list, create, switch, manage, test-connection)",
+      "type": "API_CONTRACT",
+      "priority": "CRITICAL",
+      "verification": "powershell scripts/test_new_db_install.ps1"
+    },
+    {
+      "id": "API-03",
+      "title": "System Provisioning & Meta Catalog (/api/meta/provision, /api/meta/objects)",
+      "type": "API_CONTRACT",
+      "priority": "CRITICAL",
+      "verification": "curl -X POST http://localhost:3000/api/meta/provision"
+    },
+    {
+      "id": "API-04",
+      "title": "Entities Generic CRUD with Multi-Tenant RLS (/api/entities/{table})",
+      "type": "SECURITY_RLS",
+      "priority": "CRITICAL",
+      "verification": "powershell test_security_api.ps1"
+    },
+    {
+      "id": "API-05",
+      "title": "Optimistic Concurrency Control (_system_version mismatch 409 Conflict)",
+      "type": "CONCURRENCY_OCC",
+      "priority": "CRITICAL",
+      "verification": "powershell test_advanced_features.ps1"
+    },
+    {
+      "id": "API-06",
+      "title": "Table & Record Locking (/api/entities/{table}/lock)",
+      "type": "CONCURRENCY_OCC",
+      "priority": "HIGH",
+      "verification": "curl -X POST http://localhost:3000/api/entities/customer/lock"
+    },
+    {
+      "id": "API-07",
+      "title": "Declarative State Transitions & Audit History (/api/entities/{table}/{id}/transition)",
+      "type": "INTEGRATION",
+      "priority": "HIGH",
+      "verification": "curl -X POST http://localhost:3000/api/entities/order/UUID/transition"
+    },
+    {
+      "id": "API-08",
+      "title": "GraphQL-Like Query Protocol with Relation Inclusions (/api/query)",
+      "type": "API_CONTRACT",
+      "priority": "HIGH",
+      "verification": "curl -X POST http://localhost:3000/api/query"
+    },
+    {
+      "id": "API-09",
+      "title": "Transactional Outbox & Worker Dispatcher (/api/events/outbox)",
+      "type": "INTEGRATION",
+      "priority": "HIGH",
+      "verification": "curl http://localhost:3000/api/events/outbox"
+    },
+    {
+      "id": "API-10",
+      "title": "QuickJS Sandboxed Codeunit Runner (/api/codeunits/{name}/run)",
+      "type": "INTEGRATION",
+      "priority": "HIGH",
+      "verification": "cargo test -p bosc-runtime test_quickjs_sandbox"
+    },
+    {
+      "id": "API-11",
+      "title": "WebAssembly wasmi 2.0 Plugin Runner (/api/wasm/{module}/{func}/invoke)",
+      "type": "INTEGRATION",
+      "priority": "HIGH",
+      "verification": "cargo test -p bosc-runtime test_wasm_execution"
+    },
+    {
+      "id": "API-12",
+      "title": "Loopback IPC Sidecar Gateway (/api/sidecars/{name}/call)",
+      "type": "INTEGRATION",
+      "priority": "MEDIUM",
+      "verification": "cargo test -p bosc-runtime test_sidecar_ipc"
+    },
+    {
+      "id": "CLI-01",
+      "title": "Database Auto-Detection (bosc-cli detect-db)",
+      "type": "UNIT",
+      "priority": "HIGH",
+      "verification": "cargo run -p bosc-cli -- detect-db"
+    },
+    {
+      "id": "CLI-02",
+      "title": "HTTP API Server Launch (bosc-cli serve)",
+      "type": "INTEGRATION",
+      "priority": "CRITICAL",
+      "verification": "cargo run -p bosc-cli -- serve --help"
+    },
+    {
+      "id": "CLI-03",
+      "title": "Package Build & Validation (bosc-cli package build)",
+      "type": "UNIT",
+      "priority": "HIGH",
+      "verification": "cargo run -p bosc-cli -- package --help"
+    },
+    {
+      "id": "UI-01",
+      "title": "Responsive 3-Column Studio Layout (Desktop, Tablet, Mobile)",
+      "type": "UX_VISUAL",
+      "priority": "CRITICAL",
+      "verification": "node scripts/test-agent/visual_browser_test.mjs --viewport=all"
+    },
+    {
+      "id": "UI-02",
+      "title": "Dark and Light Theme Toggle Contrast & Aesthetics",
+      "type": "UX_VISUAL",
+      "priority": "HIGH",
+      "verification": "node scripts/test-agent/visual_browser_test.mjs --theme=all"
+    },
+    {
+      "id": "UI-03",
+      "title": "Interactive Multi-Tenant Security Context Drawer",
+      "type": "UI_INTERACTION",
+      "priority": "HIGH",
+      "verification": "node scripts/test-agent/visual_browser_test.mjs --test=drawer"
+    },
+    {
+      "id": "UI-04",
+      "title": "1-Click Auto-Fill Preset Endpoint Execution",
+      "type": "UI_INTERACTION",
+      "priority": "CRITICAL",
+      "verification": "node scripts/test-agent/visual_browser_test.mjs --test=presets"
+    },
+    {
+      "id": "UI-05",
+      "title": "Real-Time Database Cluster Switcher Dropdown",
+      "type": "UI_INTERACTION",
+      "priority": "HIGH",
+      "verification": "node scripts/test-agent/visual_browser_test.mjs --test=db-switcher"
+    },
+    {
+      "id": "UI-06",
+      "title": "Dynamic JSON Request Builder & Response Inspector Tabs",
+      "type": "UI_INTERACTION",
+      "priority": "HIGH",
+      "verification": "node scripts/test-agent/visual_browser_test.mjs --test=response-tabs"
+    },
+    {
+      "id": "UI-07",
+      "title": "Error & Validation Toast Notifications Dismissal",
+      "type": "UX_VISUAL",
+      "priority": "MEDIUM",
+      "verification": "node scripts/test-agent/visual_browser_test.mjs --test=toasts"
+    }
+  ]
+}

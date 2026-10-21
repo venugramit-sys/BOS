@@ -1,0 +1,22 @@
+{
+  "name": "bos-workspace",
+  "version": "1.0.0",
+  "description": "BOS Enterprise Systems Engine, Runtime Compiler, and Svelte 5 Web Studio",
+  "private": true,
+  "scripts": {
+    "start": "powershell -File ./run.ps1",
+    "dev": "powershell -File ./run.ps1",
+    "dev:windows": "powershell -File ./run.ps1 -SeparateWindows",
+    "backend": "cargo run --bin bosc-cli -- serve --port 3000 --db postgres://postgres:postgres@localhost:5432/bos_dev",
+    "frontend": "npm run dev --prefix ui",
+    "build": "powershell -ExecutionPolicy Bypass -File ./scripts/build-distribution.ps1",
+    "build:prod": "powershell -ExecutionPolicy Bypass -File ./scripts/build-distribution.ps1",
+    "build:ui": "npm run build --prefix ui",
+    "build:backend": "cargo build --release -p bosc-cli",
+    "build:packages": "cargo run --release -p bosc-cli -- package build -i packages/bos.auth/auth.bos -o packages/bos.auth/bos.auth.bospkg",
+    "build:dist": "powershell -ExecutionPolicy Bypass -File ./scripts/build-distribution.ps1",
+    "build:dist:fast": "powershell -ExecutionPolicy Bypass -File ./scripts/build-distribution.ps1 -SkipFrontend -SkipBackend",
+    "build:linux": "bash ./scripts/build-distribution.sh",
+    "start:prod": "cargo run --release -p bosc-cli -- node run --config dist/bos-server/config/bos-node.toml"
+  }
+}
