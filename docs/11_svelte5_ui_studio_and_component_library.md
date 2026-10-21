@@ -97,7 +97,7 @@ The code editor (`ui/src/lib/components/studio/code-editor/MonacoCodeStudio.svel
 For developers preferring visual modeling, the studio provides drag-and-drop designers:
 1. **Table Designer (`TableDesigner.svelte`)**: Interactive grid for fields, data types, lengths, primary keys, and FlowField wizard modal.
 2. **Query Designer (`QueryDesigner.svelte`)**: Visual join canvas and element hierarchy builder with live SQL preview.
-3. **Page Designer (`PageDesigner.svelte`)**: Visual layout toolbox with draggable areas, groups, repeater grids, and action bars.
+3. **Page Designer (`PageDesigner.svelte` + `designers/page/`)**: WYSIWYG designer on the real compiled page. Develop mode edits the `.bos` source with span edits; Customize mode edits the per-database customization layer. It has drag and drop, a toolbox, an outline, a property sheet that shows auto-filled values, a style editor and an icon picker. See [17 §12](17_page_compiler_and_designer.md).
 4. **State Machine Designer (`StateMachineDesigner.svelte`)**: Interactive node graph representing states, transition arrows, and role badges.
 5. **Relationships Viewer (`RelationshipsViewer.svelte`)**: Entity-relationship diagram visualizing foreign keys and FlowField dependencies across all packages.
 

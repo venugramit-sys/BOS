@@ -7,9 +7,17 @@ pub mod ts_oxc;
 pub mod ts_stripper;
 pub mod bytecode_compiler;
 pub mod page_merger;
+pub mod page_expr;
+pub mod page_resolver;
+pub mod page_source;
+mod page_check;
+mod page_lower;
+#[cfg(test)]
+mod page_tests;
 pub use ts_stripper::strip_typescript;
 pub use bytecode_compiler::BytecodeCompiler;
-pub use page_merger::merge_page_with_extensions;
+pub use page_merger::{merge_page_detailed, merge_page_with_extensions, sort_extensions_for_merge, MergeOrphan, MergeOutcome};
+pub use page_resolver::{compile_page, prettify_caption, ModelCatalog, PageCatalog, PageCompileResult};
 
 #[derive(Debug, Error)]
 pub enum AnalyzerError {
@@ -642,7 +650,7 @@ impl SemanticAnalyzer {
         diagnostics.extend(sift_advice(&tables));
         diagnostics.extend(host_member_diagnostics(&codeunits));
 
-        Ok(ModelIR {
+        let mut model = ModelIR {
             package_name: self.package_name.clone(),
             tables,
             table_logics,
@@ -663,7 +671,10 @@ impl SemanticAnalyzer {
             custom_metadata,
             menus,
             diagnostics,
-        })
+        };
+        let page_diagnostics = page_check::check_pages(program, &model);
+        model.diagnostics.extend(page_diagnostics);
+        Ok(model)
     }
 
     pub fn lower_table_extension(&self, ext: &TableExtDef) -> Result<TableExtensionIR, AnalyzerError> {
@@ -1604,223 +1615,12 @@ impl SemanticAnalyzer {
     }
 
     pub fn lower_page(&self, p: &PageDef) -> Result<PageIR, AnalyzerError> {
-        let mut caption = None;
-        let mut source_kind = "table".to_string();
-        let mut editable = None;
-        let mut insert_allowed = None;
-        let mut modify_allowed = None;
-        let mut delete_allowed = None;
-        let mut filters = Vec::new();
-        for prop in &p.properties {
-            match prop.name.as_str() {
-                "caption" => {
-                    caption = property_text(&prop.value);
-                }
-                "sourceKind" => {
-                    if let Some(kind) = property_text(&prop.value) {
-                        source_kind = kind;
-                    }
-                }
-                "editable" => {
-                    if let Expr::BoolLit(b) = prop.value {
-                        editable = Some(b);
-                    }
-                }
-                "insertAllowed" => {
-                    if let Expr::BoolLit(b) = prop.value {
-                        insert_allowed = Some(b);
-                    }
-                }
-                "modifyAllowed" => {
-                    if let Expr::BoolLit(b) = prop.value {
-                        modify_allowed = Some(b);
-                    }
-                }
-                "deleteAllowed" => {
-                    if let Expr::BoolLit(b) = prop.value {
-                        delete_allowed = Some(b);
-                    }
-                }
-                "filters" => match &prop.value {
-                    Expr::ArrayLit(items) => {
-                        for item in items {
-                            if let Some(s) = property_text(item) {
-                                filters.push(s);
-                            } else {
-                                filters.push(format_expr(item));
-                            }
-                        }
-                    }
-                    _ => {
-                        if let Some(s) = property_text(&prop.value) {
-                            filters.push(s);
-                        }
-                    }
-                },
-                _ => {}
-            }
-        }
-        let controls = p.controls.iter().map(|c| self.lower_page_control(c)).collect();
-        let actions = p.actions.iter().map(|a| self.lower_page_action(a)).collect();
-        let views = p
-            .views
-            .iter()
-            .map(|v| {
-                let mut v_caption = None;
-                let mut filter = None;
-                let mut sort = None;
-                let mut is_default = false;
-                for prop in &v.properties {
-                    match prop.name.as_str() {
-                        "caption" | "label" => v_caption = property_text(&prop.value),
-                        "where" | "filter" => filter = Some(format_expr(&prop.value)),
-                        "sort" | "orderBy" => {
-                            sort = property_text(&prop.value).or_else(|| Some(format_expr(&prop.value)));
-                        }
-                        "default" => {
-                            if let Expr::BoolLit(b) = prop.value {
-                                is_default = b;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                PageViewIR {
-                    name: v.name.clone(),
-                    caption: v_caption,
-                    filter,
-                    sort,
-                    is_default,
-                }
-            })
-            .collect();
-        let mut triggers = Vec::new();
-        for trg in &p.triggers {
-            let script = trg.body.raw_source.as_ref().map(|s| strip_typescript(s));
-            triggers.push(TriggerIR {
-                name: trg.name.clone(),
-                params: trg.params.clone(),
-                actions: lower_statements(&trg.body.statements),
-                script,
-            });
-        }
-        Ok(PageIR {
-            name: p.name.clone(),
-            caption,
-            page_type: p.page_type.clone(),
-            source_table: p.source_table.clone(),
-            source_kind: Some(source_kind),
-            editable,
-            insert_allowed,
-            modify_allowed,
-            delete_allowed,
-            filters,
-            views,
-            controls,
-            actions,
-            triggers,
-        })
+        Ok(page_lower::lower_page(p))
     }
 
     pub fn lower_page_extension(&self, pe: &PageExtDef) -> Result<PageExtensionIR, AnalyzerError> {
-        let controls = pe.controls.iter().map(|c| self.lower_page_control(c)).collect();
-        let actions = pe.actions.iter().map(|a| self.lower_page_action(a)).collect();
-        let mut triggers = Vec::new();
-        for trg in &pe.triggers {
-            let script = trg.body.raw_source.as_ref().map(|s| strip_typescript(s));
-            triggers.push(TriggerIR {
-                name: trg.name.clone(),
-                params: trg.params.clone(),
-                actions: lower_statements(&trg.body.statements),
-                script,
-            });
-        }
-        Ok(PageExtensionIR {
-            name: pe.name.clone(),
-            target_page: pe.target_page.clone(),
-            controls,
-            actions,
-            triggers,
-        })
+        Ok(page_lower::lower_page_extension(pe))
     }
-
-    fn lower_page_control(&self, c: &PageControlDef) -> PageControlIR {
-        let mut caption = None;
-        let mut properties = std::collections::BTreeMap::new();
-        for prop in &c.properties {
-            if prop.name == "caption" || prop.name == "label" {
-                if let Some(s) = property_text(&prop.value) {
-                    caption = Some(s.clone());
-                }
-            }
-            let val = property_text(&prop.value).unwrap_or_else(|| format_expr(&prop.value));
-            properties.insert(prop.name.clone(), val);
-        }
-        PageControlIR {
-            kind: c.kind.clone(),
-            name: c.name.clone(),
-            source_expr: c.source_expr.clone(),
-            caption,
-            properties,
-            children: c.children.iter().map(|ch| self.lower_page_control(ch)).collect(),
-        }
-    }
-
-    fn lower_page_action(&self, a: &PageActionDef) -> PageActionIR {
-        let mut caption = None;
-        let mut icon = None;
-        let mut primary = false;
-        let mut shortcut = None;
-        let mut confirm = None;
-        let mut show_when = None;
-        let mut enable_when = None;
-        let mut run_codeunit = None;
-        let mut open_page = None;
-        let mut selection = None;
-        for prop in &a.properties {
-            match prop.name.as_str() {
-                "caption" | "label" => caption = property_text(&prop.value),
-                "icon" => icon = property_text(&prop.value),
-                "primary" | "promoted" => {
-                    if let Expr::BoolLit(b) = prop.value {
-                        primary = b;
-                    }
-                }
-                "shortcut" | "shortcutKey" => shortcut = property_text(&prop.value),
-                "confirm" | "confirmationMessage" => confirm = property_text(&prop.value),
-                "showWhen" | "visible" => {
-                    show_when = Some(format_expr(&prop.value));
-                }
-                "enableWhen" | "enabled" => {
-                    enable_when = Some(format_expr(&prop.value));
-                }
-                "run" | "runObject" => {
-                    run_codeunit = property_text(&prop.value).or_else(|| Some(format_expr(&prop.value)));
-                }
-                "openPage" => {
-                    open_page = property_text(&prop.value).or_else(|| Some(format_expr(&prop.value)));
-                }
-                "selection" => selection = property_text(&prop.value),
-                _ => {}
-            }
-        }
-        let script = a.on_action.as_ref().and_then(|b| b.raw_source.as_ref().map(|s| strip_typescript(s)));
-        PageActionIR {
-            name: a.name.clone(),
-            caption,
-            icon,
-            primary,
-            shortcut,
-            confirm,
-            show_when,
-            enable_when,
-            run_codeunit,
-            open_page,
-            selection,
-            script,
-        }
-    }
-
     pub fn lower_menu(&self, m: &MenuDef) -> MenuIR {
         let mut label = None;
         let mut role = None;

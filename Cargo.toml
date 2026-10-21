@@ -4,6 +4,7 @@ members = [
     "crates/bosc-analyzer",
     "crates/bosc-ir",
     "crates/bosc-codegen-db",
+    "crates/bosc-codegen-svelte",
     "crates/bosc-runtime",
     "crates/bosc-cli",
 ]

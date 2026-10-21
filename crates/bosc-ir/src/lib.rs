@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+pub mod page;
+pub use page::*;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ModelIR {
     pub package_name: String,
@@ -829,130 +832,8 @@ pub struct QueryColumnIR {
 }
 
 // ----------------------------------------------------
-// PAGE, PAGE EXTENSION, REPORT & CUSTOM METADATA IR
+// MENU, REPORT & CUSTOM METADATA IR (page IR lives in page.rs)
 // ----------------------------------------------------
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PageViewIR {
-    pub name: String,
-    #[serde(default)]
-    pub caption: Option<String>,
-    #[serde(default)]
-    pub filter: Option<String>,
-    #[serde(default)]
-    pub sort: Option<String>,
-    #[serde(default)]
-    pub is_default: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PageIR {
-    pub name: String,
-    pub caption: Option<String>,
-    pub page_type: String,
-    pub source_table: Option<String>,
-    #[serde(default)]
-    pub source_kind: Option<String>,
-    #[serde(default)]
-    pub editable: Option<bool>,
-    #[serde(default)]
-    pub insert_allowed: Option<bool>,
-    #[serde(default)]
-    pub modify_allowed: Option<bool>,
-    #[serde(default)]
-    pub delete_allowed: Option<bool>,
-    #[serde(default)]
-    pub filters: Vec<String>,
-    #[serde(default)]
-    pub views: Vec<PageViewIR>,
-    pub controls: Vec<PageControlIR>,
-    pub actions: Vec<PageActionIR>,
-    pub triggers: Vec<TriggerIR>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PageExtensionIR {
-    pub name: String,
-    pub target_page: String,
-    pub controls: Vec<PageControlIR>,
-    pub actions: Vec<PageActionIR>,
-    pub triggers: Vec<TriggerIR>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PageControlIR {
-    pub kind: String,
-    pub name: String,
-    pub source_expr: Option<String>,
-    pub caption: Option<String>,
-    #[serde(default)]
-    pub properties: std::collections::BTreeMap<String, String>,
-    pub children: Vec<PageControlIR>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PageActionIR {
-    pub name: String,
-    pub caption: Option<String>,
-    #[serde(default)]
-    pub icon: Option<String>,
-    #[serde(default)]
-    pub primary: bool,
-    #[serde(default)]
-    pub shortcut: Option<String>,
-    #[serde(default)]
-    pub confirm: Option<String>,
-    #[serde(default)]
-    pub show_when: Option<String>,
-    #[serde(default)]
-    pub enable_when: Option<String>,
-    #[serde(default)]
-    pub run_codeunit: Option<String>,
-    #[serde(default)]
-    pub open_page: Option<String>,
-    #[serde(default)]
-    pub selection: Option<String>,
-    pub script: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ResolvedFieldMetaIR {
-    pub name: String,
-    #[serde(default)]
-    pub caption: Option<String>,
-    pub data_type: String,
-    #[serde(default)]
-    pub not_null: bool,
-    #[serde(default)]
-    pub is_primary_key: bool,
-    #[serde(default)]
-    pub default_value: Option<String>,
-    #[serde(default)]
-    pub relation_table: Option<String>,
-    #[serde(default)]
-    pub relation_field: Option<String>,
-    #[serde(default)]
-    pub is_flow_field: bool,
-    #[serde(default)]
-    pub flow_field_expr: Option<String>,
-    #[serde(default = "default_true")]
-    pub editable: bool,
-    #[serde(default = "default_true")]
-    pub visible: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ResolvedPageIR {
-    pub page: PageIR,
-    #[serde(default)]
-    pub resolved_fields: std::collections::BTreeMap<String, ResolvedFieldMetaIR>,
-    #[serde(default)]
-    pub state_machine: Option<String>,
-    #[serde(default)]
-    pub initial_state: Option<String>,
-    #[serde(default)]
-    pub transitions: Vec<TransitionIR>,
-}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MenuItemIR {

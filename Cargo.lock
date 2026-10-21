@@ -324,6 +324,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "bosc-codegen-svelte"
+version = "0.1.0"
+dependencies = [
+ "bosc-analyzer",
+ "bosc-ir",
+ "bosc-syntax",
+ "rquickjs",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "bosc-ir"
 version = "0.1.0"
 dependencies = [
@@ -346,6 +358,7 @@ dependencies = [
  "axum",
  "bosc-analyzer",
  "bosc-codegen-db",
+ "bosc-codegen-svelte",
  "bosc-ir",
  "bosc-syntax",
  "chrono",
@@ -364,6 +377,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "toml",
+ "tower",
  "tower-http",
  "tracing",
  "uuid",

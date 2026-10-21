@@ -175,6 +175,33 @@ enum PackageCommands {
     },
 }
 
+/// Svelte compiler for `package build`: `$BOS_UI_RUNTIME/svelte-compiler.js`, the built UI runtime, or
+/// the compiler of the UI's installed dependencies.
+fn locate_svelte_compiler() -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(dir) = std::env::var("BOS_UI_RUNTIME") {
+        candidates.push(PathBuf::from(dir).join(bosc_runtime::page_compiler::COMPILER_FILE));
+    }
+    for base in [".", "..", "../.."] {
+        candidates.push(PathBuf::from(base).join("ui/dist/bos-runtime").join(bosc_runtime::page_compiler::COMPILER_FILE));
+        candidates.push(PathBuf::from(base).join("ui/node_modules/svelte/compiler/index.js"));
+    }
+    candidates.into_iter().find(|p| p.is_file())
+}
+
+/// Starts the compiled page service; a failure is reported but does not stop the API server.
+async fn start_pages(engine: &BosEngine, config: &NodeConfig) {
+    let cfg = bosc_runtime::PageServiceConfig::from_node_config(config);
+    println!("Resolving pages (artifacts: {}, compiler: {})...", cfg.artifact_root.display(), cfg.runtime_dir.display());
+    match engine.start_page_service(cfg).await {
+        Ok(service) => match service.compiler_error() {
+            None => println!("✓ Page service ready ({} compiler workers).", service.config().workers),
+            Some(e) => println!("⚠ Pages are listed but cannot be compiled: {e}"),
+        },
+        Err(e) => println!("⚠ Page service failed to start: {e}"),
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
@@ -585,6 +612,7 @@ async fn main() -> Result<()> {
             use bosc_runtime::{create_api_router, BosEngine};
             println!("Connecting BOS Engine to PostgreSQL at {}...", db);
             let engine = BosEngine::connect(&db).await?;
+            start_pages(&engine, &NodeConfig::default()).await;
 
             let app = create_api_router(engine);
             let addr = format!("0.0.0.0:{}", port);
@@ -714,7 +742,7 @@ async fn main() -> Result<()> {
                 let ddl_file = schema_dir.join("tables.sql");
                 fs::write(&ddl_file, &tables_ddl)?;
 
-                // 4. Pre-Compiled Enterprise Svelte 5 Page Descriptors
+                // 4. Page descriptors (read by the legacy PageSurface renderer until the page kit replaces it)
                 let mut page_count = 0;
                 for page in &model_ir.pages {
                     let page_file = pages_dir.join(format!("{}.json", page.name));
@@ -724,7 +752,26 @@ async fn main() -> Result<()> {
                     }
                 }
 
-                // 5. Cryptographic Merkle Root and Manifest
+                // 5. Pre-compiled Svelte 5 page modules (content-addressed; seeds the node's artifact store)
+                let compiler = locate_svelte_compiler().and_then(|path| {
+                    match bosc_runtime::SvelteCompiler::start(&path, bosc_runtime::SvelteCompiler::default_workers()) {
+                        Ok(c) => Some(c),
+                        Err(e) => {
+                            println!("⚠ Svelte compiler unavailable ({e}); page modules will be compiled by the node.");
+                            None
+                        }
+                    }
+                });
+                if compiler.is_none() {
+                    println!("⚠ No Svelte compiler found (build ui/ or set BOS_UI_RUNTIME); page modules will be compiled by the node.");
+                }
+                let built_pages = bosc_runtime::page_artifacts::build_model_pages(&model_ir, compiler.as_ref(), &pages_dir)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("page build failed: {e}"))?;
+                let compiled_pages = built_pages.iter().filter(|p| p.compiled).count();
+                let page_errors: usize = built_pages.iter().map(|p| p.errors).sum();
+
+                // 6. Cryptographic Merkle Root and Manifest
                 let full_artifacts = bosc_ir::PackageArtifactsIR {
                     manifest: bundle.manifest.clone(),
                     bytecodes: bytecodes.clone(),
@@ -747,6 +794,7 @@ async fn main() -> Result<()> {
                     "checksum": bundle.checksum,
                     "bytecode_modules": bytecodes.len(),
                     "pages": page_count,
+                    "page_modules": compiled_pages,
                 });
                 fs::write(&manifest_file, serde_json::to_string_pretty(&manifest_json)?)?;
 
@@ -773,6 +821,7 @@ async fn main() -> Result<()> {
                 println!("Checksum:          {}", bundle.checksum);
                 println!("Merkle Root:       {}", merkle_root);
                 println!("Bytecode Modules:  {} (.qbc generated)", bytecodes.len());
+                println!("Page Modules:      {} of {} compiled ({} page errors)", compiled_pages, built_pages.len(), page_errors);
                 println!("Meta-Objects:      {}", bundle.objects.len());
                 println!("Bundle Artifact:   {:?}", out_path);
                 println!("Static Directory:  {:?}", dist_pkg_dir);
@@ -965,6 +1014,10 @@ async fn main() -> Result<()> {
                 } else {
                     None
                 };
+
+                if node_config.pages.enabled {
+                    start_pages(&engine, &node_config).await;
+                }
 
                 let app = create_node_router(engine, node_config.clone());
                 let listener = tokio::net::TcpListener::bind(&addr).await?;

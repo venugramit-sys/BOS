@@ -1,0 +1,318 @@
+// Fixture package covering every UI page type the Svelte code generator supports.
+
+enum OrderStatus { Open; Released; Shipped; }
+
+table Country {
+    code: String(10) { notNull = true; };
+    name: String(50);
+    primaryKey(code);
+}
+
+table CustomerLedgerEntry {
+    id: UUID { default = auto(); };
+    customerNo: String(20) { notNull = true; };
+    amount: Decimal(18, 2);
+    primaryKey(id);
+}
+
+table Customer {
+    no: String(20) { notNull = true; };
+    name: String(100);
+    email: String(80);
+    phoneNo: String(30);
+    notes: String(1000);
+    creditLimit: Decimal(18, 2) { default = 0; };
+    blocked: Boolean { default = false; };
+    countryCode: String(10) { relation = Country.code; };
+    internalRating: Integer;
+    balance: Decimal(18, 2) {
+        computed = sum(CustomerLedgerEntry.amount where { customerNo == no });
+    };
+    primaryKey(no);
+}
+
+table SalesHeader {
+    no: String(20) { notNull = true; };
+    customerNo: String(20) { relation = Customer.no; };
+    orderDate: Date;
+    status: Enum(OrderStatus) { default = "Open"; };
+    amount: Decimal(18, 2);
+    primaryKey(no);
+}
+
+table SalesLine {
+    documentNo: String(20) { notNull = true; relation = SalesHeader.no; };
+    lineNo: Integer { notNull = true; };
+    itemNo: String(20);
+    description: String(100);
+    quantity: Decimal(18, 5);
+    unitPrice: Decimal(18, 2);
+    primaryKey(documentNo, lineNo);
+}
+
+table ItemJournalLine {
+    id: UUID { default = auto(); };
+    itemNo: String(20);
+    postingDate: Date;
+    quantity: Decimal(18, 5);
+    primaryKey(id);
+}
+
+table SalesCue {
+    id: String(10) { notNull = true; };
+    openOrders: Integer {
+        computed = count(SalesHeader where { status == "Open" });
+    };
+    releasedOrders: Integer {
+        computed = count(SalesHeader where { status == "Released" });
+    };
+    primaryKey(id);
+}
+
+table Activity {
+    id: UUID { default = auto(); };
+    subject: String(100);
+    dueAt: DateTime;
+    done: Boolean;
+    primaryKey(id);
+}
+
+table SetupState {
+    id: String(10) { notNull = true; };
+    companyName: String(100);
+    currencyCode: String(10);
+    primaryKey(id);
+}
+
+page CountryList for Country {
+    pageType = List;
+    layout { area(Content) { repeater(Lines) { field(code); field(name); } } }
+}
+
+page CustomerLedgerEntries for CustomerLedgerEntry {
+    pageType = List;
+    layout { area(Content) { repeater(Lines) { field(customerNo); field(amount); } } }
+}
+
+page CustomerCard for Customer {
+    pageType = Card;
+    style { background = surface; radius = lg; }
+    layout {
+        area(Content) {
+            group(General) {
+                field(no);
+                field(name) { importance = Promoted; }
+                field(email);
+                field(phoneNo) { responsive { md = 6; hideBelow = sm; } }
+                field(countryCode);
+                field(internalRating) { visible = false; }
+            }
+            group(Credit) {
+                showWhen = rec.blocked == false;
+                field(creditLimit) {
+                    style { emphasis = Attention; borderColor = "#1e40af"; borderWidth = 1; icon = "wallet"; }
+                    editableWhen = rec.balance < rec.creditLimit;
+                }
+                field(balance);
+                field(blocked);
+            }
+            group(Remarks) { field(notes); }
+        }
+    }
+    actions {
+        area(Processing) {
+            group(History) {
+                caption = "History";
+                action(Ledger) {
+                    image = "BookOpen";
+                    openPage = CustomerLedgerEntries;
+                    link { customerNo = rec.no; }
+                }
+            }
+            action(Block) {
+                caption = "Block Customer";
+                confirm = "Block this customer?";
+                enableWhen = !rec.blocked;
+                onAction(rec, ctx) { ctx.ui.toast("warning", "Blocked", rec.no); }
+            }
+        }
+        area(Promoted) { actionref(Block_Promoted; Block) {} }
+    }
+}
+
+page CustomerList for Customer {
+    pageType = List;
+    layout {
+        area(Content) {
+            repeater(Lines) {
+                field(no);
+                field(name);
+                field(balance) { style { emphasis = Unfavorable; } styleExpr = rec.balance > rec.creditLimit; }
+                field(blocked);
+            }
+        }
+    }
+}
+
+page SalesLineSubform for SalesLine {
+    pageType = ListPart;
+    autoSplitKey = true;
+    layout {
+        area(Content) {
+            repeater(Lines) {
+                field(itemNo);
+                field(description);
+                field(quantity) { decimalPlaces = 0:5; }
+                field(unitPrice);
+            }
+        }
+    }
+}
+
+page CustomerStatsFactBox for Customer {
+    pageType = CardPart;
+    layout {
+        area(Content) {
+            field(balance);
+            field(creditLimit);
+        }
+    }
+}
+
+page SalesOrder for SalesHeader {
+    pageType = Document;
+    dataCaptionFields = [no];
+    layout {
+        area(Content) {
+            group(General) {
+                field(no);
+                field(customerNo);
+                field(orderDate);
+                field(status);
+                field(amount) { editable = false; }
+            }
+            part(Lines; SalesLineSubform) {
+                link { documentNo = rec.no; }
+                updatePropagation = true;
+            }
+        }
+        area(FactBoxes) {
+            part(CustomerStats; CustomerStatsFactBox) { link { no = rec.customerNo; } }
+        }
+    }
+    actions {
+        area(Processing) {
+            action(Release) {
+                primary = true;
+                enableWhen = rec.status == "Open";
+                onAction(rec, ctx) { ctx.call("SalesRelease", "Release", { no: rec.no }); }
+            }
+        }
+    }
+}
+
+page ItemJournal for ItemJournalLine {
+    pageType = Worksheet;
+    delayedInsert = true;
+    layout {
+        area(Content) {
+            repeater(Lines) {
+                field(postingDate);
+                field(itemNo);
+                field(quantity);
+            }
+        }
+    }
+}
+
+page SignIn for SetupState {
+    pageType = StandardDialog;
+    variables {
+        username: String(50) { caption = "User ID"; };
+        password: String(128);
+        rememberMe: Boolean = false;
+    }
+    layout {
+        area(Content) {
+            group(Credentials) {
+                field(username) { required = true; }
+                field(password) { required = true; }
+                field(rememberMe) { enableWhen = isNotEmpty(page.username); }
+            }
+        }
+    }
+    actions { action(SignIn) { caption = "Sign In"; primary = true; } }
+}
+
+page PostConfirm for SalesHeader {
+    pageType = ConfirmationDialog;
+    instructionalText = "Post the selected order?";
+    layout { area(Content) { field(no); field(amount); } }
+}
+
+page SetupWizard for SetupState {
+    pageType = NavigatePage;
+    layout {
+        area(Content) {
+            wizardstep(Welcome) {
+                label(Intro) { caption = "Welcome to BOS. This guide sets up your company."; }
+            }
+            wizardstep(Company) {
+                field(companyName) { required = true; }
+                field(currencyCode);
+            }
+            wizardstep(Finish) {
+                label(Done) { caption = "All set."; }
+            }
+        }
+    }
+    actions { action(Finish) { inFooterBar = true; primary = true; } }
+}
+
+page SalesHome for SalesCue {
+    pageType = RoleCenter;
+    layout {
+        area(RoleCenter) {
+            headline(Greeting) { caption = "Good morning"; }
+            cuegroup(Orders) {
+                cue(openOrders) { style { emphasis = Favorable; } }
+                cue(releasedOrders);
+            }
+            part(Recent; CustomerList) { }
+        }
+    }
+}
+
+page OrderBoard for SalesHeader {
+    pageType = Board;
+    layout { area(Content) { repeater(Cards) { field(no); field(customerNo); field(status); } } }
+}
+
+page ActivityTimeline for Activity {
+    pageType = Timeline;
+    layout { area(Content) { repeater(Events) { field(dueAt); field(subject); field(done); } } }
+}
+
+page CustomerWorkspace for Customer {
+    pageType = Card;
+    layout {
+        area(Content) {
+            tabs(Sections) {
+                tab(Overview) { field(no); field(name); }
+                tab(Finance) { showWhen = !rec.blocked; field(creditLimit); field(balance); }
+            }
+            split(Detail) {
+                group(Left) { field(email); }
+                group(Right) { field(notes); }
+            }
+            grid(Contact) { cols = 2; field(phoneNo); field(countryCode); }
+            divider(Sep);
+            spacer(Gap);
+        }
+    }
+}
+
+page CustomerApi for Customer {
+    pageType = Api;
+    layout { area(Content) { repeater(Fields) { field(no); field(name); } } }
+}

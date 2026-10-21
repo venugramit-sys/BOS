@@ -1225,21 +1225,13 @@ page UserList for User {
     layout {
         area(Content) {
             repeater(UserTable) {
-                field(username) {
-                    caption = "Username";
-                }
+                field(username);
                 field(email) {
                     caption = "Email Address";
                 }
-                field(fullName) {
-                    caption = "Full Name";
-                }
-                field(userType) {
-                    caption = "User Type";
-                }
-                field(status) {
-                    caption = "Status";
-                }
+                field(fullName);
+                field(userType);
+                field(status);
                 field(failedAttempts) {
                     caption = "Failed Logins";
                 }
@@ -1294,24 +1286,15 @@ page UserCard for User {
         area(Content) {
             group(General) {
                 field(username) {
-                    caption = "Username";
                     editable = false;
                 }
                 field(email) {
                     caption = "Email Address";
                 }
-                field(fullName) {
-                    caption = "Full Name";
-                }
-                field(phoneNumber) {
-                    caption = "Phone Number";
-                }
-                field(userType) {
-                    caption = "User Type";
-                }
-                field(status) {
-                    caption = "Status";
-                }
+                field(fullName);
+                field(phoneNumber);
+                field(userType);
+                field(status);
                 field(isActive) {
                     caption = "Active Flag";
                 }
@@ -1319,7 +1302,6 @@ page UserCard for User {
 
             group(Security) {
                 field(failedAttempts) {
-                    caption = "Failed Attempts";
                     editable = false;
                 }
                 field(lockoutUntil) {
@@ -1375,9 +1357,7 @@ page RoleList for Role {
                 field(name) {
                     caption = "Role Name";
                 }
-                field(description) {
-                    caption = "Description";
-                }
+                field(description);
                 field(isSystemRole) {
                     caption = "System Role";
                 }
@@ -1417,18 +1397,14 @@ page SessionList for UserSession {
                 field(token) {
                     caption = "Session Token";
                 }
-                field(ipAddress) {
-                    caption = "IP Address";
-                }
+                field(ipAddress);
                 field(userAgent) {
                     caption = "Client / User Agent";
                 }
                 field(sessionState) {
                     caption = "State";
                 }
-                field(expiresAt) {
-                    caption = "Expires At";
-                }
+                field(expiresAt);
                 field(lastActivityAt) {
                     caption = "Last Activity";
                 }
@@ -1462,21 +1438,15 @@ page SecurityAuditLogList for SecurityAuditLog {
                 field(username) {
                     caption = "User";
                 }
-                field(action) {
-                    caption = "Action";
-                }
+                field(action);
                 field(isSuccess) {
                     caption = "Success";
                 }
-                field(ipAddress) {
-                    caption = "IP Address";
-                }
+                field(ipAddress);
                 field(userAgent) {
                     caption = "Client Agent";
                 }
-                field(details) {
-                    caption = "Details";
-                }
+                field(details);
             }
         }
     }
@@ -1497,9 +1467,7 @@ page RoleCard for Role {
                 field(name) {
                     caption = "Role Name";
                 }
-                field(description) {
-                    caption = "Description";
-                }
+                field(description);
                 field(isSystemRole) {
                     caption = "System Protected Role";
                     editable = false;
@@ -1508,7 +1476,6 @@ page RoleCard for Role {
                     caption = "Active Status";
                 }
                 field(assignedUsersCount) {
-                    caption = "Assigned Users Count";
                     editable = false;
                 }
             }
@@ -1535,15 +1502,9 @@ page UserRoleList for UserRole {
     layout {
         area(Content) {
             repeater(UserRoleTable) {
-                field(username) {
-                    caption = "Username";
-                }
-                field(roleCode) {
-                    caption = "Role Code";
-                }
-                field(assignedBy) {
-                    caption = "Assigned By";
-                }
+                field(username);
+                field(roleCode);
+                field(assignedBy);
             }
         }
     }
@@ -1571,9 +1532,7 @@ page UserSecuritySettingList for UserSecuritySetting {
                 field(username) {
                     caption = "User ID";
                 }
-                field(mfaMethod) {
-                    caption = "MFA Method";
-                }
+                field(mfaMethod);
                 field(mfaEnabled) {
                     caption = "MFA Active";
                 }
@@ -1591,16 +1550,22 @@ page UserSecuritySettingList for UserSecuritySetting {
     }
 }
 
-page LoginPage for User {
-    pageType = Dialog;
+page LoginPage for AuthConfiguration {
+    pageType = StandardDialog;
     caption = "Sign In";
+
+    // Sign-in credentials are page variables: they are typed by the user and never stored on AuthConfiguration.
+    variables {
+        username: String(50) { caption = "User ID"; };
+        password: String(128);
+        rememberMe: Boolean = false;
+    }
 
     layout {
         area(Content) {
             group(Branding) {
                 caption = "BOS Enterprise Platform";
                 field(applicationTitle) {
-                    caption = "Application Title";
                     editable = false;
                 }
                 field(welcomeMessage) {
@@ -1611,15 +1576,14 @@ page LoginPage for User {
             group(Credentials) {
                 caption = "Account Credentials";
                 field(username) {
-                    caption = "User ID";
+                    required = true;
                 }
                 field(password) {
-                    caption = "Password";
-                    style = "password";
+                    required = true;
                 }
                 field(rememberMe) {
                     caption = "Remember User ID";
-                    style = "switch";
+                    showWhen = rec.allowRememberMe;
                 }
             }
             group(Compliance) {
@@ -1640,10 +1604,12 @@ page LoginPage for User {
         action(SignIn) {
             caption = "Sign In";
             icon = "LogIn";
+            primary = true;
             onAction(rec, ctx) {
-                if (!rec || !rec.username) throw new Error("Please enter your User ID.");
-                if (!rec.password) throw new Error("Please enter your password.");
-                ctx.call("AuthManager", "Authenticate", { username: rec.username, password: rec.password });
+                const vars = ctx.page.variables;
+                if (!vars.username) throw new Error("Please enter your User ID.");
+                if (!vars.password) throw new Error("Please enter your password.");
+                ctx.call("AuthManager", "Authenticate", { username: vars.username, password: vars.password });
             }
         }
     }
@@ -1661,9 +1627,7 @@ page AuthConfigurationCard for AuthConfiguration {
                     caption = "Config ID";
                     editable = false;
                 }
-                field(applicationTitle) {
-                    caption = "Application Title";
-                }
+                field(applicationTitle);
                 field(companyLogoUrl) {
                     caption = "Logo URL";
                 }
@@ -1676,9 +1640,7 @@ page AuthConfigurationCard for AuthConfiguration {
             }
             group(AuthenticationPolicies) {
                 caption = "Login Policies";
-                field(allowRememberMe) {
-                    caption = "Allow Remember Me";
-                }
+                field(allowRememberMe);
                 field(allowEmergencyFallback) {
                     caption = "Allow Emergency Super Admin Fallback";
                 }

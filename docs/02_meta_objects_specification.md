@@ -349,7 +349,20 @@ query CustomerSalesPerformance {
 ```
 
 ### 5.2. `page` & `pageextension`
-Defines user interface pages (Card, List, Worksheet, Document) and their visual controls.
+Defines user interface pages and their controls. Supported page types: Card, List, Document, ListPart, CardPart, Worksheet, StandardDialog, ConfirmationDialog, NavigatePage, RoleCenter, Api, Board and Timeline. The full reference is in [17_page_compiler_and_designer.md](17_page_compiler_and_designer.md): layout and action syntax, style tokens, responsive spans, page variables, the client expression language, extension directives, the customization layer and the BOS3001–BOS3012 diagnostics.
+
+Like Dynamics NAV / Business Central, a `field(x)` takes most of its properties from the table field:
+- caption
+- control type
+- mandatory flag
+- editability
+- decimal places
+- enum options
+- lookup page from `relation`
+- drill-down for FlowFields
+
+You only author what differs.
+
 - **Page Definition:**
 ```typescript
 page CustomerCard for Customer {
@@ -359,36 +372,44 @@ page CustomerCard for Customer {
     layout {
         area(Content) {
             group(General) {
-                field(code) { caption = "Customer No."; };
-                field(name) { caption = "Name"; };
-                field(creditLimit) { caption = "Credit Limit ($)"; };
+                field(code) { caption = "Customer No."; }
+                field(name);                                   // caption "Name", text box, max length from the table
+                field(creditLimit) {
+                    showWhen = rec.blocked == false;
+                    style { emphasis = Attention; icon = "wallet"; }
+                }
             }
             group(Financials) {
-                field(balance) { caption = "Current Balance ($)"; editable = false; };
+                field(balance);                                // FlowField: read-only with drill-down, automatically
             }
         }
     }
 
     actions {
-        action(PostInvoice) {
-            caption = "Post Invoice";
-            icon = "Receipt";
-            onAction(rec, ctx) {
-                ctx.ui.openModal("CreateInvoiceDialog", { customerId: rec.id });
+        area(Processing) {
+            action(PostInvoice) {
+                caption = "Post Invoice";
+                image = "receipt";
+                onAction(rec, ctx) {                           // runs server-side in the QuickJS sandbox
+                    ctx.ui.openModal("CreateInvoiceDialog", { customerId: rec.id });
+                }
             }
         }
     }
 }
 ```
 
-- **Page Extension:**
+- **Page Extension** (anchor directives `addFirst`, `addLast`, `addBefore`, `addAfter`, `modify`, `hide`, `moveFirst`, `moveLast`, `moveBefore`, `moveAfter`, `wrap`, `replace`):
 ```typescript
 pageextension CustomerCardLoyaltyExt extends CustomerCard {
     layout {
-        group(Loyalty) {
-            field(loyaltyTier) { caption = "Loyalty Tier"; };
-            field(loyaltyPoints) { caption = "Points Earned"; };
+        addLast(Content) {
+            group(Loyalty) {
+                field(loyaltyTier);
+                field(loyaltyPoints) { caption = "Points Earned"; }
+            }
         }
+        modify(creditLimit) { style { background = "#FFF7ED"; } }
     }
 }
 ```

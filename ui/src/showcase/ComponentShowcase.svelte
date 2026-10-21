@@ -53,7 +53,8 @@
   } from "lucide-svelte";
 
   // Active showcase category
-  let activeCategory = $state("input");
+  // `?category=page-surface&page=CustomerCard` deep-links into a panel (used by visual tests).
+  let activeCategory = $state(new URLSearchParams(window.location.search).get("category") || "input");
   let previewCode = $state("C-10042");
   let previewCustomer = $state("C-10042");
   let previewDate = $state("2026-10-14");
@@ -498,7 +499,7 @@
             onclick={() => (activeCategory = "page-surface")}
             class="w-full text-left px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-between transition-colors cursor-pointer {activeCategory === 'page-surface' ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}"
           >
-            <span>Page Surface (8 Layouts)</span>
+            <span>Compiled Pages</span>
             <span class="size-2 rounded-full bg-cyan-500"></span>
           </button>
           <button
@@ -553,7 +554,7 @@
           <option value="datasheet">Datasheet</option>
           <option value="data-table">Data table</option>
           <option value="control-kit">Studio control kit</option>
-          <option value="page-surface">Page Surface (8 Layouts)</option>
+          <option value="page-surface">Compiled Pages</option>
           <option value="studio-designers">Studio Visual Designers</option>
           <option value="theme">Theme & Personalization</option>
         </select>

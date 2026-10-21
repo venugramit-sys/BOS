@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# compiled page sources fetched by the bos-pages-dev Vite plugin
+.bos-pages

@@ -181,7 +181,7 @@
         {#if shell.activeTab.type === "profile" || shell.activeTab.id === "user-profile"}
           <UserProfilePage />
         {:else if shell.activeTab.type === "page" || shell.activeTab.type === "report"}
-          <PageSurface pageName={shell.activeTab.id} />
+          <PageSurface tab={shell.activeTab} />
         {:else}
           <div class="space-y-4">
             <div class="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">

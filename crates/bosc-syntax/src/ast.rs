@@ -425,6 +425,12 @@ pub struct PageDef {
     pub controls: Vec<PageControlDef>,
     pub actions: Vec<PageActionDef>,
     pub triggers: Vec<TriggerDef>,
+    /// `variables { name: Type; }`: page globals bound by `field(name)` when no column matches.
+    #[serde(default)]
+    pub variables: Vec<PageVariableDef>,
+    /// Page-level `style { ... }` block.
+    #[serde(default)]
+    pub style: Vec<Property>,
     pub span: Span,
 }
 
@@ -436,6 +442,19 @@ pub struct PageExtDef {
     pub controls: Vec<PageControlDef>,
     pub actions: Vec<PageActionDef>,
     pub triggers: Vec<TriggerDef>,
+    #[serde(default)]
+    pub variables: Vec<PageVariableDef>,
+    #[serde(default)]
+    pub style: Vec<Property>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PageVariableDef {
+    pub name: String,
+    pub field_type: FieldType,
+    #[serde(default)]
+    pub properties: Vec<Property>,
     pub span: Span,
 }
 
@@ -447,15 +466,36 @@ pub struct PageControlDef {
     pub properties: Vec<Property>,
     pub children: Vec<PageControlDef>,
     pub triggers: Vec<TriggerDef>,
+    /// `style { background = primary; radius = md; }` block.
+    #[serde(default)]
+    pub style: Vec<Property>,
+    /// `responsive { md = 6; hideBelow = sm; }` block.
+    #[serde(default)]
+    pub responsive: Vec<Property>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PageActionDef {
+    /// `action`, `area`, `group`, `actionref`, `separator`, or an extension directive
+    /// (`addFirst`, `addLast`, `addBefore`, `addAfter`, `modify`, `hide`, `moveBefore`, `moveAfter`).
+    #[serde(default = "default_action_kind")]
+    pub kind: String,
     pub name: String,
+    /// Second positional argument: the referenced action of an `actionref(Name; Target)`.
+    #[serde(default)]
+    pub target: Option<String>,
     pub properties: Vec<Property>,
     pub on_action: Option<Block>,
+    #[serde(default)]
+    pub children: Vec<PageActionDef>,
+    #[serde(default)]
+    pub style: Vec<Property>,
     pub span: Span,
+}
+
+fn default_action_kind() -> String {
+    "action".to_string()
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

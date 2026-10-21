@@ -24,6 +24,10 @@ pub mod package_manager;
 pub mod package_vault;
 pub mod bytecode_cache;
 pub mod prepared_statement_registry;
+pub mod page_compiler;
+pub mod page_artifacts;
+mod page_routes;
+pub mod page_designer;
 
 pub mod execution_engine;
 
@@ -73,6 +77,26 @@ pub use meta_manager::{
 pub use package_manager::{PackageInstallResult, PackageManager};
 pub use bytecode_cache::BytecodeCache;
 pub use prepared_statement_registry::PreparedStatementRegistry;
+pub use page_artifacts::{PageManifest, PageService, PageServiceConfig, PageServiceError, RefreshReport};
+pub use page_compiler::{PageCompilerError, SvelteCompiler};
+pub use node_config::PagesSection;
+
+/// Outcome of a server-side page trigger (`POST /api/v1/pages/{page}/triggers/{trigger}`).
+#[derive(Debug, Clone, Serialize)]
+pub struct PageTriggerResult {
+    /// The record after the trigger ran (triggers such as `onValidate` may change fields).
+    pub record: serde_json::Value,
+    /// Page variables after the trigger ran.
+    pub variables: serde_json::Value,
+    /// `ctx.ui` toasts and messages.
+    pub messages: serde_json::Value,
+    /// `ctx.ui` directives (`modal`, `navigate`, `fieldVisible`, `fieldEditable`, `confirm`).
+    pub directives: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub return_value: Option<serde_json::Value>,
+    pub logs: Vec<String>,
+    pub fuel_used: u64,
+}
 
 pub use execution_engine::{ExecScope, ExecutionEngine, ExecutionResult};
 
@@ -661,6 +685,9 @@ pub struct BosEngine {
     pub bytecode_cache: Arc<BytecodeCache>,
 
     pub prepared_statements: Arc<PreparedStatementRegistry>,
+
+    /// Compiled page service (Svelte page artifacts); absent until [`BosEngine::start_page_service`].
+    pages: Arc<arc_swap::ArcSwapOption<page_artifacts::PageService>>,
 }
 
 impl BosEngine {
@@ -745,6 +772,8 @@ impl BosEngine {
             bytecode_cache,
 
             prepared_statements,
+
+            pages: Arc::new(arc_swap::ArcSwapOption::empty()),
         })
     }
 
@@ -812,6 +841,9 @@ impl BosEngine {
         tokio::spawn(async move {
             old_pool.close().await;
         });
+
+        // Pages belong to a database: resolve the new database's catalog (no NOTIFY: nothing changed there).
+        self.refresh_pages().await;
 
         Ok(DatabaseManager::extract_database_name(&new_url))
     }
@@ -1167,6 +1199,8 @@ impl BosEngine {
 
         self.invalidate_meta_cache(&name).await;
 
+        self.republish_pages().await;
+
         Ok(res)
     }
 
@@ -1333,6 +1367,159 @@ impl BosEngine {
         }))
     }
 
+    // ----------------------------------------------------
+    // COMPILED PAGES (Svelte 5 page artifacts)
+    // ----------------------------------------------------
+
+    /// The running page service, once [`Self::start_page_service`] has been called.
+    pub fn page_service(&self) -> Option<Arc<page_artifacts::PageService>> {
+        self.pages.load_full()
+    }
+
+    /// Starts the Svelte page compiler, resolves every page of the catalog once (no recompilation of
+    /// unchanged pages: artifacts are content-addressed), warms missing artifacts in the background and
+    /// subscribes to page changes published by other nodes.
+    pub async fn start_page_service(
+        &self,
+        cfg: page_artifacts::PageServiceConfig,
+    ) -> Result<Arc<page_artifacts::PageService>, RuntimeError> {
+        let service = page_artifacts::PageService::start(cfg).await;
+        self.pages.store(Some(service.clone()));
+
+        let pool = self.pool().await;
+        let url = self.active_url().await;
+        let report = service
+            .refresh(&pool, &url)
+            .await
+            .map_err(|e| RuntimeError::Internal(format!("page catalog load failed: {e}")))?;
+        tracing::info!(target: "bos::pages", pages = report.pages, db = %report.db_key, "page catalog resolved");
+
+        let warm = service.clone();
+        tokio::spawn(async move {
+            let failures = warm.warm().await;
+            let removed = warm.cleanup();
+            tracing::info!(target: "bos::pages", compiled = warm.compile_count(), failures = failures.len(), removed, "page artifacts warmed");
+        });
+
+        let engine = self.clone();
+        tokio::spawn(async move { engine.listen_for_page_changes().await });
+        Ok(service)
+    }
+
+    /// Re-resolves pages after a catalog change and tells the other nodes.
+    pub async fn republish_pages(&self) -> Option<page_artifacts::RefreshReport> {
+        let report = self.refresh_pages().await?;
+        if !report.changed.is_empty() || !report.removed.is_empty() {
+            if let Some(service) = self.page_service() {
+                let pool = self.pool().await;
+                let payload = format!("{}|{}", report.db_key, service.instance());
+                if let Err(e) = sqlx::query("SELECT pg_notify('bos_pages_channel', $1)").bind(payload).execute(&pool).await {
+                    tracing::warn!(target: "bos::pages", "could not notify other nodes about page changes: {e}");
+                }
+            }
+        }
+        Some(report)
+    }
+
+    async fn refresh_pages(&self) -> Option<page_artifacts::RefreshReport> {
+        let service = self.page_service()?;
+        let pool = self.pool().await;
+        let url = self.active_url().await;
+        match service.refresh(&pool, &url).await {
+            Ok(report) => {
+                if !report.changed.is_empty() {
+                    tracing::info!(target: "bos::pages", changed = ?report.changed, "pages changed");
+                    let warm = service.clone();
+                    tokio::spawn(async move {
+                        warm.warm().await;
+                    });
+                }
+                Some(report)
+            }
+            Err(e) => {
+                tracing::error!(target: "bos::pages", "page refresh failed: {e}");
+                None
+            }
+        }
+    }
+
+    /// LISTEN loop for `bos_pages_channel`; reconnects to the active database after errors or switches.
+    async fn listen_for_page_changes(&self) {
+        loop {
+            let pool = self.pool().await;
+            match sqlx::postgres::PgListener::connect_with(&pool).await {
+                Ok(mut listener) => {
+                    if listener.listen("bos_pages_channel").await.is_ok() {
+                        while let Ok(n) = listener.recv().await {
+                            let Some(service) = self.page_service() else { continue };
+                            let Some((db, instance)) = n.payload().split_once('|') else { continue };
+                            let own = instance == service.instance().to_string();
+                            if !own && service.db_key().as_deref() == Some(db) {
+                                self.refresh_pages().await;
+                            }
+                        }
+                    }
+                }
+                Err(e) => tracing::warn!(target: "bos::pages", "page change listener: {e}"),
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
+    }
+
+    /// Runs a server-side page trigger, action script or control trigger in one transaction.
+    pub async fn run_page_trigger(
+        &self,
+        page: &str,
+        reference: &str,
+        record: serde_json::Value,
+        variables: serde_json::Value,
+        ui_answers: std::collections::HashMap<String, bool>,
+        ctx: &SessionContext,
+    ) -> Result<PageTriggerResult, RuntimeError> {
+        let service = self
+            .page_service()
+            .ok_or_else(|| RuntimeError::Internal("page service is not running".to_string()))?;
+        let entry = service
+            .page(page)
+            .ok_or_else(|| RuntimeError::Internal(format!("page '{page}' does not exist")))?;
+        let script = page_artifacts::find_page_script(&entry, reference).map_err(|e| RuntimeError::Internal(e.to_string()))?;
+        let wrapped = page_artifacts::wrap_page_script(&entry.name, reference, &variables, &script.script);
+
+        let mut scope = self.begin_scope(ctx).await?;
+        scope.ui_answers = ui_answers.clone();
+        let data = if record.is_object() { record } else { serde_json::json!({}) };
+        let outcome = QuickJsEngine::run_script(
+            &scope,
+            ScriptCall {
+                table_name: script.table.clone(),
+                trigger_name: reference.to_string(),
+                script: wrapped,
+                bytecode: None,
+                data,
+                x_rec: None,
+                limits: quickjs_engine::ExecutionLimits::with_fuel(None),
+                ui_answers,
+            },
+        )
+        .await;
+        let run = scope.db.finish(outcome).await?;
+
+        let mut record = run.data;
+        let take = |rec: &mut serde_json::Value, key: &str| rec.as_object_mut().and_then(|o| o.remove(key));
+        let messages = take(&mut record, "_system_messages").unwrap_or_else(|| serde_json::json!([]));
+        let directives = take(&mut record, "_ui_directives").unwrap_or_else(|| serde_json::json!([]));
+        let variables = take(&mut record, "_page_variables").unwrap_or(variables);
+        Ok(PageTriggerResult {
+            record,
+            variables,
+            messages,
+            directives,
+            return_value: run.return_value,
+            logs: run.logs,
+            fuel_used: run.fuel_used,
+        })
+    }
+
     /// List installed packages from catalog (_bos_meta_packages)
 
     pub async fn list_packages(&self) -> Result<Vec<meta_manager::PackageSummary>, RuntimeError> {
@@ -1365,13 +1552,19 @@ impl BosEngine {
             .execute(&pool)
             .await;
 
-        package_manager::PackageManager::install_package(
+        let result = package_manager::PackageManager::install_package(
             &pool,
             bundle,
             strat.as_deref(),
             allow_destructive,
         )
-        .await
+        .await;
+
+        if result.is_ok() {
+            self.republish_pages().await;
+        }
+
+        result
     }
 
     /// Bring the database in line with a package's declared tables (see [`schema_sync`]).
@@ -1389,6 +1582,7 @@ impl BosEngine {
 
         if report.applied {
             self.meta_cache.clear();
+            self.republish_pages().await;
         }
 
         Ok(report)
@@ -1419,6 +1613,8 @@ impl BosEngine {
 
         self.invalidate_meta_cache(&target).await;
 
+        self.republish_pages().await;
+
         Ok(res)
     }
 
@@ -1435,6 +1631,7 @@ impl BosEngine {
 
         if res.applied {
             self.invalidate_meta_cache(table_name).await;
+            self.republish_pages().await;
         }
 
         Ok(res)
@@ -1454,6 +1651,9 @@ impl BosEngine {
 
         if apply {
             self.meta_cache.clear();
+            if result.is_ok() {
+                self.republish_pages().await;
+            }
         }
 
         result
@@ -4050,6 +4250,36 @@ impl BosEngine {
                                         where_clauses.push(format!("t.\"{}\" != {}", safe_col, lit))
                                     }
 
+                                    "$eq" => {
+                                        if val.is_null() {
+                                            where_clauses.push(format!("t.\"{}\" IS NULL", safe_col));
+                                        } else {
+                                            where_clauses.push(format!("t.\"{}\" = {}", safe_col, lit));
+                                        }
+                                    }
+
+                                    // `{ "$in": [..] }`: text comparison, so UUIDs, codes and numbers all match
+                                    // their JSON form (compiled pages fetch FlowFields of the visible rows).
+                                    "$in" => {
+                                        let items: Vec<String> = val
+                                            .as_array()
+                                            .map(|a| {
+                                                a.iter()
+                                                    .filter(|v| !v.is_null())
+                                                    .map(|v| match v {
+                                                        serde_json::Value::String(s) => format!("'{}'", s.replace('\'', "''")),
+                                                        other => format!("'{}'", other.to_string().replace('\'', "''")),
+                                                    })
+                                                    .collect()
+                                            })
+                                            .unwrap_or_default();
+                                        if items.is_empty() {
+                                            where_clauses.push("FALSE".to_string());
+                                        } else {
+                                            where_clauses.push(format!("t.\"{}\"::text IN ({})", safe_col, items.join(", ")));
+                                        }
+                                    }
+
                                     "$like" => {
                                         if let Some(pat) = val.as_str() {
                                             where_clauses.push(format!(
@@ -4759,6 +4989,24 @@ impl BosEngine {
                                 where_clauses.push(format!("t.\"{}\" IS NULL", safe_col));
                             }
 
+                            // `{ "$eq": v }`: exact match (page part links / SubPageLink), unlike the
+                            // substring match of a plain string.
+                            serde_json::Value::Object(op) => match op.get("$eq") {
+                                Some(serde_json::Value::Null) => {
+                                    where_clauses.push(format!("t.\"{}\" IS NULL", safe_col));
+                                }
+                                Some(serde_json::Value::String(s)) => {
+                                    where_clauses.push(format!("t.\"{}\"::text = '{}'", safe_col, s.replace('\'', "''")));
+                                }
+                                Some(serde_json::Value::Number(n)) => {
+                                    where_clauses.push(format!("t.\"{}\" = {}", safe_col, n));
+                                }
+                                Some(serde_json::Value::Bool(b)) => {
+                                    where_clauses.push(format!("t.\"{}\" = {}", safe_col, if *b { "TRUE" } else { "FALSE" }));
+                                }
+                                _ => {}
+                            },
+
                             _ => {}
                         }
                     }
@@ -5125,6 +5373,8 @@ mod tests {
             bytecode_cache: Arc::new(BytecodeCache::new()),
 
             prepared_statements: Arc::new(PreparedStatementRegistry::new()),
+
+            pages: Arc::new(arc_swap::ArcSwapOption::empty()),
         };
 
         // Verifies no panics during Axum router route registration (matchit conflict checks)

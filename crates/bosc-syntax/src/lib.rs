@@ -432,5 +432,116 @@ mod tests {
             _ => panic!("Expected PageExtension"),
         }
     }
+
+    fn parse(source: &str) -> Program {
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().expect("Lexing failed");
+        let mut parser = Parser::with_source(tokens, source.to_string());
+        parser.parse_program().expect("Parsing failed")
+    }
+
+    #[test]
+    fn test_parse_page_v2_style_responsive_variables_and_action_areas() {
+        let program = parse(
+            r##"
+            page SignIn for AuthConfiguration {
+                pageType = StandardDialog;
+                style { background = surface; radius = lg; }
+                variables {
+                    password: String(128) { caption = "Password"; };
+                    rememberMe: Boolean = false;
+                }
+                layout {
+                    area(Content) {
+                        group(Credentials) {
+                            field(password) {
+                                extendedDatatype = Masked;
+                                style { borderColor = "#1e40af"; borderWidth = 1; emphasis = Attention; icon = "lock"; }
+                                responsive { md = 6; hideBelow = sm; }
+                            }
+                            spacer;
+                        }
+                    }
+                }
+                actions {
+                    area(Processing) {
+                        group(Session) {
+                            caption = "Session";
+                            action(SignIn) {
+                                caption = "Sign In";
+                                style { icon = "log-in"; }
+                                onAction(rec, ctx) { ctx.ui.toast("ok"); }
+                            }
+                            separator;
+                        }
+                    }
+                    area(Promoted) {
+                        actionref(SignIn_Promoted; SignIn) {}
+                    }
+                }
+            }
+            "##,
+        );
+        let Item::Page(p) = &program.items[0] else { panic!("expected page") };
+        assert_eq!(p.style.len(), 2);
+        assert_eq!(p.variables.len(), 2);
+        assert_eq!(p.variables[0].name, "password");
+        assert_eq!(p.variables[0].field_type, FieldType::String(Some(128)));
+        assert_eq!(p.variables[1].properties[0].name, "default");
+
+        let field = &p.controls[0].children[0].children[0];
+        assert_eq!(field.kind, "field");
+        assert_eq!(field.style.len(), 4);
+        assert_eq!(field.responsive.len(), 2);
+        assert_eq!(p.controls[0].children[0].children[1].kind, "spacer");
+
+        assert_eq!(p.actions.len(), 2);
+        let processing = &p.actions[0];
+        assert_eq!((processing.kind.as_str(), processing.name.as_str()), ("area", "Processing"));
+        let group = &processing.children[0];
+        assert_eq!(group.kind, "group");
+        assert_eq!(group.children.len(), 2);
+        assert_eq!(group.children[0].name, "SignIn");
+        assert!(group.children[0].on_action.is_some());
+        assert_eq!(group.children[0].style.len(), 1);
+        assert_eq!(group.children[1].kind, "separator");
+        let promoted = &p.actions[1].children[0];
+        assert_eq!(promoted.kind, "actionref");
+        assert_eq!(promoted.target.as_deref(), Some("SignIn"));
+    }
+
+    #[test]
+    fn test_parse_page_extension_move_and_action_directives() {
+        let program = parse(
+            r##"
+            pageextension CustomerCardCustomization extends CustomerCard {
+                caption = "Client";
+                layout {
+                    moveAfter(name; creditLimit);
+                    moveFirst(General) { balance; }
+                    modify(name) { style { background = "#FFF7ED"; } }
+                }
+                actions {
+                    addAfter(Post) { action(PostAndPrint) { caption = "Post and Print"; } }
+                    modify(Post) { caption = "Post Invoice"; }
+                    hide(Delete);
+                }
+            }
+            "##,
+        );
+        let Item::PageExtension(pe) = &program.items[0] else { panic!("expected page extension") };
+        assert_eq!(pe.properties[0].name, "caption");
+        assert_eq!(pe.controls[0].kind, "moveAfter");
+        assert_eq!(pe.controls[0].name, "name");
+        assert_eq!(pe.controls[0].source_expr.as_deref(), Some("creditLimit"));
+        assert_eq!(pe.controls[1].kind, "moveFirst");
+        assert_eq!(pe.controls[1].children[0].name, "balance");
+        assert_eq!(pe.controls[2].style.len(), 1);
+        assert_eq!(pe.actions.len(), 3);
+        assert_eq!((pe.actions[0].kind.as_str(), pe.actions[0].name.as_str()), ("addAfter", "Post"));
+        assert_eq!(pe.actions[0].children[0].name, "PostAndPrint");
+        assert_eq!(pe.actions[1].kind, "modify");
+        assert_eq!((pe.actions[2].kind.as_str(), pe.actions[2].name.as_str()), ("hide", "Delete"));
+    }
 }
 

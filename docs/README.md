@@ -27,6 +27,7 @@ This documentation is generated through exhaustive, direct analysis of the produ
 | [**`14_distribution_and_packaging_guide.md`**](14_distribution_and_packaging_guide.md) | **Distribution & Packaging Guide** | Standalone zero-dependency distribution bundles, cross-platform packaging automation scripts (`build-distribution.ps1`, `build-distribution.sh`), and 1-click launchers. |
 | [**`15_unified_notification_system.md`**](15_unified_notification_system.md) | **Unified Notification System Specification** | Full-stack notification protocol across Rust Axum & Svelte 5: floating toasts, modal alerts, in-field validation errors, SSE streams, and Notification Center drawer. |
 | [**`16_aot_bytecode_and_static_node_architecture.md`**](16_aot_bytecode_and_static_node_architecture.md) | **Ahead-of-Time Bytecode & Static Node Architecture** | AOT QuickJS bytecode envelopes (`.qbc`, `BCBOS`), CRC32 verification, in-memory caches, AOT prepared SQL statements, self-healing vault, and static serving. |
+| [**`17_page_compiler_and_designer.md`**](17_page_compiler_and_designer.md) | **Pages v2: Page Compiler, Customization Layer & Designer** | Page IR v2, NAV-style auto-fill from table fields, client expression language, extension directives, super-user customization layer, BOS30xx diagnostics, the Svelte 5 page compilation pipeline, the `@bos/page-kit` browser runtime, the WYSIWYG designer and the page verification suite. |
 
 ---
 

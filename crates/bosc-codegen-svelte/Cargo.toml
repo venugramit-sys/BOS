@@ -1,0 +1,22 @@
+[package]
+name = "bosc-codegen-svelte"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Generates Svelte 5 (runes) page components from compiled BOS page IR"
+
+[features]
+# Compiles every golden page through the real Svelte compiler running in QuickJS.
+# Needs `ui/node_modules/svelte` (run `npm ci` in ui/).
+svelte-compile = []
+
+[dependencies]
+bosc-ir = { path = "../bosc-ir" }
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+bosc-syntax = { path = "../bosc-syntax" }
+bosc-analyzer = { path = "../bosc-analyzer" }
+rquickjs.workspace = true

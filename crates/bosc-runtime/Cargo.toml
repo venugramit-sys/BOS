@@ -10,6 +10,7 @@ bosc-syntax = { path = "../bosc-syntax" }
 bosc-analyzer = { path = "../bosc-analyzer" }
 bosc-ir = { path = "../bosc-ir" }
 bosc-codegen-db = { path = "../bosc-codegen-db" }
+bosc-codegen-svelte = { path = "../bosc-codegen-svelte" }
 sqlx.workspace = true
 tokio = { workspace = true }
 tokio-stream = { version = "0.1", features = ["sync"] }
@@ -34,3 +35,6 @@ wasmi.workspace = true
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 toml.workspace = true
 
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }

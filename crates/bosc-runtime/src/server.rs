@@ -344,6 +344,7 @@ pub fn create_node_router(engine: BosEngine, node_config: NodeConfig) -> Router 
             "/api/sidecars/{name}/health",
             get(check_sidecar_health_handler),
         )
+        .merge(crate::page_routes::page_routes())
         .layer(Extension(engine_arc))
         .layer(Extension(node_config_arc))
         .layer(cors)
@@ -437,7 +438,7 @@ fn is_superuser_roles(roles: &[String]) -> bool {
     })
 }
 
-fn extract_context(headers: &HeaderMap) -> Result<SessionContext, Response> {
+pub(crate) fn extract_context(headers: &HeaderMap) -> Result<SessionContext, Response> {
     if let Some(raw) = headers.get("x-bos-session").and_then(|value| value.to_str().ok()) {
         if let Ok(ctx) = serde_json::from_str::<SessionContext>(raw) {
             return Ok(ctx);

@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./lib/page-kit/page-kit.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 

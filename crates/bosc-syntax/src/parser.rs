@@ -198,7 +198,7 @@ impl Parser {
             TokenKind::Report => Ok(Item::Report(self.parse_report()?)),
             TokenKind::CustomMetadata => Ok(Item::CustomMetadata(self.parse_custom_metadata()?)),
             _ => Err(ParserError::UnexpectedToken {
-                expected: "meta-object declaration (table, tablelogic, tableextension, tablelogicextension, statemachine, codeunit, interface, enum, enumextension, page, pageextension, menu, permissionset, view, query, report, or custommetadata)".to_string(),
+                expected: "meta-object declaration (table, tablelogic, tableextension, tablelogicextension, statemachine, statemachineextension, codeunit, interface, enum, enumextension, page, pageextension, menu, permissionset, view, query, report, or custommetadata)".to_string(),
                 found: self.peek_kind().clone(),
                 line: self.peek().span.line,
                 col: self.peek().span.column,
@@ -2531,6 +2531,8 @@ impl Parser {
         let mut controls = Vec::new();
         let mut actions = Vec::new();
         let mut triggers = Vec::new();
+        let mut variables = Vec::new();
+        let mut style = Vec::new();
 
         while self.peek_kind() != &TokenKind::CloseBrace && self.peek_kind() != &TokenKind::Eof {
             if let Some(s) = self.peek_ident() {
@@ -2600,6 +2602,12 @@ impl Parser {
                     if self.peek_kind() == &TokenKind::Semicolon {
                         self.advance();
                     }
+                } else if matches!(s.as_str(), "variables" | "vars" | "var")
+                    && self.peek_second_kind() == Some(&TokenKind::OpenBrace)
+                {
+                    variables.extend(self.parse_page_variables()?);
+                } else if s == "style" && self.peek_second_kind() == Some(&TokenKind::OpenBrace) {
+                    style = self.parse_property_block()?;
                 } else if s.starts_with("on")
                     && (self.peek_second_kind() == Some(&TokenKind::OpenParen)
                         || self.peek_second_kind() == Some(&TokenKind::OpenBrace))
@@ -2624,10 +2632,10 @@ impl Parser {
                             }
                             _ => {}
                         }
-                    } else if matches!(prop.name.as_str(), "pageType" | "page_type" | "layout") {
-                        if let Expr::Ident(ref pt) | Expr::StringLit(ref pt) = prop.value {
-                            page_type = pt.clone();
-                        }
+                    } else if matches!(prop.name.as_str(), "pageType" | "page_type" | "layout")
+                        && let Expr::Ident(ref pt) | Expr::StringLit(ref pt) = prop.value
+                    {
+                        page_type = pt.clone();
                     }
                     properties.push(prop);
                 } else {
@@ -2648,6 +2656,8 @@ impl Parser {
             controls,
             actions,
             triggers,
+            variables,
+            style,
             span: Span::new(start_tok.span.start, end_tok.span.end, start_tok.span.line, start_tok.span.column),
         })
     }
@@ -2713,6 +2723,100 @@ impl Parser {
         })
     }
 
+    /// Parses `ident { key = value; flag; ... }` (used by `style` and `responsive` blocks).
+    /// The leading identifier has not been consumed yet.
+    fn parse_property_block(&mut self) -> Result<Vec<Property>, ParserError> {
+        self.expect_ident()?;
+        self.expect(TokenKind::OpenBrace)?;
+        let mut properties = Vec::new();
+        while self.peek_kind() != &TokenKind::CloseBrace && self.peek_kind() != &TokenKind::Eof {
+            let Some(s) = self.peek_ident() else {
+                let tok = self.peek().clone();
+                return Err(ParserError::UnexpectedToken {
+                    expected: "property name".to_string(),
+                    found: tok.kind,
+                    line: tok.span.line,
+                    col: tok.span.column,
+                });
+            };
+            if self.peek_second_kind() == Some(&TokenKind::Assign) || self.peek_second_kind() == Some(&TokenKind::Colon) {
+                properties.push(self.parse_property()?);
+            } else {
+                let (_, sp) = self.expect_ident()?;
+                if self.peek_kind() == &TokenKind::Semicolon {
+                    self.advance();
+                }
+                properties.push(Property {
+                    name: s,
+                    value: Expr::BoolLit(true),
+                    span: sp,
+                });
+            }
+        }
+        self.expect(TokenKind::CloseBrace)?;
+        if self.peek_kind() == &TokenKind::Semicolon {
+            self.advance();
+        }
+        Ok(properties)
+    }
+
+    /// Parses `link { documentNo = rec.no; lineType = "Item"; }` (part `subPageLink` / action `runPageLink`).
+    /// Each entry becomes a property named `link.<targetField>`.
+    fn parse_link_block(&mut self) -> Result<Vec<Property>, ParserError> {
+        Ok(self
+            .parse_property_block()?
+            .into_iter()
+            .map(|p| Property {
+                name: format!("link.{}", p.name),
+                value: p.value,
+                span: p.span,
+            })
+            .collect())
+    }
+
+    /// Parses `variables { password: String(128) { caption = "Password"; }; rememberMe: Boolean; }`.
+    fn parse_page_variables(&mut self) -> Result<Vec<PageVariableDef>, ParserError> {
+        self.expect_ident()?;
+        self.expect(TokenKind::OpenBrace)?;
+        let mut vars = Vec::new();
+        while self.peek_kind() != &TokenKind::CloseBrace && self.peek_kind() != &TokenKind::Eof {
+            let (name, span) = self.expect_ident()?;
+            self.expect(TokenKind::Colon)?;
+            let field_type = self.parse_field_type()?;
+            let mut properties = Vec::new();
+            if self.peek_kind() == &TokenKind::OpenBrace {
+                self.advance();
+                while self.peek_kind() != &TokenKind::CloseBrace && self.peek_kind() != &TokenKind::Eof {
+                    properties.push(self.parse_property()?);
+                }
+                self.expect(TokenKind::CloseBrace)?;
+            } else if self.peek_kind() == &TokenKind::Assign {
+                // `rememberMe: Boolean = true;` shorthand for a default value.
+                self.advance();
+                let value = self.parse_expr()?;
+                properties.push(Property {
+                    name: "default".to_string(),
+                    value,
+                    span: span.clone(),
+                });
+            }
+            if self.peek_kind() == &TokenKind::Semicolon {
+                self.advance();
+            }
+            vars.push(PageVariableDef {
+                name,
+                field_type,
+                properties,
+                span,
+            });
+        }
+        self.expect(TokenKind::CloseBrace)?;
+        if self.peek_kind() == &TokenKind::Semicolon {
+            self.advance();
+        }
+        Ok(vars)
+    }
+
     fn parse_page_ext(&mut self) -> Result<PageExtDef, ParserError> {
         let start_tok = self.expect(TokenKind::PageExtension)?;
         let (name, _) = self.expect_ident()?;
@@ -2728,6 +2832,8 @@ impl Parser {
         let mut controls = Vec::new();
         let mut actions = Vec::new();
         let mut triggers = Vec::new();
+        let mut variables = Vec::new();
+        let mut style = Vec::new();
 
         while self.peek_kind() != &TokenKind::CloseBrace && self.peek_kind() != &TokenKind::Eof {
             if let Some(s) = self.peek_ident() {
@@ -2753,6 +2859,12 @@ impl Parser {
                     if self.peek_kind() == &TokenKind::Semicolon {
                         self.advance();
                     }
+                } else if matches!(s.as_str(), "variables" | "vars" | "var")
+                    && self.peek_second_kind() == Some(&TokenKind::OpenBrace)
+                {
+                    variables.extend(self.parse_page_variables()?);
+                } else if s == "style" && self.peek_second_kind() == Some(&TokenKind::OpenBrace) {
+                    style = self.parse_property_block()?;
                 } else if s.starts_with("on")
                     && (self.peek_second_kind() == Some(&TokenKind::OpenParen)
                         || self.peek_second_kind() == Some(&TokenKind::OpenBrace))
@@ -2783,6 +2895,8 @@ impl Parser {
             controls,
             actions,
             triggers,
+            variables,
+            style,
             span: Span::new(start_tok.span.start, end_tok.span.end, start_tok.span.line, start_tok.span.column),
         })
     }
@@ -2824,6 +2938,18 @@ impl Parser {
                 | "drawer"
                 | "modal"
                 | "stepper"
+                | "fixed"
+                | "cuegroup"
+                | "cue"
+                | "headline"
+                | "wizardstep"
+                | "container"
+                | "systempart"
+                | "usercontrol"
+                | "label"
+                | "image"
+                | "spacer"
+                | "divider"
                 | "wrap"
                 | "replace"
                 | "addAfter"
@@ -2833,6 +2959,8 @@ impl Parser {
                 | "modify"
                 | "moveAfter"
                 | "moveBefore"
+                | "moveFirst"
+                | "moveLast"
                 | "hide"
         );
 
@@ -2844,18 +2972,17 @@ impl Parser {
         if self.peek_kind() == &TokenKind::OpenParen {
             self.advance();
             while self.peek_kind() != &TokenKind::CloseParen && self.peek_kind() != &TokenKind::Eof {
-                if let Some(_ident_name) = self.peek_ident() {
-                    if self.peek_second_kind() == Some(&TokenKind::Assign)
-                        || self.peek_second_kind() == Some(&TokenKind::Colon)
-                    {
-                        // Named parameter in parens, e.g. cols = 4 or gap = 3
-                        let prop = self.parse_property()?;
-                        properties.push(prop);
-                        if self.peek_kind() == &TokenKind::Comma || self.peek_kind() == &TokenKind::Semicolon {
-                            self.advance();
-                        }
-                        continue;
+                if self.peek_ident().is_some()
+                    && (self.peek_second_kind() == Some(&TokenKind::Assign)
+                        || self.peek_second_kind() == Some(&TokenKind::Colon))
+                {
+                    // Named parameter in parens, e.g. cols = 4 or gap = 3
+                    let prop = self.parse_property()?;
+                    properties.push(prop);
+                    if self.peek_kind() == &TokenKind::Comma || self.peek_kind() == &TokenKind::Semicolon {
+                        self.advance();
                     }
+                    continue;
                 }
 
                 // Positional target name or expression
@@ -2870,12 +2997,11 @@ impl Parser {
                 if self.peek_kind() == &TokenKind::Semicolon || self.peek_kind() == &TokenKind::Comma {
                     self.advance();
                     // Could be second positional (source_expr) or start of named properties
-                    if let Some(_) = self.peek_ident() {
-                        if self.peek_second_kind() == Some(&TokenKind::Assign)
-                            || self.peek_second_kind() == Some(&TokenKind::Colon)
-                        {
-                            continue;
-                        }
+                    if self.peek_ident().is_some()
+                        && (self.peek_second_kind() == Some(&TokenKind::Assign)
+                            || self.peek_second_kind() == Some(&TokenKind::Colon))
+                    {
+                        continue;
                     }
                     if self.peek_kind() != &TokenKind::CloseParen {
                         let second = match self.peek_kind().clone() {
@@ -2920,13 +3046,23 @@ impl Parser {
 
         let mut children = Vec::new();
         let mut triggers = Vec::new();
+        let mut style = Vec::new();
+        let mut responsive = Vec::new();
 
         if self.peek_kind() == &TokenKind::OpenBrace {
             self.advance();
-            let is_field_like = matches!(kind.as_str(), "field" | "modify" | "tile" | "part" | "factbox");
+            let is_field_like = matches!(kind.as_str(), "field" | "modify" | "tile" | "cue" | "part" | "factbox");
             while self.peek_kind() != &TokenKind::CloseBrace && self.peek_kind() != &TokenKind::Eof {
                 if let Some(s) = self.peek_ident() {
-                    if s.starts_with("on")
+                    if s == "style" && self.peek_second_kind() == Some(&TokenKind::OpenBrace) {
+                        style = self.parse_property_block()?;
+                    } else if s == "responsive" && self.peek_second_kind() == Some(&TokenKind::OpenBrace) {
+                        responsive = self.parse_property_block()?;
+                    } else if matches!(s.as_str(), "link" | "subPageLink")
+                        && self.peek_second_kind() == Some(&TokenKind::OpenBrace)
+                    {
+                        properties.extend(self.parse_link_block()?);
+                    } else if s.starts_with("on")
                         && (self.peek_second_kind() == Some(&TokenKind::OpenParen)
                             || self.peek_second_kind() == Some(&TokenKind::OpenBrace))
                     {
@@ -2976,17 +3112,54 @@ impl Parser {
             properties,
             children,
             triggers,
+            style,
+            responsive,
             span: start_span,
         })
     }
 
+    fn is_page_action_entry(&self, s: &str) -> bool {
+        let keyword = matches!(
+            s,
+            "action"
+                | "command"
+                | "area"
+                | "group"
+                | "actionref"
+                | "separator"
+                | "addFirst"
+                | "addLast"
+                | "addBefore"
+                | "addAfter"
+                | "modify"
+                | "hide"
+                | "moveBefore"
+                | "moveAfter"
+        );
+        keyword
+            && matches!(
+                self.peek_second_kind(),
+                Some(TokenKind::OpenParen) | Some(TokenKind::OpenBrace) | Some(TokenKind::Semicolon)
+            )
+    }
+
     fn parse_page_action(&mut self) -> Result<PageActionDef, ParserError> {
         let (first_ident, start_span) = self.expect_ident()?;
-        let mut name = if matches!(first_ident.as_str(), "action" | "command") {
+        let kind = match first_ident.as_str() {
+            "action" | "command" => "action".to_string(),
+            "area" | "group" | "actionref" | "separator" | "addFirst" | "addLast" | "addBefore" | "addAfter"
+            | "modify" | "hide" | "moveBefore" | "moveAfter" => first_ident.clone(),
+            // Legacy compact form: `Post { ... }` declares an action named `Post`.
+            _ => "action".to_string(),
+        };
+        let mut name = if kind == "action" && !matches!(first_ident.as_str(), "action" | "command") {
+            first_ident.clone()
+        } else if kind == "action" {
             "Action".to_string()
         } else {
             first_ident.clone()
         };
+        let mut target = None;
         if self.peek_kind() == &TokenKind::OpenParen {
             self.advance();
             if self.peek_kind() != &TokenKind::CloseParen {
@@ -2997,9 +3170,19 @@ impl Parser {
                     }
                     _ => self.expect_ident()?.0,
                 };
+                if self.peek_kind() == &TokenKind::Semicolon || self.peek_kind() == &TokenKind::Comma {
+                    self.advance();
+                    target = Some(match self.peek_kind().clone() {
+                        TokenKind::StringLit(s) => {
+                            self.advance();
+                            s
+                        }
+                        _ => self.expect_ident()?.0,
+                    });
+                }
             }
             self.expect(TokenKind::CloseParen)?;
-        } else if matches!(first_ident.as_str(), "action" | "command") {
+        } else if kind == "action" && matches!(first_ident.as_str(), "action" | "command") {
             if let TokenKind::StringLit(s) = self.peek_kind().clone() {
                 self.advance();
                 name = s;
@@ -3013,6 +3196,8 @@ impl Parser {
 
         let mut properties = Vec::new();
         let mut on_action = None;
+        let mut children = Vec::new();
+        let mut style = Vec::new();
 
         if self.peek_kind() == &TokenKind::OpenBrace {
             self.advance();
@@ -3031,15 +3216,14 @@ impl Parser {
                             self.expect(TokenKind::CloseParen)?;
                         }
                         on_action = Some(self.parse_block()?);
-                    } else if matches!(s.as_str(), "action" | "command")
-                        && self.peek_second_kind() == Some(&TokenKind::OpenParen)
+                    } else if s == "style" && self.peek_second_kind() == Some(&TokenKind::OpenBrace) {
+                        style = self.parse_property_block()?;
+                    } else if matches!(s.as_str(), "link" | "runPageLink")
+                        && self.peek_second_kind() == Some(&TokenKind::OpenBrace)
                     {
-                        let nested = self.parse_page_action()?;
-                        properties.push(Property {
-                            name: nested.name,
-                            value: Expr::BoolLit(true),
-                            span: nested.span,
-                        });
+                        properties.extend(self.parse_link_block()?);
+                    } else if self.is_page_action_entry(&s) {
+                        children.push(self.parse_page_action()?);
                     } else if self.peek_second_kind() == Some(&TokenKind::Assign)
                         || self.peek_second_kind() == Some(&TokenKind::Colon)
                     {
@@ -3052,11 +3236,26 @@ impl Parser {
                             value: Expr::BoolLit(true),
                             span: sp,
                         });
+                    } else if kind != "action" && self.peek_second_kind() == Some(&TokenKind::OpenBrace) {
+                        // Compact action inside an area/group: `Post { caption = "Post"; }`.
+                        children.push(self.parse_page_action()?);
                     } else {
-                        self.advance();
+                        let tok = self.peek().clone();
+                        return Err(ParserError::UnexpectedToken {
+                            expected: "action, group, property or onAction block".to_string(),
+                            found: tok.kind,
+                            line: tok.span.line,
+                            col: tok.span.column,
+                        });
                     }
                 } else {
-                    self.advance();
+                    let tok = self.peek().clone();
+                    return Err(ParserError::UnexpectedToken {
+                        expected: "action, group, property or onAction block".to_string(),
+                        found: tok.kind,
+                        line: tok.span.line,
+                        col: tok.span.column,
+                    });
                 }
             }
             self.expect(TokenKind::CloseBrace)?;
@@ -3066,9 +3265,13 @@ impl Parser {
         }
 
         Ok(PageActionDef {
+            kind,
             name,
+            target,
             properties,
             on_action,
+            children,
+            style,
             span: start_span,
         })
     }

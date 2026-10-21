@@ -160,11 +160,10 @@ The store is authored purely with modern Svelte 5 runes (`$state`, `$derived`):
    Fixed at the bottom-right viewport with severity icons (Emerald Check, Amber Triangle, Rose Alert, Indigo Info), title, message, and CSS-animated progress countdown bar.
 2. **`AlertModal.svelte`**:
    Accessible modal with backdrop blur, technical details drawer, and a one-click clipboard copy button.
-3. **`PageSurface.svelte`**:
-   Automatically binds input controls to `notificationStore.fieldErrors[col.name]`. If an in-field error exists:
-   - Sets `status="error"` on the `Input` component.
-   - Highlights the input border with a rose outline.
-   - Renders an inline error message beneath the input.
-   - Clears the error dynamically as soon as the user starts typing.
+3. **Compiled pages (`@bos/page-kit`)**:
+   The page controller keeps the `field_errors` of a failed save per field. If an in-field error exists:
+   - The field editor gets the error (rose outline and an inline message).
+   - The error clears as soon as the user changes that field.
+   - `ctx.ui` messages returned by triggers and saves become toasts (`toastStore`).
 4. **`TopNavBar.svelte`**:
    Shows the bell notification icon with a reactive numeric badge (`1`, `2`, `9+`) for unread notifications and a green/amber pulse for SSE stream status.

@@ -77,7 +77,8 @@
   let sortDirection = $state("asc"); // 'asc' | 'desc'
   let remoteItems = $state([]);
   let isRemoteLoading = $state(false);
-  let fetchTimer = $state(null);
+  // Debounce handle only: not reactive (it is read and written inside the fetch effect).
+  let fetchTimer = null;
   let recentItemsList = $state([]);
 
   // Load persisted recent items from localStorage on mount/key change
@@ -369,10 +370,11 @@
   $effect(() => {
     if (fetchItems) {
       if (fetchTimer) clearTimeout(fetchTimer);
+      const query = searchQuery;
       fetchTimer = setTimeout(async () => {
         isRemoteLoading = true;
         try {
-          remoteItems = await fetchItems(searchQuery);
+          remoteItems = await fetchItems(query);
         } catch {
           remoteItems = [];
         } finally {

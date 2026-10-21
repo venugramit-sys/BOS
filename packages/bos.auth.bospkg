@@ -5,7 +5,12 @@
     "version": "1.0.0",
     "publisher": "BOS Core Architecture Team",
     "dependencies": [],
-    "optional_features": []
+    "optional_features": [
+      "mfa_totp",
+      "session_ip_lock",
+      "password_complexity",
+      "immutable_audit"
+    ]
   },
   "objects": [
     {
@@ -1112,6 +1117,235 @@
       "version": "1.0.0"
     },
     {
+      "field_validations": [],
+      "methods": [],
+      "name": "UserLogic",
+      "object_type": "tablelogic",
+      "package_name": "bos.auth",
+      "sql_table_name": "user",
+      "target_table": "User",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: Field 'username' is required.\");\n}\nrec.username = String(rec.username).trim();\n\nif (rec.username.length < 3 || rec.username.length > 50) {\n    throw new Error(\"Validation Failed: 'username' length must be between 3 and 50 characters.\");\n}\n\nif (!/^[a-zA-Z0-9_\\-\\.@]+$/.test(rec.username)) {\n    throw new Error(\"Validation Failed: 'username' can only contain alphanumeric characters, dots, underscores, dashes, and at-signs.\");\n}\n\nif (!rec.email || String(rec.email).trim().length === 0) {\n    throw new Error(\"Validation Failed: Field 'email' is required.\");\n}\nrec.email = String(rec.email).toLowerCase().trim();\n\nconst emailPattern = /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/;\nif (!emailPattern.test(rec.email)) {\n    throw new Error(\"Validation Failed: 'email' format is invalid.\");\n}\n\nif (rec.password) {\n    const rawPassword = String(rec.password);\n    if (rawPassword.length < 8) {\n        throw new Error(\"Validation Failed: Password must be at least 8 characters long.\");\n    }\n    rec.passwordHash = rawPassword.startsWith(\"$argon2\")\n        ? rawPassword\n        : ctx.crypto.argon2Hash(rawPassword);\n    delete rec.password;\n} else if (rec.passwordHash && !String(rec.passwordHash).startsWith(\"$argon2\")) {\n    rec.passwordHash = ctx.crypto.argon2Hash(rec.passwordHash);\n}\n\nif (!rec.passwordHash) {\n    throw new Error(\"Validation Failed: Field 'passwordHash' or 'password' is required.\");\n}\n\nif (rec.failedAttempts === undefined || rec.failedAttempts === null) {\n    rec.failedAttempts = 0;\n}\nif (rec.isActive === undefined || rec.isActive === null) {\n    rec.isActive = true;\n}\nif (!rec.status) {\n    rec.status = \"Active\";\n}\nif (!rec.userType) {\n    rec.userType = \"Internal\";\n}\nrec.passwordChangedAt = new Date().toISOString();\n\nctx.audit.log(`Security User inserted: ${rec.username}`);"
+        },
+        {
+          "actions": [],
+          "name": "onModify",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'username' cannot be empty during modification.\");\n}\n\nif (rec.email) {\n    rec.email = String(rec.email).toLowerCase().trim();\n    const emailPattern = /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/;\n    if (!emailPattern.test(rec.email)) {\n        throw new Error(\"Validation Failed: 'email' format is invalid.\");\n    }\n}\n\nif (rec.password) {\n    const rawPassword = String(rec.password);\n    if (rawPassword.length < 8) {\n        throw new Error(\"Validation Failed: Password must be at least 8 characters long.\");\n    }\n    rec.passwordHash = rawPassword.startsWith(\"$argon2\")\n        ? rawPassword\n        : ctx.crypto.argon2Hash(rawPassword);\n    rec.passwordChangedAt = new Date().toISOString();\n    delete rec.password;\n}\n\nctx.audit.log(`Security User modified: ${rec.username}`);"
+        },
+        {
+          "actions": [],
+          "name": "onDelete",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (rec.username === \"admin\" || rec.username === \"system\") {\n    throw new Error(\"Security Violation: Cannot delete permanent system administrator account.\");\n}\nctx.audit.log(`Security User deleted: ${rec.username}`);"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "field_validations": [],
+      "methods": [],
+      "name": "RoleLogic",
+      "object_type": "tablelogic",
+      "package_name": "bos.auth",
+      "sql_table_name": "role",
+      "target_table": "Role",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.code || String(rec.code).trim().length === 0) {\n    throw new Error(\"Validation Failed: Field 'code' is required for Role.\");\n}\nrec.code = String(rec.code).toUpperCase().trim();\n\nif (!rec.name || String(rec.name).trim().length === 0) {\n    throw new Error(\"Validation Failed: Field 'name' is required for Role.\");\n}\nrec.name = String(rec.name).trim();\n\nif (rec.isSystemRole === undefined) {\n    rec.isSystemRole = false;\n}\nif (rec.isActive === undefined) {\n    rec.isActive = true;\n}\n\nctx.audit.log(`Security Role created: ${rec.code}`);"
+        },
+        {
+          "actions": [],
+          "name": "onDelete",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (rec.code === \"SUPER\" || rec.code === \"ADMIN\") {\n    throw new Error(\"Security Violation: Cannot delete protected core system role.\");\n}\nctx.audit.log(`Security Role deleted: ${rec.code}`);"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "field_validations": [],
+      "methods": [],
+      "name": "UserRoleLogic",
+      "object_type": "tablelogic",
+      "package_name": "bos.auth",
+      "sql_table_name": "user_role",
+      "target_table": "UserRole",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'username' is required for UserRole assignment.\");\n}\nif (!rec.roleCode || String(rec.roleCode).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'roleCode' is required for UserRole assignment.\");\n}\nrec.roleCode = String(rec.roleCode).toUpperCase().trim();\n\nctx.audit.log(`UserRole assigned: ${rec.username} -> ${rec.roleCode}`);"
+        },
+        {
+          "actions": [],
+          "name": "onDelete",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (rec.username === \"admin\" && (rec.roleCode === \"SUPER\" || rec.roleCode === \"ADMIN\")) {\n    throw new Error(\"Security Violation: Cannot revoke root administrator role from primary admin account.\");\n}\nctx.audit.log(`UserRole revoked: ${rec.username} -/-> ${rec.roleCode}`);"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "field_validations": [],
+      "methods": [],
+      "name": "UserSessionLogic",
+      "object_type": "tablelogic",
+      "package_name": "bos.auth",
+      "sql_table_name": "user_session",
+      "target_table": "UserSession",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.token || String(rec.token).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'token' cannot be empty for UserSession.\");\n}\nif (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'username' cannot be empty for UserSession.\");\n}\nif (!rec.expiresAt) {\n    const exp = new Date(Date.now() + 24 * 60 * 60 * 1000);\n    rec.expiresAt = exp.toISOString();\n}\nif (!rec.sessionState) {\n    rec.sessionState = \"Active\";\n}\nrec.lastActivityAt = new Date().toISOString();\n\nctx.audit.log(`UserSession created for user: ${rec.username}`);"
+        },
+        {
+          "actions": [],
+          "name": "onModify",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "rec.lastActivityAt = new Date().toISOString();"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "field_validations": [],
+      "methods": [],
+      "name": "UserSecuritySettingLogic",
+      "object_type": "tablelogic",
+      "package_name": "bos.auth",
+      "sql_table_name": "user_security_setting",
+      "target_table": "UserSecuritySetting",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'username' is required for UserSecuritySetting.\");\n}\nif (rec.maxConcurrentSessions !== undefined && rec.maxConcurrentSessions < 1) {\n    throw new Error(\"Validation Failed: 'maxConcurrentSessions' must be at least 1.\");\n}\nif (rec.passwordExpiryDays !== undefined && rec.passwordExpiryDays < 1) {\n    throw new Error(\"Validation Failed: 'passwordExpiryDays' must be greater than 0.\");\n}"
+        },
+        {
+          "actions": [],
+          "name": "onModify",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (rec.maxConcurrentSessions !== undefined && rec.maxConcurrentSessions < 1) {\n    throw new Error(\"Validation Failed: 'maxConcurrentSessions' must be at least 1.\");\n}\nif (rec.passwordExpiryDays !== undefined && rec.passwordExpiryDays < 1) {\n    throw new Error(\"Validation Failed: 'passwordExpiryDays' must be greater than 0.\");\n}"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "field_validations": [],
+      "methods": [],
+      "name": "SecurityAuditLogLogic",
+      "object_type": "tablelogic",
+      "package_name": "bos.auth",
+      "sql_table_name": "security_audit_log",
+      "target_table": "SecurityAuditLog",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: Security audit entry must specify a username.\");\n}\nif (!rec.action) {\n    throw new Error(\"Validation Failed: Security audit entry must specify an action.\");\n}"
+        },
+        {
+          "actions": [],
+          "name": "onDelete",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "throw new Error(\"Security Violation: SecurityAuditLog is append-only and strictly immutable; deletions are prohibited.\");"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "field_validations": [],
+      "methods": [],
+      "name": "AuthConfigurationLogic",
+      "object_type": "tablelogic",
+      "package_name": "bos.auth",
+      "sql_table_name": "auth_configuration",
+      "target_table": "AuthConfiguration",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.id) rec.id = \"PRIMARY\";\nif (!rec.applicationTitle) rec.applicationTitle = \"BOS Enterprise Platform\";\nif (!rec.welcomeMessage) rec.welcomeMessage = \"Sign in to access your enterprise workspace.\";\nif (!rec.primaryColor) rec.primaryColor = \"#4f46e5\";\nif (!rec.customDisclaimer) rec.customDisclaimer = \"Authorized personnel only. All access attempts are monitored and audited.\";\nif (rec.allowRememberMe === undefined) rec.allowRememberMe = true;\nif (rec.allowEmergencyFallback === undefined) rec.allowEmergencyFallback = true;"
+        },
+        {
+          "actions": [],
+          "name": "onModify",
+          "params": [
+            "rec",
+            "xRec",
+            "ctx"
+          ],
+          "script": "if (!rec.applicationTitle || String(rec.applicationTitle).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'applicationTitle' cannot be blank.\");\n}"
+        },
+        {
+          "actions": [],
+          "name": "onDelete",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (rec.id === \"PRIMARY\") {\n    throw new Error(\"Validation Failed: The 'PRIMARY' authentication configuration cannot be deleted.\");\n}"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
       "bound_table": null,
       "execution_mode": "BytecodeInterpreter",
       "is_exposed": false,
@@ -1548,235 +1782,6 @@
       "version": "1.0.0"
     },
     {
-      "field_validations": [],
-      "methods": [],
-      "name": "UserLogic",
-      "object_type": "tablelogic",
-      "package_name": "bos.auth",
-      "sql_table_name": "user",
-      "target_table": "User",
-      "triggers": [
-        {
-          "actions": [],
-          "name": "onInsert",
-          "params": [
-            "rec",
-            "ctx"
-          ],
-          "script": "if (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: Field 'username' is required.\");\n}\nrec.username = String(rec.username).trim();\n\nif (rec.username.length < 3 || rec.username.length > 50) {\n    throw new Error(\"Validation Failed: 'username' length must be between 3 and 50 characters.\");\n}\n\nif (!/^[a-zA-Z0-9_\\-\\.@]+$/.test(rec.username)) {\n    throw new Error(\"Validation Failed: 'username' can only contain alphanumeric characters, dots, underscores, dashes, and at-signs.\");\n}\n\nif (!rec.email || String(rec.email).trim().length === 0) {\n    throw new Error(\"Validation Failed: Field 'email' is required.\");\n}\nrec.email = String(rec.email).toLowerCase().trim();\n\nconst emailPattern = /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/;\nif (!emailPattern.test(rec.email)) {\n    throw new Error(\"Validation Failed: 'email' format is invalid.\");\n}\n\nif (rec.password) {\n    const rawPassword = String(rec.password);\n    if (rawPassword.length < 8) {\n        throw new Error(\"Validation Failed: Password must be at least 8 characters long.\");\n    }\n    rec.passwordHash = rawPassword.startsWith(\"$argon2\")\n        ? rawPassword\n        : ctx.crypto.argon2Hash(rawPassword);\n    delete rec.password;\n} else if (rec.passwordHash && !String(rec.passwordHash).startsWith(\"$argon2\")) {\n    rec.passwordHash = ctx.crypto.argon2Hash(rec.passwordHash);\n}\n\nif (!rec.passwordHash) {\n    throw new Error(\"Validation Failed: Field 'passwordHash' or 'password' is required.\");\n}\n\nif (rec.failedAttempts === undefined || rec.failedAttempts === null) {\n    rec.failedAttempts = 0;\n}\nif (rec.isActive === undefined || rec.isActive === null) {\n    rec.isActive = true;\n}\nif (!rec.status) {\n    rec.status = \"Active\";\n}\nif (!rec.userType) {\n    rec.userType = \"Internal\";\n}\nrec.passwordChangedAt = new Date().toISOString();\n\nctx.audit.log(`Security User inserted: ${rec.username}`);"
-        },
-        {
-          "actions": [],
-          "name": "onModify",
-          "params": [
-            "rec",
-            "ctx"
-          ],
-          "script": "if (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'username' cannot be empty during modification.\");\n}\n\nif (rec.email) {\n    rec.email = String(rec.email).toLowerCase().trim();\n    const emailPattern = /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/;\n    if (!emailPattern.test(rec.email)) {\n        throw new Error(\"Validation Failed: 'email' format is invalid.\");\n    }\n}\n\nif (rec.password) {\n    const rawPassword = String(rec.password);\n    if (rawPassword.length < 8) {\n        throw new Error(\"Validation Failed: Password must be at least 8 characters long.\");\n    }\n    rec.passwordHash = rawPassword.startsWith(\"$argon2\")\n        ? rawPassword\n        : ctx.crypto.argon2Hash(rawPassword);\n    rec.passwordChangedAt = new Date().toISOString();\n    delete rec.password;\n}\n\nctx.audit.log(`Security User modified: ${rec.username}`);"
-        },
-        {
-          "actions": [],
-          "name": "onDelete",
-          "params": [
-            "rec",
-            "ctx"
-          ],
-          "script": "if (rec.username === \"admin\" || rec.username === \"system\") {\n    throw new Error(\"Security Violation: Cannot delete permanent system administrator account.\");\n}\nctx.audit.log(`Security User deleted: ${rec.username}`);"
-        }
-      ],
-      "version": "1.0.0"
-    },
-    {
-      "field_validations": [],
-      "methods": [],
-      "name": "RoleLogic",
-      "object_type": "tablelogic",
-      "package_name": "bos.auth",
-      "sql_table_name": "role",
-      "target_table": "Role",
-      "triggers": [
-        {
-          "actions": [],
-          "name": "onInsert",
-          "params": [
-            "rec",
-            "ctx"
-          ],
-          "script": "if (!rec.code || String(rec.code).trim().length === 0) {\n    throw new Error(\"Validation Failed: Field 'code' is required for Role.\");\n}\nrec.code = String(rec.code).toUpperCase().trim();\n\nif (!rec.name || String(rec.name).trim().length === 0) {\n    throw new Error(\"Validation Failed: Field 'name' is required for Role.\");\n}\nrec.name = String(rec.name).trim();\n\nif (rec.isSystemRole === undefined) {\n    rec.isSystemRole = false;\n}\nif (rec.isActive === undefined) {\n    rec.isActive = true;\n}\n\nctx.audit.log(`Security Role created: ${rec.code}`);"
-        },
-        {
-          "actions": [],
-          "name": "onDelete",
-          "params": [
-            "rec",
-            "ctx"
-          ],
-          "script": "if (rec.code === \"SUPER\" || rec.code === \"ADMIN\") {\n    throw new Error(\"Security Violation: Cannot delete protected core system role.\");\n}\nctx.audit.log(`Security Role deleted: ${rec.code}`);"
-        }
-      ],
-      "version": "1.0.0"
-    },
-    {
-      "field_validations": [],
-      "methods": [],
-      "name": "UserRoleLogic",
-      "object_type": "tablelogic",
-      "package_name": "bos.auth",
-      "sql_table_name": "user_role",
-      "target_table": "UserRole",
-      "triggers": [
-        {
-          "actions": [],
-          "name": "onInsert",
-          "params": [
-            "rec",
-            "ctx"
-          ],
-          "script": "if (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'username' is required for UserRole assignment.\");\n}\nif (!rec.roleCode || String(rec.roleCode).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'roleCode' is required for UserRole assignment.\");\n}\nrec.roleCode = String(rec.roleCode).toUpperCase().trim();\n\nctx.audit.log(`UserRole assigned: ${rec.username} -> ${rec.roleCode}`);"
-        },
-        {
-          "actions": [],
-          "name": "onDelete",
-          "params": [
-            "rec",
-            "ctx"
-          ],
-          "script": "if (rec.username === \"admin\" && (rec.roleCode === \"SUPER\" || rec.roleCode === \"ADMIN\")) {\n    throw new Error(\"Security Violation: Cannot revoke root administrator role from primary admin account.\");\n}\nctx.audit.log(`UserRole revoked: ${rec.username} -/-> ${rec.roleCode}`);"
-        }
-      ],
-      "version": "1.0.0"
-    },
-    {
-      "field_validations": [],
-      "methods": [],
-      "name": "UserSessionLogic",
-      "object_type": "tablelogic",
-      "package_name": "bos.auth",
-      "sql_table_name": "user_session",
-      "target_table": "UserSession",
-      "triggers": [
-        {
-          "actions": [],
-          "name": "onInsert",
-          "params": [
-            "rec",
-            "ctx"
-          ],
-          "script": "if (!rec.token || String(rec.token).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'token' cannot be empty for UserSession.\");\n}\nif (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'username' cannot be empty for UserSession.\");\n}\nif (!rec.expiresAt) {\n    const exp = new Date(Date.now() + 24 * 60 * 60 * 1000);\n    rec.expiresAt = exp.toISOString();\n}\nif (!rec.sessionState) {\n    rec.sessionState = \"Active\";\n}\nrec.lastActivityAt = new Date().toISOString();\n\nctx.audit.log(`UserSession created for user: ${rec.username}`);"
-        },
-        {
-          "actions": [],
-          "name": "onModify",
-          "params": [
-            "rec",
-            "ctx"
-          ],
-          "script": "rec.lastActivityAt = new Date().toISOString();"
-        }
-      ],
-      "version": "1.0.0"
-    },
-    {
-      "field_validations": [],
-      "methods": [],
-      "name": "UserSecuritySettingLogic",
-      "object_type": "tablelogic",
-      "package_name": "bos.auth",
-      "sql_table_name": "user_security_setting",
-      "target_table": "UserSecuritySetting",
-      "triggers": [
-        {
-          "actions": [],
-          "name": "onInsert",
-          "params": [
-            "rec",
-            "ctx"
-          ],
-          "script": "if (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'username' is required for UserSecuritySetting.\");\n}\nif (rec.maxConcurrentSessions !== undefined && rec.maxConcurrentSessions < 1) {\n    throw new Error(\"Validation Failed: 'maxConcurrentSessions' must be at least 1.\");\n}\nif (rec.passwordExpiryDays !== undefined && rec.passwordExpiryDays < 1) {\n    throw new Error(\"Validation Failed: 'passwordExpiryDays' must be greater than 0.\");\n}"
-        },
-        {
-          "actions": [],
-          "name": "onModify",
-          "params": [
-            "rec",
-            "ctx"
-          ],
-          "script": "if (rec.maxConcurrentSessions !== undefined && rec.maxConcurrentSessions < 1) {\n    throw new Error(\"Validation Failed: 'maxConcurrentSessions' must be at least 1.\");\n}\nif (rec.passwordExpiryDays !== undefined && rec.passwordExpiryDays < 1) {\n    throw new Error(\"Validation Failed: 'passwordExpiryDays' must be greater than 0.\");\n}"
-        }
-      ],
-      "version": "1.0.0"
-    },
-    {
-      "field_validations": [],
-      "methods": [],
-      "name": "SecurityAuditLogLogic",
-      "object_type": "tablelogic",
-      "package_name": "bos.auth",
-      "sql_table_name": "security_audit_log",
-      "target_table": "SecurityAuditLog",
-      "triggers": [
-        {
-          "actions": [],
-          "name": "onInsert",
-          "params": [
-            "rec",
-            "ctx"
-          ],
-          "script": "if (!rec.username || String(rec.username).trim().length === 0) {\n    throw new Error(\"Validation Failed: Security audit entry must specify a username.\");\n}\nif (!rec.action) {\n    throw new Error(\"Validation Failed: Security audit entry must specify an action.\");\n}"
-        },
-        {
-          "actions": [],
-          "name": "onDelete",
-          "params": [
-            "rec",
-            "ctx"
-          ],
-          "script": "throw new Error(\"Security Violation: SecurityAuditLog is append-only and strictly immutable; deletions are prohibited.\");"
-        }
-      ],
-      "version": "1.0.0"
-    },
-    {
-      "field_validations": [],
-      "methods": [],
-      "name": "AuthConfigurationLogic",
-      "object_type": "tablelogic",
-      "package_name": "bos.auth",
-      "sql_table_name": "auth_configuration",
-      "target_table": "AuthConfiguration",
-      "triggers": [
-        {
-          "actions": [],
-          "name": "onInsert",
-          "params": [
-            "rec",
-            "ctx"
-          ],
-          "script": "if (!rec.id) rec.id = \"PRIMARY\";\nif (!rec.applicationTitle) rec.applicationTitle = \"BOS Enterprise Platform\";\nif (!rec.welcomeMessage) rec.welcomeMessage = \"Sign in to access your enterprise workspace.\";\nif (!rec.primaryColor) rec.primaryColor = \"#4f46e5\";\nif (!rec.customDisclaimer) rec.customDisclaimer = \"Authorized personnel only. All access attempts are monitored and audited.\";\nif (rec.allowRememberMe === undefined) rec.allowRememberMe = true;\nif (rec.allowEmergencyFallback === undefined) rec.allowEmergencyFallback = true;"
-        },
-        {
-          "actions": [],
-          "name": "onModify",
-          "params": [
-            "rec",
-            "xRec",
-            "ctx"
-          ],
-          "script": "if (!rec.applicationTitle || String(rec.applicationTitle).trim().length === 0) {\n    throw new Error(\"Validation Failed: 'applicationTitle' cannot be blank.\");\n}"
-        },
-        {
-          "actions": [],
-          "name": "onDelete",
-          "params": [
-            "rec",
-            "ctx"
-          ],
-          "script": "if (rec.id === \"PRIMARY\") {\n    throw new Error(\"Validation Failed: The 'PRIMARY' authentication configuration cannot be deleted.\");\n}"
-        }
-      ],
-      "version": "1.0.0"
-    },
-    {
       "implements_interface": null,
       "members": [
         {
@@ -1983,13 +1988,11 @@
               "caption": null,
               "children": [
                 {
-                  "caption": "Username",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "username",
-                  "properties": {
-                    "caption": "Username"
-                  },
+                  "properties": {},
                   "source_expr": "username"
                 },
                 {
@@ -1997,39 +2000,31 @@
                   "children": [],
                   "kind": "field",
                   "name": "email",
-                  "properties": {
-                    "caption": "Email Address"
-                  },
+                  "properties": {},
                   "source_expr": "email"
                 },
                 {
-                  "caption": "Full Name",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "fullName",
-                  "properties": {
-                    "caption": "Full Name"
-                  },
+                  "properties": {},
                   "source_expr": "fullName"
                 },
                 {
-                  "caption": "User Type",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "userType",
-                  "properties": {
-                    "caption": "User Type"
-                  },
+                  "properties": {},
                   "source_expr": "userType"
                 },
                 {
-                  "caption": "Status",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "status",
-                  "properties": {
-                    "caption": "Status"
-                  },
+                  "properties": {},
                   "source_expr": "status"
                 },
                 {
@@ -2037,9 +2032,7 @@
                   "children": [],
                   "kind": "field",
                   "name": "failedAttempts",
-                  "properties": {
-                    "caption": "Failed Logins"
-                  },
+                  "properties": {},
                   "source_expr": "failedAttempts"
                 },
                 {
@@ -2047,9 +2040,7 @@
                   "children": [],
                   "kind": "field",
                   "name": "activeSessionCount",
-                  "properties": {
-                    "caption": "Active Sessions"
-                  },
+                  "properties": {},
                   "source_expr": "activeSessionCount"
                 },
                 {
@@ -2057,9 +2048,7 @@
                   "children": [],
                   "kind": "field",
                   "name": "lastLoginAt",
-                  "properties": {
-                    "caption": "Last Login"
-                  },
+                  "properties": {},
                   "source_expr": "lastLoginAt"
                 }
               ],
@@ -2079,6 +2068,7 @@
       "editable": null,
       "filters": [],
       "insert_allowed": null,
+      "ir_version": 2,
       "modify_allowed": null,
       "name": "UserList",
       "object_type": "page",
@@ -2130,12 +2120,11 @@
               "caption": null,
               "children": [
                 {
-                  "caption": "Username",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "username",
                   "properties": {
-                    "caption": "Username",
                     "editable": "false"
                   },
                   "source_expr": "username"
@@ -2145,49 +2134,39 @@
                   "children": [],
                   "kind": "field",
                   "name": "email",
-                  "properties": {
-                    "caption": "Email Address"
-                  },
+                  "properties": {},
                   "source_expr": "email"
                 },
                 {
-                  "caption": "Full Name",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "fullName",
-                  "properties": {
-                    "caption": "Full Name"
-                  },
+                  "properties": {},
                   "source_expr": "fullName"
                 },
                 {
-                  "caption": "Phone Number",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "phoneNumber",
-                  "properties": {
-                    "caption": "Phone Number"
-                  },
+                  "properties": {},
                   "source_expr": "phoneNumber"
                 },
                 {
-                  "caption": "User Type",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "userType",
-                  "properties": {
-                    "caption": "User Type"
-                  },
+                  "properties": {},
                   "source_expr": "userType"
                 },
                 {
-                  "caption": "Status",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "status",
-                  "properties": {
-                    "caption": "Status"
-                  },
+                  "properties": {},
                   "source_expr": "status"
                 },
                 {
@@ -2195,9 +2174,7 @@
                   "children": [],
                   "kind": "field",
                   "name": "isActive",
-                  "properties": {
-                    "caption": "Active Flag"
-                  },
+                  "properties": {},
                   "source_expr": "isActive"
                 }
               ],
@@ -2210,12 +2187,11 @@
               "caption": null,
               "children": [
                 {
-                  "caption": "Failed Attempts",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "failedAttempts",
                   "properties": {
-                    "caption": "Failed Attempts",
                     "editable": "false"
                   },
                   "source_expr": "failedAttempts"
@@ -2226,7 +2202,6 @@
                   "kind": "field",
                   "name": "lockoutUntil",
                   "properties": {
-                    "caption": "Lockout Expiration",
                     "editable": "false"
                   },
                   "source_expr": "lockoutUntil"
@@ -2237,7 +2212,6 @@
                   "kind": "field",
                   "name": "lastLoginAt",
                   "properties": {
-                    "caption": "Last Login Timestamp",
                     "editable": "false"
                   },
                   "source_expr": "lastLoginAt"
@@ -2248,7 +2222,6 @@
                   "kind": "field",
                   "name": "passwordChangedAt",
                   "properties": {
-                    "caption": "Password Last Changed",
                     "editable": "false"
                   },
                   "source_expr": "passwordChangedAt"
@@ -2259,7 +2232,6 @@
                   "kind": "field",
                   "name": "activeSessionCount",
                   "properties": {
-                    "caption": "Current Active Sessions",
                     "editable": "false"
                   },
                   "source_expr": "activeSessionCount"
@@ -2281,6 +2253,7 @@
       "editable": null,
       "filters": [],
       "insert_allowed": null,
+      "ir_version": 2,
       "modify_allowed": null,
       "name": "UserCard",
       "object_type": "page",
@@ -2322,9 +2295,7 @@
                   "children": [],
                   "kind": "field",
                   "name": "code",
-                  "properties": {
-                    "caption": "Role Code"
-                  },
+                  "properties": {},
                   "source_expr": "code"
                 },
                 {
@@ -2332,19 +2303,15 @@
                   "children": [],
                   "kind": "field",
                   "name": "name",
-                  "properties": {
-                    "caption": "Role Name"
-                  },
+                  "properties": {},
                   "source_expr": "name"
                 },
                 {
-                  "caption": "Description",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "description",
-                  "properties": {
-                    "caption": "Description"
-                  },
+                  "properties": {},
                   "source_expr": "description"
                 },
                 {
@@ -2352,9 +2319,7 @@
                   "children": [],
                   "kind": "field",
                   "name": "isSystemRole",
-                  "properties": {
-                    "caption": "System Role"
-                  },
+                  "properties": {},
                   "source_expr": "isSystemRole"
                 },
                 {
@@ -2362,9 +2327,7 @@
                   "children": [],
                   "kind": "field",
                   "name": "isActive",
-                  "properties": {
-                    "caption": "Active"
-                  },
+                  "properties": {},
                   "source_expr": "isActive"
                 },
                 {
@@ -2372,9 +2335,7 @@
                   "children": [],
                   "kind": "field",
                   "name": "assignedUsersCount",
-                  "properties": {
-                    "caption": "Assigned Users"
-                  },
+                  "properties": {},
                   "source_expr": "assignedUsersCount"
                 }
               ],
@@ -2394,6 +2355,7 @@
       "editable": null,
       "filters": [],
       "insert_allowed": null,
+      "ir_version": 2,
       "modify_allowed": null,
       "name": "RoleList",
       "object_type": "page",
@@ -2435,9 +2397,7 @@
                   "children": [],
                   "kind": "field",
                   "name": "username",
-                  "properties": {
-                    "caption": "User"
-                  },
+                  "properties": {},
                   "source_expr": "username"
                 },
                 {
@@ -2445,19 +2405,15 @@
                   "children": [],
                   "kind": "field",
                   "name": "token",
-                  "properties": {
-                    "caption": "Session Token"
-                  },
+                  "properties": {},
                   "source_expr": "token"
                 },
                 {
-                  "caption": "IP Address",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "ipAddress",
-                  "properties": {
-                    "caption": "IP Address"
-                  },
+                  "properties": {},
                   "source_expr": "ipAddress"
                 },
                 {
@@ -2465,9 +2421,7 @@
                   "children": [],
                   "kind": "field",
                   "name": "userAgent",
-                  "properties": {
-                    "caption": "Client / User Agent"
-                  },
+                  "properties": {},
                   "source_expr": "userAgent"
                 },
                 {
@@ -2475,19 +2429,15 @@
                   "children": [],
                   "kind": "field",
                   "name": "sessionState",
-                  "properties": {
-                    "caption": "State"
-                  },
+                  "properties": {},
                   "source_expr": "sessionState"
                 },
                 {
-                  "caption": "Expires At",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "expiresAt",
-                  "properties": {
-                    "caption": "Expires At"
-                  },
+                  "properties": {},
                   "source_expr": "expiresAt"
                 },
                 {
@@ -2495,9 +2445,7 @@
                   "children": [],
                   "kind": "field",
                   "name": "lastActivityAt",
-                  "properties": {
-                    "caption": "Last Activity"
-                  },
+                  "properties": {},
                   "source_expr": "lastActivityAt"
                 }
               ],
@@ -2517,6 +2465,7 @@
       "editable": null,
       "filters": [],
       "insert_allowed": null,
+      "ir_version": 2,
       "modify_allowed": null,
       "name": "SessionList",
       "object_type": "page",
@@ -2543,9 +2492,7 @@
                   "children": [],
                   "kind": "field",
                   "name": "id",
-                  "properties": {
-                    "caption": "Event ID"
-                  },
+                  "properties": {},
                   "source_expr": "id"
                 },
                 {
@@ -2553,19 +2500,15 @@
                   "children": [],
                   "kind": "field",
                   "name": "username",
-                  "properties": {
-                    "caption": "User"
-                  },
+                  "properties": {},
                   "source_expr": "username"
                 },
                 {
-                  "caption": "Action",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "action",
-                  "properties": {
-                    "caption": "Action"
-                  },
+                  "properties": {},
                   "source_expr": "action"
                 },
                 {
@@ -2573,19 +2516,15 @@
                   "children": [],
                   "kind": "field",
                   "name": "isSuccess",
-                  "properties": {
-                    "caption": "Success"
-                  },
+                  "properties": {},
                   "source_expr": "isSuccess"
                 },
                 {
-                  "caption": "IP Address",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "ipAddress",
-                  "properties": {
-                    "caption": "IP Address"
-                  },
+                  "properties": {},
                   "source_expr": "ipAddress"
                 },
                 {
@@ -2593,19 +2532,15 @@
                   "children": [],
                   "kind": "field",
                   "name": "userAgent",
-                  "properties": {
-                    "caption": "Client Agent"
-                  },
+                  "properties": {},
                   "source_expr": "userAgent"
                 },
                 {
-                  "caption": "Details",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "details",
-                  "properties": {
-                    "caption": "Details"
-                  },
+                  "properties": {},
                   "source_expr": "details"
                 }
               ],
@@ -2625,6 +2560,7 @@
       "editable": null,
       "filters": [],
       "insert_allowed": null,
+      "ir_version": 2,
       "modify_allowed": null,
       "name": "SecurityAuditLogList",
       "object_type": "page",
@@ -2667,7 +2603,6 @@
                   "kind": "field",
                   "name": "code",
                   "properties": {
-                    "caption": "Role Code",
                     "editable": "false"
                   },
                   "source_expr": "code"
@@ -2677,19 +2612,15 @@
                   "children": [],
                   "kind": "field",
                   "name": "name",
-                  "properties": {
-                    "caption": "Role Name"
-                  },
+                  "properties": {},
                   "source_expr": "name"
                 },
                 {
-                  "caption": "Description",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "description",
-                  "properties": {
-                    "caption": "Description"
-                  },
+                  "properties": {},
                   "source_expr": "description"
                 },
                 {
@@ -2698,7 +2629,6 @@
                   "kind": "field",
                   "name": "isSystemRole",
                   "properties": {
-                    "caption": "System Protected Role",
                     "editable": "false"
                   },
                   "source_expr": "isSystemRole"
@@ -2708,18 +2638,15 @@
                   "children": [],
                   "kind": "field",
                   "name": "isActive",
-                  "properties": {
-                    "caption": "Active Status"
-                  },
+                  "properties": {},
                   "source_expr": "isActive"
                 },
                 {
-                  "caption": "Assigned Users Count",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "assignedUsersCount",
                   "properties": {
-                    "caption": "Assigned Users Count",
                     "editable": "false"
                   },
                   "source_expr": "assignedUsersCount"
@@ -2727,9 +2654,7 @@
               ],
               "kind": "group",
               "name": "General",
-              "properties": {
-                "caption": "Role Information"
-              },
+              "properties": {},
               "source_expr": null
             }
           ],
@@ -2743,6 +2668,7 @@
       "editable": null,
       "filters": [],
       "insert_allowed": null,
+      "ir_version": 2,
       "modify_allowed": null,
       "name": "RoleCard",
       "object_type": "page",
@@ -2780,33 +2706,27 @@
               "caption": null,
               "children": [
                 {
-                  "caption": "Username",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "username",
-                  "properties": {
-                    "caption": "Username"
-                  },
+                  "properties": {},
                   "source_expr": "username"
                 },
                 {
-                  "caption": "Role Code",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "roleCode",
-                  "properties": {
-                    "caption": "Role Code"
-                  },
+                  "properties": {},
                   "source_expr": "roleCode"
                 },
                 {
-                  "caption": "Assigned By",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "assignedBy",
-                  "properties": {
-                    "caption": "Assigned By"
-                  },
+                  "properties": {},
                   "source_expr": "assignedBy"
                 }
               ],
@@ -2826,6 +2746,7 @@
       "editable": null,
       "filters": [],
       "insert_allowed": null,
+      "ir_version": 2,
       "modify_allowed": null,
       "name": "UserRoleList",
       "object_type": "page",
@@ -2852,19 +2773,15 @@
                   "children": [],
                   "kind": "field",
                   "name": "username",
-                  "properties": {
-                    "caption": "User ID"
-                  },
+                  "properties": {},
                   "source_expr": "username"
                 },
                 {
-                  "caption": "MFA Method",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "mfaMethod",
-                  "properties": {
-                    "caption": "MFA Method"
-                  },
+                  "properties": {},
                   "source_expr": "mfaMethod"
                 },
                 {
@@ -2872,9 +2789,7 @@
                   "children": [],
                   "kind": "field",
                   "name": "mfaEnabled",
-                  "properties": {
-                    "caption": "MFA Active"
-                  },
+                  "properties": {},
                   "source_expr": "mfaEnabled"
                 },
                 {
@@ -2882,9 +2797,7 @@
                   "children": [],
                   "kind": "field",
                   "name": "maxConcurrentSessions",
-                  "properties": {
-                    "caption": "Session Quota"
-                  },
+                  "properties": {},
                   "source_expr": "maxConcurrentSessions"
                 },
                 {
@@ -2892,9 +2805,7 @@
                   "children": [],
                   "kind": "field",
                   "name": "mustChangePassword",
-                  "properties": {
-                    "caption": "Force Password Change"
-                  },
+                  "properties": {},
                   "source_expr": "mustChangePassword"
                 },
                 {
@@ -2902,9 +2813,7 @@
                   "children": [],
                   "kind": "field",
                   "name": "passwordExpiryDays",
-                  "properties": {
-                    "caption": "Password Expiry (Days)"
-                  },
+                  "properties": {},
                   "source_expr": "passwordExpiryDays"
                 }
               ],
@@ -2924,6 +2833,7 @@
       "editable": null,
       "filters": [],
       "insert_allowed": null,
+      "ir_version": 2,
       "modify_allowed": null,
       "name": "UserSecuritySettingList",
       "object_type": "page",
@@ -2944,9 +2854,9 @@
           "icon": "LogIn",
           "name": "SignIn",
           "open_page": null,
-          "primary": false,
+          "primary": true,
           "run_codeunit": null,
-          "script": "if (!rec || !rec.username) throw new Error(\"Username is required.\");\nctx.call(\"AuthManager\", \"Authenticate\", { username: rec.username, password: rec.password });",
+          "script": "const vars = ctx.page.variables;\nif (!vars.username) throw new Error(\"Please enter your User ID.\");\nif (!vars.password) throw new Error(\"Please enter your password.\");\nctx.call(\"AuthManager\", \"Authenticate\", { username: vars.username, password: vars.password });",
           "selection": null,
           "shortcut": null,
           "show_when": null
@@ -2958,26 +2868,54 @@
           "caption": null,
           "children": [
             {
+              "caption": "BOS Enterprise Platform",
+              "children": [
+                {
+                  "caption": null,
+                  "children": [],
+                  "kind": "field",
+                  "name": "applicationTitle",
+                  "properties": {
+                    "editable": "false"
+                  },
+                  "source_expr": "applicationTitle"
+                },
+                {
+                  "caption": "Welcome Subtitle",
+                  "children": [],
+                  "kind": "field",
+                  "name": "welcomeMessage",
+                  "properties": {
+                    "editable": "false"
+                  },
+                  "source_expr": "welcomeMessage"
+                }
+              ],
+              "kind": "group",
+              "name": "Branding",
+              "properties": {},
+              "source_expr": null
+            },
+            {
               "caption": "Account Credentials",
               "children": [
                 {
-                  "caption": "User ID",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "username",
                   "properties": {
-                    "caption": "User ID"
+                    "required": "true"
                   },
                   "source_expr": "username"
                 },
                 {
-                  "caption": "Password",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "password",
                   "properties": {
-                    "caption": "Password",
-                    "style": "password"
+                    "required": "true"
                   },
                   "source_expr": "password"
                 },
@@ -2987,17 +2925,43 @@
                   "kind": "field",
                   "name": "rememberMe",
                   "properties": {
-                    "caption": "Remember User ID",
-                    "style": "switch"
+                    "showWhen": "rec.allowRememberMe"
                   },
                   "source_expr": "rememberMe"
                 }
               ],
               "kind": "group",
               "name": "Credentials",
-              "properties": {
-                "caption": "Account Credentials"
-              },
+              "properties": {},
+              "source_expr": null
+            },
+            {
+              "caption": "Security & Compliance",
+              "children": [
+                {
+                  "caption": "Security Notice",
+                  "children": [],
+                  "kind": "field",
+                  "name": "customDisclaimer",
+                  "properties": {
+                    "editable": "false"
+                  },
+                  "source_expr": "customDisclaimer"
+                },
+                {
+                  "caption": "Support Helpdesk",
+                  "children": [],
+                  "kind": "field",
+                  "name": "supportEmail",
+                  "properties": {
+                    "editable": "false"
+                  },
+                  "source_expr": "supportEmail"
+                }
+              ],
+              "kind": "group",
+              "name": "Compliance",
+              "properties": {},
               "source_expr": null
             }
           ],
@@ -3011,14 +2975,31 @@
       "editable": null,
       "filters": [],
       "insert_allowed": null,
+      "ir_version": 2,
       "modify_allowed": null,
       "name": "LoginPage",
       "object_type": "page",
       "package_name": "bos.auth",
-      "page_type": "Card",
+      "page_type": "StandardDialog",
       "source_kind": "table",
-      "source_table": "User",
+      "source_table": "AuthConfiguration",
       "triggers": [],
+      "variables": [
+        {
+          "caption": "User ID",
+          "data_type": "String(50)",
+          "name": "username"
+        },
+        {
+          "data_type": "String(128)",
+          "name": "password"
+        },
+        {
+          "data_type": "Boolean",
+          "default_value": "false",
+          "name": "rememberMe"
+        }
+      ],
       "version": "1.0.0",
       "views": []
     },
@@ -3053,19 +3034,16 @@
                   "kind": "field",
                   "name": "id",
                   "properties": {
-                    "caption": "Config ID",
                     "editable": "false"
                   },
                   "source_expr": "id"
                 },
                 {
-                  "caption": "Application Title",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "applicationTitle",
-                  "properties": {
-                    "caption": "Application Title"
-                  },
+                  "properties": {},
                   "source_expr": "applicationTitle"
                 },
                 {
@@ -3073,9 +3051,7 @@
                   "children": [],
                   "kind": "field",
                   "name": "companyLogoUrl",
-                  "properties": {
-                    "caption": "Logo URL"
-                  },
+                  "properties": {},
                   "source_expr": "companyLogoUrl"
                 },
                 {
@@ -3083,9 +3059,7 @@
                   "children": [],
                   "kind": "field",
                   "name": "welcomeMessage",
-                  "properties": {
-                    "caption": "Welcome Subtitle"
-                  },
+                  "properties": {},
                   "source_expr": "welcomeMessage"
                 },
                 {
@@ -3093,30 +3067,24 @@
                   "children": [],
                   "kind": "field",
                   "name": "primaryColor",
-                  "properties": {
-                    "caption": "Brand Accent Hex Color"
-                  },
+                  "properties": {},
                   "source_expr": "primaryColor"
                 }
               ],
               "kind": "group",
               "name": "General",
-              "properties": {
-                "caption": "General Branding"
-              },
+              "properties": {},
               "source_expr": null
             },
             {
               "caption": "Login Policies",
               "children": [
                 {
-                  "caption": "Allow Remember Me",
+                  "caption": null,
                   "children": [],
                   "kind": "field",
                   "name": "allowRememberMe",
-                  "properties": {
-                    "caption": "Allow Remember Me"
-                  },
+                  "properties": {},
                   "source_expr": "allowRememberMe"
                 },
                 {
@@ -3124,9 +3092,7 @@
                   "children": [],
                   "kind": "field",
                   "name": "allowEmergencyFallback",
-                  "properties": {
-                    "caption": "Allow Emergency Super Admin Fallback"
-                  },
+                  "properties": {},
                   "source_expr": "allowEmergencyFallback"
                 },
                 {
@@ -3134,17 +3100,13 @@
                   "children": [],
                   "kind": "field",
                   "name": "supportEmail",
-                  "properties": {
-                    "caption": "Support Contact Email"
-                  },
+                  "properties": {},
                   "source_expr": "supportEmail"
                 }
               ],
               "kind": "group",
               "name": "AuthenticationPolicies",
-              "properties": {
-                "caption": "Login Policies"
-              },
+              "properties": {},
               "source_expr": null
             },
             {
@@ -3155,9 +3117,7 @@
                   "children": [],
                   "kind": "field",
                   "name": "ssoEnabled",
-                  "properties": {
-                    "caption": "Enable SSO Integration"
-                  },
+                  "properties": {},
                   "source_expr": "ssoEnabled"
                 },
                 {
@@ -3165,9 +3125,7 @@
                   "children": [],
                   "kind": "field",
                   "name": "ssoProviderName",
-                  "properties": {
-                    "caption": "SSO Button Title"
-                  },
+                  "properties": {},
                   "source_expr": "ssoProviderName"
                 },
                 {
@@ -3175,17 +3133,13 @@
                   "children": [],
                   "kind": "field",
                   "name": "ssoLoginUrl",
-                  "properties": {
-                    "caption": "SSO Identity Provider URL"
-                  },
+                  "properties": {},
                   "source_expr": "ssoLoginUrl"
                 }
               ],
               "kind": "group",
               "name": "SingleSignOn",
-              "properties": {
-                "caption": "Single Sign-On (SSO / SAML)"
-              },
+              "properties": {},
               "source_expr": null
             },
             {
@@ -3196,9 +3150,7 @@
                   "children": [],
                   "kind": "field",
                   "name": "termsOfServiceUrl",
-                  "properties": {
-                    "caption": "Terms of Service URL"
-                  },
+                  "properties": {},
                   "source_expr": "termsOfServiceUrl"
                 },
                 {
@@ -3206,17 +3158,13 @@
                   "children": [],
                   "kind": "field",
                   "name": "customDisclaimer",
-                  "properties": {
-                    "caption": "Legal Disclaimer Banner"
-                  },
+                  "properties": {},
                   "source_expr": "customDisclaimer"
                 }
               ],
               "kind": "group",
               "name": "Compliance",
-              "properties": {
-                "caption": "Legal Notice & Disclaimers"
-              },
+              "properties": {},
               "source_expr": null
             }
           ],
@@ -3230,6 +3178,7 @@
       "editable": null,
       "filters": [],
       "insert_allowed": null,
+      "ir_version": 2,
       "modify_allowed": null,
       "name": "AuthConfigurationCard",
       "object_type": "page",
@@ -3242,5 +3191,5 @@
       "views": []
     }
   ],
-  "checksum": "c3ff8d231446d09f"
+  "checksum": "2a22c2262215e174"
 }

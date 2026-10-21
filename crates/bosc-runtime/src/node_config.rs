@@ -279,6 +279,46 @@ impl Default for SecuritySection {
     }
 }
 
+/// Compiled page artifacts (Svelte 5 page modules) served from disk.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PagesSection {
+    #[serde(default = "default_bool_true")]
+    pub enabled: bool,
+    /// Root of the content-addressed artifact store (`<root>/<db_key>/<Page>.<hash>.js`).
+    #[serde(default = "default_artifact_dir")]
+    pub artifact_dir: String,
+    /// Folder holding `svelte-compiler.js` and `version.json` from the UI runtime build.
+    /// Defaults to `<ui.static_dir>/bos-runtime`.
+    #[serde(default)]
+    pub runtime_dir: Option<String>,
+    /// Svelte compiler worker threads; 0 = min(CPU cores, 4).
+    #[serde(default)]
+    pub compiler_workers: usize,
+    /// Folders searched for pre-built artifacts (`bosc package build` output) before compiling.
+    #[serde(default = "default_seed_dirs")]
+    pub seed_dirs: Vec<String>,
+}
+
+fn default_artifact_dir() -> String {
+    "./data/page-artifacts".to_string()
+}
+
+fn default_seed_dirs() -> Vec<String> {
+    vec!["./dist/packages".to_string()]
+}
+
+impl Default for PagesSection {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            artifact_dir: default_artifact_dir(),
+            runtime_dir: None,
+            compiler_workers: 0,
+            seed_dirs: default_seed_dirs(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NodeConfig {
     #[serde(default)]
@@ -295,6 +335,8 @@ pub struct NodeConfig {
     pub nas_worker: NasWorkerSection,
     #[serde(default)]
     pub security: SecuritySection,
+    #[serde(default)]
+    pub pages: PagesSection,
 }
 
 impl NodeConfig {
@@ -387,6 +429,14 @@ emergency_username = "emergency.admin"
 emergency_name = "Emergency Maintenance Administrator"
 emergency_roles = ["SUPER", "Admin", "Global Admin"]
 auto_fallback_on_auth_failure = true
+
+[pages]
+# Pages are compiled to Svelte 5 modules at node start (only when their content changed) and served from disk
+enabled = true
+artifact_dir = "./data/page-artifacts"
+# runtime_dir = "./ui/dist/bos-runtime"   # svelte-compiler.js + version.json (defaults to <ui.static_dir>/bos-runtime)
+compiler_workers = 0                      # 0 = min(CPU cores, 4)
+seed_dirs = ["./dist/packages"]           # pre-built artifacts from `bosc package build`
 "#
     }
 }
@@ -411,6 +461,9 @@ mod tests {
         assert!(!cfg.security.maintenance_mode);
         assert_eq!(cfg.security.emergency_username, "emergency.admin");
         assert!(cfg.security.auto_fallback_on_auth_failure);
+        assert!(cfg.pages.enabled);
+        assert_eq!(cfg.pages.artifact_dir, "./data/page-artifacts");
+        assert_eq!(cfg.pages.compiler_workers, 0);
         assert!(cfg.validate().is_ok());
     }
 

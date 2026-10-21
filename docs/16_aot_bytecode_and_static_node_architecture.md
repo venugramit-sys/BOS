@@ -24,9 +24,11 @@ dist/packages/<package_id>/
 │   ├── AuthManager.qbc        # Individual Codeunit bytecode envelope
 │   ├── UserLogic.qbc          # TableLogic trigger & validation bytecode envelope
 │   └── package.bundle.qbc     # Monolithic pre-linked bundle of all logic
-├── pages/                     # Pre-compiled Svelte 5 UI descriptors
-│   ├── UserList.json          # Static JSON layout, controls, views, filters
-│   └── UserCard.json          # Form structure, groups, fields, actions
+├── pages/                     # Pre-compiled Svelte 5 page modules (see 17_page_compiler_and_designer.md)
+│   ├── UserList.3c791464761c22d1.js   # Content-addressed ES module: <Page>.<hash16>.js
+│   ├── manifest.json          # Page → file/hash list; the node copies matching files instead of compiling
+│   ├── UserList.json          # Authored page IR (inspection and tooling; the UI loads the compiled module)
+│   └── UserCard.json
 └── schema/                    # Database DDL & Prepared SQL
     ├── tables.sql             # Idempotent DDL schemas & indexes
     └── prepared_queries.json  # AOT parameterized SQL queries (GetById, Insert, SIFT)
@@ -93,10 +95,16 @@ If local disk artifacts are deleted, corrupted, or tampered with:
 
 ---
 
-## 7. Frontend Static Serving & Svelte 5 Dynamic Loader
+## 7. Compiled Page Modules (node runtime)
+
+Pages are compiled by the node itself, in-process, with the Svelte 5 compiler running in QuickJS. No Node.js is needed. The full specification is in [17_page_compiler_and_designer.md §9](17_page_compiler_and_designer.md).
+
+- **Node start:** the catalog is read once and every page is resolved and turned into Svelte source. A page goes through the Svelte compiler only when its content hash changed.
+- **Serving:** modules are served from `<pages.artifact_dir>/<db_key>/` as `/page-artifacts/<db_key>/<Page>.<hash16>.js` (`immutable`).
+- **Manifest:** `/api/v1/pages/manifest` (ETag) tells the browser which file to load.
+- **Publish:** an apply, package install or table change re-resolves the pages and notifies other nodes on `bos_pages_channel`.
+
+## 8. Frontend Static Serving & Svelte 5 Dynamic Loader
 
 1. **Axum Static Serving**: The runtime mounts `/packages` directly to `dist/packages/` using `tower_http::services::ServeDir`.
-2. **PageSurface Dynamic Resolution**:
-   - `PageSurface.svelte` checks `/packages/${packageId}/pages/${pageName}.json` first.
-   - If present, the pre-bundled descriptor loads instantly via static HTTP GET.
-   - Fallback queries to `_bos_meta_objects` occur only if the static descriptor is missing.
+2. **Compiled page loading**: pages are no longer interpreted from JSON descriptors. `PageHost` (`@bos/page-kit`) reads the page manifest and imports the content-addressed module `/page-artifacts/<db_key>/<Page>.<hash16>.js`, which shares the app's Svelte runtime through the import map (see [17 §11](17_page_compiler_and_designer.md)).
