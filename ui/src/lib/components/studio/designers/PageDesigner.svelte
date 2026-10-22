@@ -23,11 +23,23 @@
     packageName = "bos.app",
     onSourceChange = null,
     onJumpToCode = null,
-    mode = $bindable("design")
+    mode = $bindable("design"),
+    isDirty = $bindable(false)
   } = $props();
 
   const model = untrack(() => new PageDesignerModel({ name: pageName, packageName, onSourceChange: (src) => onSourceChange?.(src) }));
   let leftTab = $state("toolbox");
+  let root = $state(null);
+
+  // The Studio resolves the object's package after the tab opens; Apply must store the object there.
+  $effect(() => {
+    model.packageName = packageName || "bos.app";
+  });
+
+  // Unsaved designer work keeps the Studio tab marked (close / switch warnings).
+  $effect(() => {
+    isDirty = model.dirty;
+  });
 
   onMount(() => {
     pageManifest.start();
@@ -55,6 +67,11 @@
   function onKey(e) {
     const mod = e.ctrlKey || e.metaKey;
     if (!mod) return;
+    // Only while this designer is the visible tab, and never inside text fields (their own undo / typing).
+    if (!root || root.offsetParent === null) return;
+    const t = e.target;
+    if (t instanceof HTMLElement && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName))) return;
+    if (t instanceof Node && t !== document.body && !root.contains(t)) return;
     const k = e.key.toLowerCase();
     if (k === "z" && !e.shiftKey) {
       e.preventDefault();
@@ -68,16 +85,16 @@
     }
   }
 
-  function jumpToCode() {
+  function jumpToCode(line = null) {
     const node = model.selectedNode;
-    onJumpToCode?.(model.source, node?.line ?? model.object?.line ?? 0);
+    onJumpToCode?.(model.source, line ?? node?.line ?? model.object?.line ?? 0);
     mode = "code";
   }
 </script>
 
 <svelte:window onkeydown={onKey} />
 
-<div class="flex h-full min-h-0 flex-col bg-white text-slate-800 dark:bg-slate-900 dark:text-slate-100">
+<div class="flex h-full min-h-0 flex-col bg-white text-slate-800 dark:bg-slate-900 dark:text-slate-100" bind:this={root}>
   <!-- toolbar -->
   <div class="flex flex-wrap items-center gap-2 border-b border-slate-200 px-3 py-2 dark:border-slate-800">
     <div class="mr-2 min-w-0">
@@ -117,7 +134,7 @@
         <span class="text-[11px] text-slate-500">{model.changeCount} change{model.changeCount === 1 ? "" : "s"}</span>
         <Button size="xs" variant="ghost" icon={RotateCcw} disabled={model.changeCount === 0} onclick={() => model.resetCustomization()}>Reset all</Button>
       {:else}
-        <Button size="xs" variant="ghost" icon={Code2} onclick={jumpToCode}>Code</Button>
+        <Button size="xs" variant="ghost" icon={Code2} onclick={() => jumpToCode()}>Code</Button>
       {/if}
       <Button size="xs" icon={Rocket} loading={model.saving} disabled={!model.dirty || model.errors.length > 0} onclick={() => model.save()}>
         {model.mode === "customize" ? "Publish" : "Apply"}
@@ -125,6 +142,25 @@
     </div>
   </div>
 
+  {#if model.apiPage}
+    <div class="px-3 pt-2">
+      <Banner tone="info" title="API page">
+        <p class="text-xs">API pages publish data to integrations and have no user interface, so there is nothing to lay out visually. Their fields and actions are edited in code.</p>
+        <div class="mt-2"><Button size="xs" variant="secondary" icon={Code2} onclick={() => jumpToCode()}>Open in code</Button></div>
+      </Banner>
+    </div>
+  {/if}
+  {#if model.parseError}
+    <div class="px-3 pt-2">
+      <Banner tone="warning" title="The page source has a syntax error">
+        <p class="font-mono text-xs">{model.parseError.message}</p>
+        <p class="mt-1 text-xs">
+          {model.showingPublished ? "The canvas shows the published page (read-only) until the source parses again." : "Visual editing is paused until the source parses."}
+        </p>
+        <div class="mt-2"><Button size="xs" variant="secondary" icon={Code2} onclick={() => jumpToCode(model.parseError.line || null)}>Fix in code{model.parseError.line ? ` (line ${model.parseError.line})` : ""}</Button></div>
+      </Banner>
+    </div>
+  {/if}
   {#if model.error}
     <div class="px-3 pt-2"><Banner tone="danger" title="Designer" dismissible onDismiss={() => (model.error = "")}><p class="text-xs">{model.error}</p></Banner></div>
   {/if}
@@ -141,7 +177,10 @@
         {/each}
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto p-2">
-        {#if leftTab === "toolbox"}<Toolbox {model} />{:else if leftTab === "outline"}<Outline {model} />{:else}<PropertyPanel {model} />{/if}
+        {#if leftTab === "toolbox"}<Toolbox {model} />{:else if leftTab === "outline"}<Outline {model} />{:else}
+          <div class="xl:hidden"><PropertyPanel {model} /></div>
+          <p class="hidden p-2 text-xs text-slate-400 xl:block">Properties are shown on the right.</p>
+        {/if}
       </div>
     </aside>
 

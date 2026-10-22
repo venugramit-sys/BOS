@@ -1375,7 +1375,17 @@ impl MetaManager {
                     elem_lines.join("\n")
                 )
             }
+            // Pages and page extensions (IR v2) print through the analyzer's printer, which is the exact
+            // inverse of lowering: the designer and the code editor get source that parses back to the same IR.
+            "pageextension" => match serde_json::from_value::<bosc_ir::PageExtensionIR>(definition.clone()) {
+                Ok(ext) => bosc_analyzer::page_print::print_page_extension(&ext),
+                Err(_) => String::new(),
+            },
             "page" => {
+                if let Ok(page) = serde_json::from_value::<bosc_ir::PageIR>(definition.clone()) {
+                    return bosc_analyzer::page_print::print_page(&page);
+                }
+                // Legacy v1 page rows (`layout` areas instead of `controls`).
                 let src_tbl = definition
                     .get("source_table")
                     .and_then(|v| v.as_str())
@@ -1400,16 +1410,7 @@ impl MetaManager {
                     lines.push(format!("    caption = \"{}\";", cap));
                 }
 
-                // Check modern definition.controls first
-                if let Some(controls) = definition.get("controls").and_then(|c| c.as_array()) {
-                    if !controls.is_empty() {
-                        lines.push("    layout {".to_string());
-                        for ctrl in controls {
-                            lines.extend(Self::format_page_control(ctrl, 8));
-                        }
-                        lines.push("    }".to_string());
-                    }
-                } else if let Some(areas) = definition.get("layout").and_then(|l| l.as_array()) {
+                if let Some(areas) = definition.get("layout").and_then(|l| l.as_array()) {
                     lines.push("    layout {".to_string());
                     for area in areas {
                         let a_name = area
@@ -1459,7 +1460,7 @@ impl MetaManager {
                                 lines.push(format!("            icon = \"{}\";", icon));
                             }
                             if let Some(script) = act.get("script").and_then(|v| v.as_str()) {
-                                lines.push("            trigger onAction() {".to_string());
+                                lines.push("            onAction(rec, ctx) {".to_string());
                                 for s_line in script.lines() {
                                     lines.push(format!("                {}", s_line));
                                 }
@@ -1495,81 +1496,6 @@ impl MetaManager {
             }
             _ => String::new(),
         }
-    }
-
-    fn format_page_control(ctrl: &serde_json::Value, indent: usize) -> Vec<String> {
-        let mut out = Vec::new();
-        let spaces = " ".repeat(indent);
-        let kind = ctrl.get("kind").and_then(|v| v.as_str()).unwrap_or("control");
-        let name = ctrl.get("name").and_then(|v| v.as_str()).unwrap_or("unnamed");
-        let caption = ctrl
-            .get("caption")
-            .and_then(|v| v.as_str())
-            .or_else(|| {
-                ctrl.get("properties")
-                    .and_then(|p| p.get("caption"))
-                    .and_then(|v| v.as_str())
-            });
-        let children = ctrl.get("children").and_then(|v| v.as_array());
-
-        match kind {
-            "area" => {
-                out.push(format!("{}area({}) {{", spaces, name));
-                if let Some(kids) = children {
-                    for kid in kids {
-                        out.extend(Self::format_page_control(kid, indent + 4));
-                    }
-                }
-                out.push(format!("{}}}", spaces));
-            }
-            "group" | "section" => {
-                out.push(format!("{}group({}) {{", spaces, name));
-                if let Some(cap) = caption {
-                    out.push(format!("{}    caption = \"{}\";", spaces, cap));
-                }
-                if let Some(kids) = children {
-                    for kid in kids {
-                        out.extend(Self::format_page_control(kid, indent + 4));
-                    }
-                }
-                out.push(format!("{}}}", spaces));
-            }
-            "grid" => {
-                out.push(format!("{}grid({}) {{", spaces, name));
-                if let Some(cap) = caption {
-                    out.push(format!("{}    caption = \"{}\";", spaces, cap));
-                }
-                if let Some(kids) = children {
-                    for kid in kids {
-                        out.extend(Self::format_page_control(kid, indent + 4));
-                    }
-                }
-                out.push(format!("{}}}", spaces));
-            }
-            "part" => {
-                let src = ctrl.get("source_expr").and_then(|v| v.as_str()).unwrap_or("");
-                if !src.is_empty() {
-                    out.push(format!("{}part({}; {}) {{", spaces, name, src));
-                } else {
-                    out.push(format!("{}part({}) {{", spaces, name));
-                }
-                if let Some(cap) = caption {
-                    out.push(format!("{}    caption = \"{}\";", spaces, cap));
-                }
-                out.push(format!("{}}}", spaces));
-            }
-            "field" => {
-                out.push(format!("{}field({}) {{", spaces, name));
-                if let Some(cap) = caption {
-                    out.push(format!("{}    caption = \"{}\";", spaces, cap));
-                }
-                out.push(format!("{}}}", spaces));
-            }
-            _ => {
-                out.push(format!("{}{}({}) {{}}", spaces, kind, name));
-            }
-        }
-        out
     }
 
     /// Retrieve installed packages from catalog (_bos_meta_packages)
@@ -2336,6 +2262,34 @@ impl MetaManager {
         let mut schema_report = None;
         let mut structure_warning: Option<String> = None;
         if req.apply {
+            // A deployment that would delete or truncate data without `allow_destructive` is refused before
+            // anything is written: the catalog must never describe a structure the database does not have.
+            if !model_ir.tables.is_empty() || !model_ir.table_extensions.is_empty() {
+                let preview = SchemaSync::sync(
+                    pool,
+                    &SchemaSyncRequest {
+                        package_name: pkg.to_string(),
+                        source: "compile".to_string(),
+                        tables: model_ir.tables.clone(),
+                        extensions: model_ir.table_extensions.clone(),
+                        ddl: compiled_ddl.clone(),
+                        applied_by: None,
+                    },
+                    &SchemaSyncOptions { allow_destructive: req.allow_destructive, dry_run: true },
+                )
+                .await?;
+                if !preview.blocked.is_empty() {
+                    let list = preview
+                        .blocked
+                        .iter()
+                        .map(|s| format!("{}: {}", s.table, s.description))
+                        .collect::<Vec<_>>()
+                        .join("; ");
+                    return Err(RuntimeError::SchemaSyncBlocked(format!(
+                        "these changes would delete or truncate data and need an explicit allow-destructive deployment: {list}"
+                    )));
+                }
+            }
             for ext in &model_ir.table_extensions {
                 let mut ext_def_ir = serde_json::to_value(ext).unwrap_or_default();
                 if let Some(m) = ext_def_ir.as_object_mut() {

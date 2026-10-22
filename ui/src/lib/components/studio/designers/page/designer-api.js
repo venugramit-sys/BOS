@@ -38,7 +38,15 @@ export const designerApi = {
   previewCustomization: (page, changes) => call("POST", `/api/v1/pages/${enc(page)}/customization/preview`, { changes }),
   /** Authored table definition (columns + FlowFields) for the toolbox. */
   async tableFields(table) {
-    const meta = await call("GET", `/api/meta/objects/${enc(table)}`);
+    const meta = await call("GET", `/api/meta/objects/${enc(table)}`).catch(() => null);
+    // The catalog lookup is by name only; a page or codeunit with the table's name must not be mistaken for it.
+    if (meta?.summary?.object_type !== "table" && meta?.object_type !== "table") {
+      const schema = await call("GET", `/api/entities/${enc(table)}/schema`);
+      const cols = schema?.columns ?? schema?.fields ?? [];
+      return cols
+        .map((c) => ({ name: c.name, sql: c.sql_name ?? c.name, type: c.data_type ?? "", caption: c.caption ?? null, flow: Boolean(c.is_flow_field) }))
+        .filter((c) => c.name && !String(c.sql).startsWith("_"));
+    }
     const def = meta?.definition ?? {};
     const columns = (def.columns ?? []).filter((c) => !String(c.sql_name ?? c.name).startsWith("_"));
     const flows = def.flow_fields ?? [];

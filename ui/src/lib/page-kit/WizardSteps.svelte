@@ -43,7 +43,7 @@
       {#each available as s, i (s.c.i)}
         <li class={i === index ? "is-current" : i < index ? "is-done" : ""} aria-current={i === index ? "step" : undefined}>
           <span class="bos-wizard-dot">{#if i < index}<Check class="size-3" />{:else}{i + 1}{/if}</span>
-          <span class="hidden sm:inline">{s.c.caption ?? s.c.name}</span>
+          <span class="bos-step-label">{s.c.caption ?? s.c.name}</span>
         </li>
       {/each}
     </ol>

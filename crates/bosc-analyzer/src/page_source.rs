@@ -829,9 +829,21 @@ pub fn apply_edits(source: &str, page: &str, ops: &[PageEditOp]) -> Result<EditR
             PageEditOp::RemoveProperty { path, name, block } => remove_property(&src, obj, path, name, block.as_deref())?,
             PageEditOp::Delete { path } => delete_node(&src, obj, path)?,
             PageEditOp::Insert { parent, before, source } => {
+                // A new page may not have its `layout { }` / `actions { }` section yet.
+                let (with_section, outline_now);
+                let obj = match ensure_section(&src, obj, parent) {
+                    Some(created) => {
+                        with_section = created;
+                        outline_now = outline(&with_section)?;
+                        src = with_section.clone();
+                        outline_now.object(page).ok_or("page vanished while adding a section")?
+                    }
+                    None => obj,
+                };
                 let next = insert_node(&src, obj, parent, before.as_deref(), source)?;
                 selected = outline(&next).ok().and_then(|o| {
-                    let before_paths: std::collections::HashSet<String> = all_paths(obj);
+                    // The inserted root is the first new path in document (pre-)order.
+                    let before_paths: std::collections::HashSet<String> = all_paths(obj).into_iter().collect();
                     o.object(page).and_then(|ob| all_paths(ob).into_iter().find(|p| !before_paths.contains(p)))
                 });
                 next
@@ -850,14 +862,35 @@ pub fn apply_edits(source: &str, page: &str, ops: &[PageEditOp]) -> Result<EditR
     Ok(EditResult { source: src, outline, selected })
 }
 
-fn all_paths(obj: &OutlineObject) -> std::collections::HashSet<String> {
-    fn walk(nodes: &[OutlineNode], out: &mut std::collections::HashSet<String>) {
+/// Source with an empty `layout { }` or `actions { }` section added before the object's closing brace,
+/// when `parent` names that section and it does not exist yet.
+fn ensure_section(src: &str, obj: &OutlineObject, parent: &str) -> Option<String> {
+    let section = if parent.eq_ignore_ascii_case("layout") && obj.layout.is_none() {
+        "layout"
+    } else if parent.eq_ignore_ascii_case("actions") && obj.actions.is_none() {
+        "actions"
+    } else {
+        return None;
+    };
+    let indent = indent_at(src, obj.start);
+    let ls = line_start(src, obj.close);
+    let text = format!("{indent}{INDENT_UNIT}{section} {{\n{indent}{INDENT_UNIT}}}\n");
+    if src[ls..obj.close].trim().is_empty() {
+        Some(splice(src, ls, ls, &text))
+    } else {
+        Some(splice(src, obj.close, obj.close, &format!("\n{text}{indent}")))
+    }
+}
+
+/// Every node path in document (pre-)order.
+fn all_paths(obj: &OutlineObject) -> Vec<String> {
+    fn walk(nodes: &[OutlineNode], out: &mut Vec<String>) {
         for n in nodes {
-            out.insert(n.path.clone());
+            out.push(n.path.clone());
             walk(&n.children, out);
         }
     }
-    let mut out = std::collections::HashSet::new();
+    let mut out = Vec::new();
     if let Some(l) = &obj.layout {
         walk(&l.nodes, &mut out);
     }

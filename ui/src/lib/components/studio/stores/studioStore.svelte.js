@@ -197,7 +197,11 @@ class StudioStore {
    * mode: 'design' | 'datasheet' | 'code'
    * State changes stay synchronous so they commit on the click, not in an async fork.
    */
-  openObject(name, mode = "design", type = "table", packageName = "bos.app") {
+  /**
+   * `packageName` is only passed when the user chose one (New Object). Otherwise the saved object's own
+   * package (from its details) is used, so applying an installed object never copies it into another package.
+   */
+  openObject(name, mode = "design", type = "table", packageName = null) {
     const tabId = `${type}-${name}`;
     const existingTab = state.openTabs.find((tab) => tab.id === tabId);
 
@@ -220,7 +224,7 @@ class StudioStore {
         type,
         title: name,
         mode,
-        packageName: packageName || "bos.app",
+        packageName: packageName || null,
         isDirty: false,
         details: null,
         sourceCode: "",
@@ -265,6 +269,8 @@ class StudioStore {
       if (!current || !details) return;
       current.type = details.object_type || type;
       current.details = details;
+      const savedPackage = details.summary?.package_name;
+      if (savedPackage) current.packageName = savedPackage;
       const objectType = current.type;
       const savedScript = typeof details.source_script === "string" ? details.source_script.trim() : "";
       if (!current.isDirty && savedScript && (objectType === "table" || objectType === "tableextension")) {

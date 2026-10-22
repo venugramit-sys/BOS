@@ -69,6 +69,7 @@ export class PageController {
 
   #getCtx;
   #loadSeq = 0;
+  #opened = false;
 
   /**
    * @param {() => any} getCtx
@@ -179,7 +180,10 @@ export class PageController {
     }
   }
 
+  /** NAV OnOpenPage: once per page instance, never on the designer canvas (scripts may write or navigate). */
   async #openTrigger() {
+    if (this.#opened || this.design) return;
+    this.#opened = true;
     if ((this.meta.triggers ?? []).some((t) => t.toLowerCase() === "onopenpage")) {
       await this.runTrigger("onOpenPage", this.rec).catch((e) => this.#toastError(e));
     }
@@ -229,7 +233,7 @@ export class PageController {
     }
     this.#setRecord(record);
     this.mode = ctx.mode === "view" || !this.meta.modify_allowed ? "view" : "edit";
-    if ((this.meta.triggers ?? []).some((t) => t.toLowerCase() === "onaftergetrecord")) {
+    if (!this.design && (this.meta.triggers ?? []).some((t) => t.toLowerCase() === "onaftergetrecord")) {
       await this.runTrigger("onAfterGetRecord", this.rec).catch((e) => this.#toastError(e));
     }
   }
@@ -347,7 +351,7 @@ export class PageController {
 
   /** Runs the control's server-side `onValidate` trigger (NAV OnValidate) after the user committed a value. */
   async validate(c, row = null) {
-    if (!(c.triggers ?? []).some((t) => t.toLowerCase() === "onvalidate")) return;
+    if (this.design || !(c.triggers ?? []).some((t) => t.toLowerCase() === "onvalidate")) return;
     const f = c.field;
     try {
       const res = await this.runTrigger(`control.${c.name}.onValidate`, this.recordOf(row));
@@ -417,14 +421,34 @@ export class PageController {
     this.saving = true;
     this.error = "";
     try {
-      for (const [id, edits] of Object.entries(this.rowEdits)) {
-        const row = this.rows.find((r) => r._id === id);
-        if (!row) continue;
-        if (row._new) await api.createRecord(this.table, buildInsert({ ...row, ...edits }, this.keys));
-        else await api.updateRecord(this.table, id, buildPatch(row, { ...row, ...edits }, this.keys));
+      // Rows are saved one by one; each saved row leaves the pending set immediately, so a retry after
+      // a failure never inserts or patches the same row twice.
+      let saved = 0;
+      try {
+        for (const [id, edits] of Object.entries(this.rowEdits)) {
+          const row = this.rows.find((r) => r._id === id);
+          let stored = null;
+          if (row) {
+            if (row._new) {
+              const res = await api.createRecord(this.table, buildInsert({ ...row, ...edits }, this.keys));
+              stored = { ...row, ...edits, _id: res?._id ?? res?.id ?? id, _new: false };
+            } else {
+              await api.updateRecord(this.table, id, buildPatch(row, { ...row, ...edits }, this.keys));
+              stored = { ...row, ...edits };
+            }
+            saved += 1;
+          }
+          const { [id]: _done, ...rest } = this.rowEdits;
+          this.rowEdits = rest;
+          if (stored) {
+            this.rows = this.rows.map((r) => (r._id === id ? stored : r));
+            if (this.currentId === id) this.currentId = stored._id;
+          }
+        }
+      } finally {
+        if (saved) this.ctx.onChanged?.();
       }
       await this.loadRows();
-      this.ctx.onChanged?.();
       return true;
     } catch (e) {
       this.#saveFailed(e);
@@ -518,6 +542,7 @@ export class PageController {
 
   /** Runs a server-side trigger, answering `ctx.ui.confirm` questions interactively. */
   async runTrigger(ref, record) {
+    if (this.design) return null;
     const answers = {};
     for (let round = 0; round < MAX_CONFIRM_ROUNDS; round++) {
       try {

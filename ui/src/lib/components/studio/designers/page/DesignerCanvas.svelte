@@ -235,7 +235,7 @@
       {:else if model.busy}
         <div class="flex justify-center py-20"><Spinner label="Compiling page" /></div>
       {:else}
-        <p class="py-20 text-center text-xs text-slate-400">The page preview appears here once the page compiles.</p>
+        <p class="py-20 text-center text-xs text-slate-400">{model.apiPage ? "API pages have no visual layout." : "The page preview appears here once the page compiles."}</p>
       {/if}
     </div>
   </div>

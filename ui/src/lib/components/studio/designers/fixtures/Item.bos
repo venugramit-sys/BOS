@@ -1,0 +1,16 @@
+// Table designer fixture: a field validate written on the table and a lifecycle trigger.
+table Item {
+    no: String(20) { notNull = true; };
+    description: String(100);
+    unitPrice: Decimal(18, 2) {
+        default = 0.00;
+        validate(val) {
+            if (Number(val) < 0) throw new Error("Unit price cannot be negative");
+        }
+    };
+    primaryKey(no);
+
+    onInsert(rec, ctx) {
+        rec.description = String(rec.description ?? "").trim();
+    }
+}

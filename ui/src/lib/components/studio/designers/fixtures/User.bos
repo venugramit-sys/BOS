@@ -1,0 +1,23 @@
+// Table designer fixture: table properties and lifecycle triggers with template literals.
+table User {
+    caption = "Security User Master";
+    tableType = Normal;
+    dataPerCompany = false;
+
+    username: String(50) { notNull = true; unique = true; };
+    passwordHash: String(255);
+    isActive: Boolean { default = true; };
+    primaryKey(username);
+
+    onInsert(rec, ctx) {
+        rec.passwordHash = ctx.crypto.sha256(`${rec.username}:${rec.passwordHash}`);
+    }
+
+    onModify(rec, xRec, ctx) {
+        if (rec.username !== xRec.username) throw new Error(`User name ${xRec.username} cannot be renamed`);
+    }
+
+    onDelete(rec, ctx) {
+        if (rec.isActive) throw new Error(`Deactivate ${rec.username} before deleting it`);
+    }
+}

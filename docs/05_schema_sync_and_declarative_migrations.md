@@ -147,5 +147,6 @@ Schema synchronization (`bosc-runtime::schema_sync::SchemaSync`) executes via th
        "message": "Migration refused: destructive steps detected (column 'credit_score' dropped) without --allow-destructive"
    }
    ```
+   `/api/script/apply` checks this with a dry run **before** writing any catalog row, and answers `409` (`SchemaSyncBlocked`). A refused deployment therefore leaves both the database structure and `_bos_meta_objects` unchanged, so the catalog never describes columns the database does not have.
 4. **Dry Run Option**: If `dry_run == true`, the planned SQL statements are recorded, and the transaction issues a `ROLLBACK`.
 5. **Commit**: If all checks pass, all DDL statements execute in sequence, the system catalog (`_bos_meta_objects`) updates, and the transaction commits atomically.

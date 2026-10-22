@@ -1,0 +1,11 @@
+// Table designer fixture: a key, a text field and an inline table trigger.
+table Note {
+    code: String(20) { notNull = true; unique = true; };
+    content: String(500);
+    primaryKey(code);
+
+    onInsert(rec, ctx) {
+        const text = String(rec.content ?? "");
+        rec.content = text.trim();
+    }
+}

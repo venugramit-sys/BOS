@@ -161,6 +161,21 @@ fn move_insert_and_delete_reorder_the_page() {
 }
 
 #[test]
+fn inserting_into_a_page_without_layout_creates_the_section() {
+    let src = "page Empty for Customer {\n    pageType = Card;\n}\n";
+    let r = apply_edits(
+        src,
+        "Empty",
+        &[PageEditOp::Insert { parent: "layout".into(), before: None, source: "area(Content) {\n    field(no);\n}".into() }],
+    )
+    .unwrap();
+    assert_eq!(r.source, "page Empty for Customer {\n    pageType = Card;\n    layout {\n        area(Content) {\n            field(no);\n        }\n    }\n}\n");
+    assert_eq!(r.selected.as_deref(), Some("area:Content"));
+    let one_line = apply_edits("page E for Customer { pageType = Card; }", "E", &[PageEditOp::Insert { parent: "actions".into(), before: None, source: "action(Go) { }".into() }]).unwrap();
+    assert!(lower(&format!("table Customer {{ no: String(20); primaryKey(no); }}\n{}", one_line.source)).pages[0].actions.iter().any(|a| a.name == "Go"), "{}", one_line.source);
+}
+
+#[test]
 fn edits_that_break_the_source_are_rejected() {
     assert!(apply_edits(SRC, "CustomerCard", &[set("page", "caption", "\"x\"; table", None)]).is_err());
     let missing = apply_edits(SRC, "CustomerCard", &[PageEditOp::Delete { path: "area:Content/field:nope".into() }]);

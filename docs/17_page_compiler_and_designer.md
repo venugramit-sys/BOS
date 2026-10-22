@@ -403,6 +403,8 @@ Both `bosc serve` and `bosc node run` start the page service. `bosc package buil
 
 Read-only values are formatted from the field metadata. Email, phone and url values become links, and FlowFields with a drill-down page open it.
 
+**Page-level breakpoints follow the page width.** `hideBelow`, the list's table-vs-cards switch, split panes and the action bar folding use container queries on the page (`container: bos-page`), not the window. On a phone the two are the same; in the designer, the phone and tablet previews therefore render exactly like a real device.
+
 **Styling.** Generated pages have no classes. `page-kit.css` (imported by `app.css`) defines the light and dark `--bos-color-*` palette and the `.bos-*` classes; style tokens only ever set `--bos-*` custom properties. Field spans follow the width of the surrounding section through container queries (sm 420 px, md 560 px, lg 860 px, xl 1100 px), so the same group is one column in a narrow part and two on a wide card. `hideBelow` uses the viewport. FactBoxes move beside the content once the page is 900 px wide.
 
 **Build** (`ui/vite.config.js`, one `npm run build`)
@@ -435,7 +437,16 @@ Read-only values are formatted from the field metadata. Email, phone and url val
 | `PUT /api/v1/pages/{name}/customization` | `{ changes }` → stores `<Page>_Customization` in package `bos.customizations` and republishes (`register_meta_object`); 422 `BOS3009` when the whitelist removes something; designer role required |
 | `POST /api/v1/pages/{name}/customization/preview` | `{ changes }` → preview result (§9) with the draft layer merged last |
 
+**Source of a page that has none stored.** Objects installed from a package bundle carry only their IR. `GET /api/meta/objects/{name}` then prints the source with `bosc_analyzer::page_print` (`print_page`, `print_page_extension`), the exact inverse of lowering: the printed text parses back to the same IR (round-trip tests over every page in the repository). The old JSON-to-text fallback, which dropped control children and printed actions as `trigger onAction()`, is gone.
+
 **UI** (`ui/src/lib/components/studio/designers/PageDesigner.svelte` + `designers/page/`)
+- **Package:** Apply stores the object in its own package (the Studio takes it from the object's details; only the New Object dialog chooses one). Applying an installed page never copies it into `bos.app`.
+- **Source that does not parse:** a banner shows the parser message with "Fix in code (line N)", visual edits pause, and the canvas shows the published page read-only.
+- **API pages** have no user interface; the designer says so and offers code editing only.
+- **Empty lists** still show their columns in the design build, and Board / Timeline pages list their columns above the lanes, so every column can be selected and styled.
+- **Develop mode** only moves or inserts relative to controls defined in the open source; controls from other extensions are marked `ext`.
+- Ctrl+Z / Ctrl+Y / Ctrl+S act only in the visible designer and never inside text inputs. Unsaved designer work marks the Studio tab dirty.
+- The designer canvas never runs page triggers (`onOpenPage`, `onAfterGetRecord`, `onValidate`, actions): design builds are read-only.
 - **Develop mode** edits the page or page extension source.
   - Every change goes through `/edit`, and undo/redo keeps source snapshots. The Studio tab's source follows.
   - **Apply** runs `/api/script/apply` like a hand-written change.
@@ -468,6 +479,8 @@ Read-only values are formatted from the field metadata. Email, phone and url val
 - **Browser suite:** `BOS_NODE_URL=… node scripts/test-agent/pages_suite.mjs`, run against a node with pages installed. The fixture `crates/bosc-codegen-svelte/tests/fixtures/pages.bos` covers every page type.
   - Every page renders at 375×812, 768×1024, 1280×800 and 1920×1080, in light and dark. The run fails on console errors, horizontal overflow or missing dark tokens. Screenshots go to `scratch/pages-suite/`.
   - Functional flows: list search and sort, the wizard's required-field gate, document lines and FactBox through links, a clean card on open, and a worksheet inline new line.
+- **Page source check:** `BOS_NODE_URL=… node scripts/test-agent/page_sources_check.mjs`. For every page and page extension of a node, the Studio's source (after the Studio formatter) must parse, reproduce the stored IR and accept a designer edit. It also reports a page registered by more than one package.
+- **Designer check:** `BOS_NODE_URL=… BOS_TEST_USER=… BOS_TEST_PASSWORD=… node scripts/test-agent/designer_check.mjs [Page …]` signs in to the Studio and opens every page object in the designer. It fails on an error or syntax banner, a canvas that does not show that page, a failing request or a console error.
 - **Budgets** (release node, this machine):
 
   | Budget | Gate | Measured |

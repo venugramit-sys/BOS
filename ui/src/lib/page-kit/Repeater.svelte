@@ -135,13 +135,21 @@
         </div>
       {/if}
 
-      {#if p.rows.length === 0}
+      {#if p.design && layout !== "table"}
+        <!-- Designer: board and timeline columns have no header row, so they are listed here to be selected. -->
+        <div class="bos-design-columns" aria-label="Columns">
+          {#each cols as col (col.i)}
+            <span class="bos-design-column" {...nodeAttrs(p, col)}>{col.caption ?? col.name}</span>
+          {/each}
+        </div>
+      {/if}
+      {#if p.rows.length === 0 && !p.design}
         {#if p.loading}
           <div class="flex justify-center py-10"><Spinner /></div>
         {:else}
           <EmptyState title="Nothing to show" description={p.search ? "No record matches the search." : "There are no records yet."} />
         {/if}
-      {:else if layout === "board" && laneCol}
+      {:else if layout === "board" && laneCol && p.rows.length}
         <div class="bos-board" role="list">
           {#each lanes as lane (lane.value)}
             <div
@@ -191,7 +199,7 @@
             </div>
           {/each}
         </div>
-      {:else if layout === "timeline"}
+      {:else if layout === "timeline" && p.rows.length}
         <ol class="bos-timeline">
           {#each days as g (g.day)}
             <li>
@@ -279,6 +287,10 @@
                   {/if}
                 </tr>
               {/each}
+              {#if p.design && p.rows.length === 0}
+                <!-- Designer: an empty list still shows its columns so they can be selected and styled. -->
+                <tr><td colspan={cols.length + (selectable ? 1 : 0) + 1} class="py-6 text-center text-xs text-[var(--bos-color-subordinate)]">No records yet: columns are shown for design.</td></tr>
+              {/if}
             </tbody>
           </table>
         </div>

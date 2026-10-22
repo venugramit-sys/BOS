@@ -8,7 +8,7 @@
  * Both modes preview the real compiled page (design build) with real records after every change.
  */
 import { designerApi } from "./designer-api.js";
-import { loadPreview } from "$lib/page-kit/loader.svelte.js";
+import { loadPreview, pageManifest } from "$lib/page-kit/loader.svelte.js";
 import { StudioApi } from "../../stores/studioApi.js";
 import {
   emptyChanges,
@@ -23,7 +23,8 @@ import {
   findNode,
   flatten,
   lastSegment,
-  isWithin
+  isWithin,
+  parentPath as parentOf
 } from "./design-values.js";
 
 const MAX_UNDO = 100;
@@ -64,9 +65,18 @@ export class PageDesignerModel {
   customizable = $state(false);
   undoStack = $state.raw([]);
   redoStack = $state.raw([]);
+  /** Package the object belongs to (Apply stores it there). Follows the Studio tab once its details load. */
+  packageName = $state("bos.app");
+  /** The source does not parse: `{ message, line }`. The canvas then shows the published page read-only. */
+  parseError = $state.raw(null);
+  /** The canvas shows the published page instead of this source (the source does not parse yet). */
+  showingPublished = $state(false);
+  /** An API page (no user interface): the designer offers code editing only. */
+  apiPage = $state(false);
 
   #previewSeq = 0;
   #previewTimer = null;
+  #previewWaiters = [];
   #base = null;
   #baseExtensions = [];
 
@@ -145,7 +155,12 @@ export class PageDesignerModel {
       await this.#parse();
       this.objectKind = this.object?.kind ?? "page";
       this.targetPage = this.objectKind === "pageextension" ? (this.object?.target ?? "") : this.name;
-      const compiled = await designerApi.compiled(this.targetPage).catch(() => null);
+      // API pages have no user interface: there is nothing to draw, they are edited in code.
+      this.apiPage = String(this.ir?.page_type ?? "").toLowerCase() === "api";
+      // Until the Studio has loaded the source, only a page the manifest knows can be looked up.
+      await pageManifest.start();
+      const knownPage = Boolean(this.object) || Boolean(pageManifest.entry(this.targetPage));
+      const compiled = this.apiPage || !knownPage ? null : await designerApi.compiled(this.targetPage).catch(() => null);
       this.#base = compiled?.base ?? null;
       this.#baseExtensions = compiled?.extensions ?? [];
       this.customizable = Boolean(compiled);
@@ -155,7 +170,7 @@ export class PageDesignerModel {
         this.changes = { ...emptyChanges(), ...current.changes };
         this.savedChanges = $state.snapshot(this.changes);
       }
-      const table = compiled?.page?.source_table ?? this.ir?.source_table;
+      const table = compiled?.page?.source_table ?? this.ir?.source_table ?? this.#base?.source_table;
       if (table) this.fields = await designerApi.tableFields(table).catch(() => []);
       await this.refreshPreview(true);
     } catch (e) {
@@ -180,25 +195,39 @@ export class PageDesignerModel {
     const model = res.model;
     const lname = this.name.toLowerCase();
     this.ir = model ? ([...(model.pages ?? []), ...(model.page_extensions ?? [])].find((p) => p.name.toLowerCase() === lname) ?? null) : null;
-    if (res.error) this.error = res.error;
+    if (res.error) {
+      const line = /line (\d+)/i.exec(res.error);
+      this.parseError = { message: res.error, line: line ? Number(line[1]) : 0 };
+    } else {
+      this.parseError = null;
+    }
   }
 
   // ----------------------------------------------------
   // PREVIEW
   // ----------------------------------------------------
 
-  /** Recompiles the design preview (debounced; `now` skips the debounce). */
+  /**
+   * Recompiles the design preview (debounced; `now` skips the debounce). Every caller's promise settles
+   * when the preview that covers its change has rendered, including calls superseded by a later one.
+   */
   refreshPreview(now = false) {
     clearTimeout(this.#previewTimer);
     return new Promise((resolve) => {
-      this.#previewTimer = setTimeout(() => this.#preview().then(resolve, resolve), now ? 0 : 200);
+      this.#previewWaiters.push(resolve);
+      this.#previewTimer = setTimeout(() => {
+        const waiters = this.#previewWaiters.splice(0);
+        this.#preview().finally(() => waiters.forEach((w) => w()));
+      }, now ? 0 : 200);
     });
   }
 
   async #preview() {
+    if (this.apiPage) return;
     const seq = ++this.#previewSeq;
     try {
       let result;
+      let published = false;
       if (this.mode === "customize") {
         result = await designerApi.previewCustomization(this.targetPage, this.changes);
       } else if (this.objectKind === "page" && this.ir) {
@@ -206,6 +235,10 @@ export class PageDesignerModel {
       } else if (this.objectKind === "pageextension" && this.ir && this.#base) {
         const others = this.#baseExtensions.filter((e) => e.name.toLowerCase() !== this.name.toLowerCase());
         result = await designerApi.preview(this.#base, [...others, this.ir]);
+      } else if (this.#base) {
+        // The source does not parse (yet): show what is published so the page is never blank.
+        result = await designerApi.preview(this.#base, this.#baseExtensions);
+        published = true;
       } else {
         return;
       }
@@ -214,6 +247,7 @@ export class PageDesignerModel {
       this.compiled = result.compiled;
       this.diagnostics = result.diagnostics ?? [];
       this.Component = component;
+      this.showingPublished = published;
       this.previewVersion += 1;
       this.error = "";
     } catch (e) {
@@ -267,6 +301,9 @@ export class PageDesignerModel {
       this.notice = "This page's source is not open here; open the page object in the Studio to develop it.";
       return;
     }
+    if (mode === "customize" && this.source !== this.savedSource) {
+      this.notice = "Customize mode works on the published page; your unapplied Develop changes are kept and show again in Develop.";
+    }
     this.mode = mode;
     this.undoStack = [];
     this.redoStack = [];
@@ -279,6 +316,10 @@ export class PageDesignerModel {
 
   async applyOps(ops) {
     if (!ops.length) return;
+    if (this.parseError) {
+      this.notice = `Fix the syntax error first (line ${this.parseError.line || "?"}); visual edits need source that parses.`;
+      return;
+    }
     this.busy = true;
     try {
       const res = await designerApi.edit(this.source, this.name, ops, this.packageName);
@@ -299,6 +340,13 @@ export class PageDesignerModel {
   /** Whether the selected node is defined in this source (not by an extension or the base page). */
   isAuthored(path) {
     return path === "page" || Boolean(findNode([...this.nodes, ...this.actionNodes], path));
+  }
+
+  /** Develop mode can only move or insert relative to controls this source defines. */
+  #editableHere(path) {
+    if (path === "layout" || this.isAuthored(path)) return true;
+    this.notice = "That spot belongs to a control defined by another object (a page extension or the base page). Edit that object, or use Customize mode.";
+    return false;
   }
 
   // ----------------------------------------------------
@@ -333,6 +381,7 @@ export class PageDesignerModel {
   async moveTo(path, target, placement) {
     if (isWithin(target.path, path)) return;
     if (this.mode === "develop") {
+      if (!this.#editableHere(path) || !this.#editableHere(placement === "inside" ? target.path : parentOf(target.path))) return;
       const loc = dropLocation(this.nodes, target, placement);
       if (loc.before === path) return;
       return this.applyOps([{ op: "move", path, parent: loc.parent, before: loc.before }]);
@@ -346,7 +395,13 @@ export class PageDesignerModel {
   /** Inserts a new control (develop) or adds a table field (customize) at `target`/`placement`. */
   async insertAt(item, target, placement) {
     if (this.mode === "develop") {
-      const loc = target ? dropLocation(this.nodes, target, placement) : { parent: this.nodes[0]?.path ?? "layout", before: null };
+      if (target && !this.#editableHere(placement === "inside" ? target.path : parentOf(target.path))) return;
+      if (!target && this.nodes.length === 0) {
+        // Empty page: controls live in an area (NAV `area(Content)`).
+        const body = item.source.split("\n").map((l) => `    ${l}`).join("\n");
+        return this.applyOps([{ op: "insert", parent: "layout", before: null, source: `area(Content) {\n${body}\n}` }]);
+      }
+      const loc = target ? dropLocation(this.nodes, target, placement) : { parent: this.nodes[0].path, before: null };
       return this.applyOps([{ op: "insert", parent: loc.parent, before: loc.before, source: item.source }]);
     }
     if (item.kind !== "field") {
@@ -401,7 +456,13 @@ export class PageDesignerModel {
     this.error = "";
     try {
       if (this.mode === "develop") {
-        await StudioApi.applyScript(this.source, this.packageName);
+        if (this.parseError) throw new Error(`The source has a syntax error: ${this.parseError.message}`);
+        const res = await StudioApi.applyScript(this.source, this.packageName);
+        // `/api/script/apply` answers 200 with `applied: false` when the script has errors.
+        if (res?.applied === false || res?.success === false) {
+          const errors = (res.diagnostics ?? []).filter((d) => String(d.severity).toLowerCase() === "error");
+          throw new Error(errors.length ? errors.map((d) => `${d.code ? d.code + ": " : ""}${d.message}`).join("\n") : res.message || "The page was not applied.");
+        }
         this.savedSource = this.source;
         this.notice = "Page applied and published.";
       } else {

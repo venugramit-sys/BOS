@@ -19,7 +19,8 @@ import {
   typeParts,
 } from "./tableModel.js";
 
-const root = new URL("../../../../../../packages/", import.meta.url);
+// Fixtures live next to the test, so it does not depend on which packages a checkout contains.
+const root = new URL("./fixtures/", import.meta.url);
 
 function readPackage(path) {
   return readFileSync(new URL(path, root), "utf8");
@@ -77,7 +78,7 @@ test("bos types round-trip from PostgreSQL type names", () => {
 });
 
 test("Note.bos keeps its key, fields, and inline trigger", () => {
-  const model = parseTableDocument(readPackage("bos.simple_test/tables/Note.bos"));
+  const model = parseTableDocument(readPackage("Note.bos"));
   assert.equal(model.name, "Note");
   assert.deepEqual(model.fields.map((field) => field.name), ["code", "content"]);
   assert.equal(model.fields[0].dataType, "String(20)");
@@ -99,7 +100,7 @@ test("Note.bos keeps its key, fields, and inline trigger", () => {
 });
 
 test("User.bos keeps table properties and template-literal triggers", () => {
-  const model = parseTableDocument(readPackage("bos.security/tables/User.bos"));
+  const model = parseTableDocument(readPackage("User.bos"));
   assert.equal(model.caption, "Security User Master");
   assert.equal(model.tableType, "Normal");
   assert.equal(model.dataPerCompany, false);
@@ -114,7 +115,7 @@ test("User.bos keeps table properties and template-literal triggers", () => {
 });
 
 test("Item.bos field validate is emitted on the logic companion", () => {
-  const model = parseTableDocument(readPackage("bos.typescript_test/tables/Item.bos"));
+  const model = parseTableDocument(readPackage("Item.bos"));
   const price = model.fields.find((field) => field.name === "unitPrice");
   assert.equal(price.defaultVal, "0.00");
   assert.equal(price.validate.home, "table");

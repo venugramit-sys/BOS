@@ -62,7 +62,7 @@
     {#each system as a (a.name)}
       <button type="button" class="bos-action" disabled={!enabled(a)} onclick={() => run(a)}>
         {#if a.name === "__save" && p.saving}<Spinner size="xs" />{:else}<Icon name={a.icon} class="size-4" />{/if}
-        <span class={a.name === "__refresh" ? "sr-only" : "hidden md:inline"}>{a.caption}</span>
+        <span class={a.name === "__refresh" ? "sr-only" : "bos-action-label"}>{a.caption}</span>
       </button>
     {/each}
     {#if promoted.length || menus.length}<span class="bos-action-sep" aria-hidden="true"></span>{/if}
@@ -70,7 +70,7 @@
   {#each promoted as a (a.name)}
     <button
       type="button"
-      class={"bos-action hidden sm:inline-flex " + (a.primary ? "bos-action-primary" : "")}
+      class={"bos-action bos-promoted " + (a.primary ? "bos-action-primary" : "")}
       {...p.design ? { "data-bos-node": "action:" + targetOf(a).name, "data-bos-kind": "action" } : {}}
       disabled={!p.design && !enabled(a)}
       title={a.tooltip ?? a.shortcut ?? undefined}
@@ -81,7 +81,7 @@
     </button>
   {/each}
   {#if promoted.length}
-    <ActionMenu class="sm:hidden" label="More" sections={[{ items: promoted }]} onrun={run} {enabled} />
+    <ActionMenu class="bos-more" label="More" sections={[{ items: promoted }]} onrun={run} {enabled} />
   {/if}
   {#each menus as m (m.area)}
     <ActionMenu label={m.label} sections={m.sections} onrun={run} {enabled} />

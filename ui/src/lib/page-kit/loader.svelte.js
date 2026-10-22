@@ -23,7 +23,8 @@ class ManifestStore {
 
   /** Loads the manifest once and subscribes to changes (idempotent). */
   start() {
-    if (!this.#loading) this.#loading = this.refresh();
+    // A failed first load (node restarting, network blip) must not stick: retry until a manifest arrives.
+    if (!this.#loading || (!this.manifest && this.error)) this.#loading = this.refresh();
     if (!this.#source && typeof EventSource !== "undefined") {
       this.#source = new EventSource("/api/v1/pages/manifest/stream");
       this.#source.addEventListener("manifest", (e) => {

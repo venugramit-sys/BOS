@@ -10,6 +10,7 @@ pub mod page_merger;
 pub mod page_expr;
 pub mod page_resolver;
 pub mod page_source;
+pub mod page_print;
 mod page_check;
 mod page_lower;
 #[cfg(test)]

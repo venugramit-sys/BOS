@@ -1,3 +1,20 @@
+<script module>
+  // Lookup results are shared by every editor of the same relation for a short time, so a list with
+  // 50 rows asks the server once per search instead of once per row.
+  const LOOKUP_TTL_MS = 30_000;
+  const lookupCache = new Map();
+
+  export function cachedLookup(key, load) {
+    const hit = lookupCache.get(key);
+    if (hit && Date.now() - hit.at < LOOKUP_TTL_MS) return hit.promise;
+    const promise = load();
+    lookupCache.set(key, { at: Date.now(), promise });
+    promise.catch(() => lookupCache.delete(key));
+    if (lookupCache.size > 200) lookupCache.delete(lookupCache.keys().next().value);
+    return promise;
+  }
+</script>
+
 <script>
   /**
    * Value editor / viewer of one field control, dispatched on the resolved `field.control`.
@@ -48,8 +65,12 @@
   const lookupLabelKey = $derived(lk?.display_fields?.find((k) => k !== lk.sql_field) ?? lk?.sql_field);
   const lookupColumns = $derived((lk?.display_fields ?? []).map((k, i) => ({ key: k, label: k.replace(/_/g, " "), primary: i === 0, mono: i === 0 })));
 
-  async function fetchLookup(query) {
+  function fetchLookup(query) {
     const q = String(query ?? "").trim();
+    return cachedLookup(`${lk.sql_table}|${lk.sql_field}|${lookupLabelKey}|${q.toLowerCase()}`, () => searchLookup(q));
+  }
+
+  async function searchLookup(q) {
     if (!q) return (await listRecords(lk.sql_table, { limit: 25, sort: `${lk.sql_field}:asc` }))?.records ?? [];
     // NAV lookups match the code or the description: query both and merge.
     const keys = [...new Set([lk.sql_field, lookupLabelKey])];

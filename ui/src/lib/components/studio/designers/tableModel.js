@@ -359,16 +359,52 @@ function splitStatements(src) {
   return out;
 }
 
+/**
+ * Copy of `source` with comments and string / template literals blanked (same offsets, newlines kept),
+ * so object headers and braces are only recognised in real code: a header comment such as
+ * "// fixture for the table and its logic" must not be read as `table and`.
+ */
+function maskCommentsAndStrings(source) {
+  const out = source.split("");
+  const blank = (from, to) => {
+    for (let k = from; k < to && k < out.length; k += 1) if (out[k] !== "\n") out[k] = " ";
+  };
+  let i = 0;
+  while (i < source.length) {
+    const ch = source[i];
+    const next = source[i + 1];
+    if (ch === "/" && next === "/") {
+      const nl = source.indexOf("\n", i);
+      const stop = nl === -1 ? source.length : nl;
+      blank(i, stop);
+      i = stop;
+    } else if (ch === "/" && next === "*") {
+      const close = source.indexOf("*/", i + 2);
+      const stop = close === -1 ? source.length : close + 2;
+      blank(i, stop);
+      i = stop;
+    } else if (ch === '"' || ch === "'" || ch === "`") {
+      const stop = skipString(source, i);
+      blank(i + 1, stop - 1);
+      i = stop;
+    } else {
+      i += 1;
+    }
+  }
+  return out.join("");
+}
+
 function extractObjects(source) {
   const found = [];
+  const code = maskCommentsAndStrings(source);
   const re = /\b(tablelogicextension|tablelogic|tableextension|table)\s+([A-Za-z_]\w*)/g;
   let match;
-  while ((match = re.exec(source))) {
+  while ((match = re.exec(code))) {
     const keyword = match[1];
     const name = match[2];
     let i = match.index + match[0].length;
     let target = "";
-    const rest = source.slice(i);
+    const rest = code.slice(i);
     const forMatch = /^\s+for\s+([A-Za-z_]\w*)/.exec(rest);
     const extendsMatch = /^\s+extends\s+([A-Za-z_]\w*)/.exec(rest);
     if (forMatch) {
@@ -378,17 +414,13 @@ function extractObjects(source) {
       target = extendsMatch[1];
       i += extendsMatch[0].length;
     }
-    while (i < source.length && source[i] !== "{") i += 1;
-    if (source[i] !== "{") continue;
+    while (i < code.length && code[i] !== "{") i += 1;
+    if (code[i] !== "{") continue;
     const open = i;
     let depth = 0;
     i += 1;
-    while (i < source.length) {
-      const ch = source[i];
-      if (ch === '"' || ch === "'" || ch === "`") {
-        i = skipString(source, i);
-        continue;
-      }
+    while (i < code.length) {
+      const ch = code[i];
       if (ch === "{") depth += 1;
       else if (ch === "}") {
         if (depth === 0) break;

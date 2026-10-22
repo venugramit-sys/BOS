@@ -329,6 +329,7 @@
                     sourceCode={tab.sourceCode}
                     packageName={tab.packageName || tab.details?.summary?.package_name || "bos.app"}
                     bind:mode={tab.mode}
+                    bind:isDirty={tab.isDirty}
                     onSourceChange={(script) => {
                       tab.sourceCode = script;
                     }}
