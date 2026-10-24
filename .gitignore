@@ -36,3 +36,6 @@ Thumbs.db
 # Local AI tool state (per-user, not shared)
 .serena/cache/
 .claude/settings.local.json
+
+# Serena machine-local overrides
+.serena/project.local.yml

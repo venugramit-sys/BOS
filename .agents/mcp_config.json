@@ -1,0 +1,17 @@
+{
+    "mcpServers":  {
+                       "serena":  {
+                                      "args":  [
+                                                   "start-mcp-server",
+                                                   "--context",
+                                                   "antigravity",
+                                                   "--project-from-cwd",
+                                                   "--enable-web-dashboard",
+                                                   "false",
+                                                   "--open-web-dashboard",
+                                                   "false"
+                                               ],
+                                      "command":  "C:/Users/mades/.local/bin/serena.exe"
+                                  }
+                   }
+}

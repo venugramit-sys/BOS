@@ -1,0 +1,18 @@
+{
+    "mcpServers":  {
+                       "serena":  {
+                                      "args":  [
+                                                   "start-mcp-server",
+                                                   "--context",
+                                                   "ide",
+                                                   "--project", "${workspaceFolder}",
+                                                   "--enable-web-dashboard",
+                                                   "false",
+                                                   "--open-web-dashboard",
+                                                   "false"
+                                               ],
+                                      "command":  "C:/Users/mades/.local/bin/serena.exe",
+                                      "type":  "stdio"
+                                  }
+                   }
+}
