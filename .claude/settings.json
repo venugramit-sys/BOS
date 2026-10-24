@@ -1,0 +1,32 @@
+{
+    "permissions":  {
+                        "deny":  [
+                                     "Read(./target*/**)",
+                                     "Read(./dist/**)",
+                                     "Read(./dist-ssr/**)",
+                                     "Read(./build/**)",
+                                     "Read(./coverage/**)",
+                                     "Read(./node_modules/**)",
+                                     "Read(./**/node_modules/**)",
+                                     "Read(./.svelte-kit/**)",
+                                     "Read(./**/.svelte-kit/**)",
+                                     "Read(./ui/dist/**)",
+                                     "Read(./ui/.bos-pages/**)",
+                                     "Read(./Cargo.lock)",
+                                     "Read(./**/package-lock.json)",
+                                     "Read(./**/*.pdb)",
+                                     "Read(./**/*.dll)",
+                                     "Read(./**/*.rlib)",
+                                     "Read(./**/*.rmeta)",
+                                     "Read(./**/*.exe)",
+                                     "Read(./**/*.so)",
+                                     "Read(./**/*.dylib)",
+                                     "Read(./**/*.wasm)",
+                                     "Read(./**/*.log)",
+                                     "Read(./stale-docs/**)",
+                                     "Read(./scratch/**)",
+                                     "Read(./data/**)",
+                                     "Read(./reports/qa_iter0_screens/**)"
+                                 ]
+                    }
+}
