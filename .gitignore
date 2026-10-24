@@ -1,13 +1,47 @@
-/target/
+# BOS root .gitignore (build output, deps, logs, local state). ui/.gitignore still applies inside ui/.
+# Rust build output (target/, target-ledger/, target-*/)
+/target*/
 **/target/
+# Distribution / build artifacts
+/dist/
+dist-ssr/
+build/
+coverage/
+*.pdb
+*.rlib
+*.rmeta
+*.exe
+*.dll
+*.so
+*.dylib
+# JS / Svelte
 node_modules/
-**/node_modules/
-.DS_Store
-Thumbs.db
+.svelte-kit/
+.bos-pages/
+.vite/
+# Logs
+logs/
 *.log
+# Local env / secrets
 .env
 .env.*
 !.env.example
+# Local runtime data
+/data/
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+# Local AI tool state (per-user, not shared)
+.serena/cache/
+.claude/settings.local.json
 
+# Serena machine-local overrides
+.serena/project.local.yml
+
+# From main (chore-single-node-run)
+/target/
+**/node_modules/
 # Generated page compiler build output
 data/page-artifacts/

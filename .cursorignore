@@ -1,0 +1,28 @@
+# Build output / dependencies
+target*/
+dist/
+dist-ssr/
+build/
+coverage/
+node_modules/
+.svelte-kit/
+.bos-pages/
+ui/.bos-pages/
+Cargo.lock
+package-lock.json
+*.pdb
+*.dll
+*.rlib
+*.rmeta
+*.exe
+*.so
+*.dylib
+*.wasm
+*.d
+*.log
+logs/
+# Non-source / stale material
+stale-docs/
+scratch/
+data/
+reports/qa_iter0_screens/
