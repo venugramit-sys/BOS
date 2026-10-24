@@ -100,3 +100,11 @@ Nothing is complete until detector issues **`VERDICT: FLAWLESS (PASSED)`**.
 2. Verify target architecture against docs before coding.
 3. Any change to an API contract, schema, config or workflow -> `planner` updates the relevant doc; new features/modules get a new doc under `docs/`.
 4. Zero drift: any code/doc mismatch found in review or detector scans is a high-severity bug.
+## 5. Token discipline (all agents, all IDEs)
+1. **Orient cheaply**: read docs/CODEMAP.md, then the folder's AGENTS.md / ARCHITECTURE.md; find code with `rg`, `ast-grep` or Serena symbol tools; read line ranges, not whole large files. Never read ignored paths (target*, dist, node_modules, Cargo.lock, stale-docs).
+2. **One task per session**: start a fresh chat (Claude Code `/clear`) for unrelated work; `/compact <focus>` only for long continuous tasks; prefer specific prompts naming files and acceptance criteria; plan before large edits.
+3. **Model routing**: cheap/fast models (e.g. Haiku/Sonnet-class, Gemini Flash-class) for reading, search, test runs, log triage and doc lookups; top reasoning model only for architecture, synthesis, security review and hard debugging. Lower effort/thinking for simple tasks.
+4. **Delegate verbose work** to subagents (`.claude/agents/`) that return short summaries; keep parallel agents few and stop them when done.
+5. **Keep context stable**: don't edit rules, AGENTS.md or MCP config mid-session (breaks prompt caching); keep only the project MCP set (Serena) enabled.
+6. **Occasional workflows live in skills** (`.claude/skills/`, `.agents/skills/`): package build, schema sync, QA run, release.
+7. **Code stays local**: no tools or services that upload repository code to third parties.
