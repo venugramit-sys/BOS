@@ -101,7 +101,7 @@ These tests need `BOS_TEST_DATABASE_URL` (a PostgreSQL URL with `CREATEDB` right
 | ID | Priority | Type | Task Title | Verification Command |
 | :--- | :--- | :--- | :--- | :--- |
 | **`CLI-01`** | `HIGH` | `UNIT` | Database Auto-Detection (bosc-cli detect-db) | `cargo run -p bosc-cli -- detect-db` |
-| **`CLI-02`** | `CRITICAL` | `INTEGRATION` | HTTP API Server Launch (bosc-cli serve) | `cargo run -p bosc-cli -- serve --help` |
+| **`CLI-02`** | `CRITICAL` | `INTEGRATION` | HTTP API Server Launch (bosc-cli node run) | `cargo run -p bosc-cli -- node run --help` |
 | **`CLI-03`** | `HIGH` | `UNIT` | Package Build & Validation (bosc-cli package build) | `cargo run -p bosc-cli -- package --help` |
 
 ### ui (Compact Svelte 5 API Studio) (Frontend Studio)

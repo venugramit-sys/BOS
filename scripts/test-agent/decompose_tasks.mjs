@@ -104,7 +104,7 @@ const modules = [
         name: 'Command-Line Operations',
         tasks: [
           { id: 'CLI-01', title: 'Database Auto-Detection (bosc-cli detect-db)', type: 'UNIT', priority: 'HIGH', verification: 'cargo run -p bosc-cli -- detect-db' },
-          { id: 'CLI-02', title: 'HTTP API Server Launch (bosc-cli serve)', type: 'INTEGRATION', priority: 'CRITICAL', verification: 'cargo run -p bosc-cli -- serve --help' },
+          { id: 'CLI-02', title: 'HTTP API Server Launch (bosc-cli node run)', type: 'INTEGRATION', priority: 'CRITICAL', verification: 'cargo run -p bosc-cli -- node run --help' },
           { id: 'CLI-03', title: 'Package Build & Validation (bosc-cli package build)', type: 'UNIT', priority: 'HIGH', verification: 'cargo run -p bosc-cli -- package --help' }
         ]
       }

@@ -357,7 +357,7 @@ compiler_workers = 0                      # 0 = min(cores, 4)
 seed_dirs = ["./dist/packages"]
 ```
 
-`bosc node run` (the supported way to run BOS) and the legacy `bosc serve` both start the page service. `bosc package build` writes `pages/<Page>.<hash16>.js` and `pages/manifest.json` using the same hashing. It finds the compiler at `$BOS_UI_RUNTIME`, `ui/dist/bos-runtime` or `ui/node_modules/svelte/compiler`. A single `npm run build` in `ui/` produces the app, the shared page runtime, the import map and the compiler bundle (§11).
+`bosc node run` starts the page service. `bosc package build` writes `pages/<Page>.<hash16>.js` and `pages/manifest.json` using the same hashing. It finds the compiler at `$BOS_UI_RUNTIME`, `ui/dist/bos-runtime` or `ui/node_modules/svelte/compiler`. A single `npm run build` in `ui/` produces the app, the shared page runtime, the import map and the compiler bundle (§11).
 
 ## 10. Phase 0 measurements (release build, this repository)
 

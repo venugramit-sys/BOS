@@ -21,6 +21,8 @@ static_dir = "../ui-dist"
 index_file = "index.html"
 
 [database]
+# Credentials must match the postgres service in docker-compose.yml (POSTGRES_USER/PASSWORD/DB).
+# Secrets management (OpenBao) comes in a later phase.
 url = "postgres://postgres:bos_secure_pass_2026@postgres:5432/bos_prod"
 min_pool_size = 1
 max_pool_size = 10

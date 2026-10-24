@@ -66,13 +66,6 @@ enum Commands {
     },
     /// Detect locally installed and running database providers (PostgreSQL, MySQL, SQL Server, Redis, ClickHouse, SQLite)
     DetectDb,
-    /// Start the live HTTP & JSON-RPC Backend API Server
-    Serve {
-        #[arg(short, long, default_value = "postgres://postgres:postgres@localhost:5432/bos_dev")]
-        db: String,
-        #[arg(short, long, default_value = "3000")]
-        port: u16,
-    },
     /// Provision BOS System Kernel on a PostgreSQL database
     Provision {
         #[arg(short, long, default_value = "postgres://postgres:postgres@localhost:5432/bos_dev")]
@@ -607,41 +600,6 @@ async fn main() -> Result<()> {
             }
             println!("\nBOS Default Connection String:");
             println!("  postgres://postgres:postgres@localhost:5432/bos_dev\n");
-        }
-        Commands::Serve { db, port } => {
-            use bosc_runtime::{create_api_router, BosEngine};
-            println!("Connecting BOS Engine to PostgreSQL at {}...", db);
-            let engine = BosEngine::connect(&db).await?;
-            start_pages(&engine, &NodeConfig::default()).await;
-
-            let app = create_api_router(engine);
-            let addr = format!("0.0.0.0:{}", port);
-            let listener = tokio::net::TcpListener::bind(&addr).await?;
-
-            println!("========================================================");
-            println!("🚀 BOS Backend API Server LIVE and LISTENING on http://localhost:{}", port);
-            println!("========================================================");
-            println!("Endpoints:");
-            println!("  System & Diagnostics:");
-            println!("    GET  /api/health");
-            println!("    GET  /api/detect-db");
-            println!("  Database Lifecycle Management:");
-            println!("    GET  /api/databases");
-            println!("    POST /api/databases");
-            println!("    GET  /api/databases/{{name}}");
-            println!("    DELETE /api/databases/{{name}}");
-            println!("    POST /api/databases/{{name}}/manage");
-            println!("    POST /api/databases/test-connection");
-            println!("    POST /api/databases/switch");
-            println!("  Entity CRUD & Workflows:");
-            println!("    GET  /api/entities/{{table}}");
-            println!("    POST /api/entities/{{table}}");
-            println!("    GET  /api/entities/{{table}}/{{id}}");
-            println!("    POST /api/entities/{{table}}/{{id}}/transition");
-            println!("    GET  /api/entities/{{table}}/{{id}}/state-history");
-            println!("    POST /api/entities/{{table}}/{{id}}/privileged-override\n");
-
-            axum::serve(listener, app).await?;
         }
         Commands::Provision { db, strategy } => {
             println!("Connecting to PostgreSQL database at {}...", db);
