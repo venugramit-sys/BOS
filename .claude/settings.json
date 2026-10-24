@@ -28,5 +28,19 @@
                                      "Read(./data/**)",
                                      "Read(./reports/qa_iter0_screens/**)"
                                  ]
-                    }
+                    },
+    "hooks":  {
+                  "PreToolUse":  [
+                                     {
+                                         "hooks":  [
+                                                       {
+                                                           "command":  "powershell -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/rewrite-test-cmd.ps1",
+                                                           "timeout":  10,
+                                                           "type":  "command"
+                                                       }
+                                                   ],
+                                         "matcher":  "Bash|PowerShell"
+                                     }
+                                 ]
+              }
 }
