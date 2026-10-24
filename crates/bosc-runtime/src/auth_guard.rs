@@ -3,7 +3,7 @@
 //! * Public routes (docs/08 2.1) pass through untouched.
 //! * Every other `/api/*` route needs a session token in `Authorization: Bearer <token>`
 //!   or `x-session-token`. The token is verified through the `bos.auth` package
-//!   (`AuthManager.VerifySession`) or against the in-memory emergency session registry.
+//!   (`AuthManager.VerifySession`); the kernel keeps no session state of its own.
 //! * Client-supplied identity headers (`x-bos-session`, `x-bos-user-id`, `x-bos-roles`)
 //!   are always stripped; on success the guard injects a server-built `x-bos-session`
 //!   so the existing handlers pick up the authenticated tenant/roles and RLS
@@ -19,35 +19,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock, RwLock};
-use std::time::{Duration, Instant};
+use std::sync::Arc;
 use uuid::Uuid;
-
-/// Lifetime of an emergency (maintenance / fallback) session.
-pub const EMERGENCY_SESSION_TTL: Duration = Duration::from_secs(8 * 60 * 60);
-
-fn emergency_store() -> &'static RwLock<HashMap<String, (SessionContext, Instant)>> {
-    static STORE: OnceLock<RwLock<HashMap<String, (SessionContext, Instant)>>> = OnceLock::new();
-    STORE.get_or_init(|| RwLock::new(HashMap::new()))
-}
-
-/// Remember an emergency token issued by the login handler so the guard accepts it.
-pub fn register_emergency_session(token: &str, ctx: SessionContext) {
-    if let Ok(mut map) = emergency_store().write() {
-        let now = Instant::now();
-        map.retain(|_, (_, exp)| *exp > now);
-        map.insert(token.to_string(), (ctx, now + EMERGENCY_SESSION_TTL));
-    }
-}
-
-/// Look up a live emergency session.
-pub fn lookup_emergency_session(token: &str) -> Option<SessionContext> {
-    let map = emergency_store().read().ok()?;
-    match map.get(token) {
-        Some((ctx, exp)) if *exp > Instant::now() => Some(ctx.clone()),
-        _ => None,
-    }
-}
 
 /// Routes that docs/08 2.1 lists as public, plus the unauthenticated bootstrap
 /// reads the Sign-In screen needs. Non-`/api` paths (SPA, static artifacts) are not guarded.
@@ -141,10 +114,6 @@ pub async fn resolve_session(
     headers: &HeaderMap,
 ) -> Result<SessionContext, Response> {
     let token = token_from_headers(headers).ok_or_else(|| unauthorized("MISSING_TOKEN"))?;
-
-    if let Some(ctx) = lookup_emergency_session(&token) {
-        return Ok(ctx);
-    }
 
     // Tenant used to look the session up; the session row itself is tenant-scoped by RLS,
     // so a token from another tenant is simply not found.
@@ -325,15 +294,6 @@ mod tests {
         h.insert("x-bos-user-id", HeaderValue::from_static("x"));
         strip_identity_headers(&mut h);
         assert!(h.is_empty());
-    }
-
-    #[test]
-    fn emergency_sessions_roundtrip() {
-        let ctx = SessionContext { tenant_id: Uuid::nil(), company_id: Uuid::nil(),
-            user_id: Uuid::nil(), roles: vec!["SUPER".into()] };
-        register_emergency_session("tok-test-1", ctx);
-        assert!(lookup_emergency_session("tok-test-1").is_some());
-        assert!(lookup_emergency_session("nope").is_none());
     }
 
     #[test]
