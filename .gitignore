@@ -1,0 +1,13 @@
+/target/
+**/target/
+node_modules/
+**/node_modules/
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.*
+!.env.example
+
+# Generated page compiler build output
+data/page-artifacts/
