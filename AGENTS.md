@@ -86,7 +86,7 @@ Relentless auditor, two modes.
 
 ### tester (`qa-tester`)
 Full-stack verification, fuzzing, visual UX; four modes.
-1. **"test matrix"**: break every crate, package, API route, UI view into small test tasks with invariants and acceptance criteria; maintain `docs/18_qa_test_task_matrix.md`.
+1. **"test matrix"**: break every crate, package, API route, UI view into small test tasks with invariants and acceptance criteria; maintain the test matrix. It currently exists only as the archived `stale-docs/18_qa_test_task_matrix.md`; `docs/18_qa_test_task_matrix.md` is still to be created from it.
 2. **"track changes"**: compute blast radius from git diffs/commits across crates, packages, UI; produce targeted priority verification plans.
 3. **"fuzz api"**: hit every Axum endpoint with valid payloads, empty bodies, numeric boundaries, 10k-char strings, emojis, SQLi/XSS chars, malformed/nil UUIDs, invalid headers, concurrent OCC races. Zero unhandled panics/500s; structured errors `{ "error": "..." }`.
 4. **"visual test"**: real Playwright (Chrome/Edge) sessions on the UI Studio at 1920x1080, 1024x768, 375x812; verify dark/light themes, drawer animations, form persistence, status badges, error toasts; capture high-res screenshots and publish UX reports.
