@@ -83,7 +83,7 @@ Compiles and applies schema updates to a live database in a single atomic transa
 ---
 
 ### 3.3. `bosc serve`
-Starts the Axum 0.8 HTTP API Server.
+Starts the Axum 0.8 HTTP API Server without a node config. Kept for tooling and tests; to run BOS use `bosc node run --config <file>.toml` (e.g. `nodes/dev.toml`, or `npm run dev`).
 - **Flags & Options:**
   - `-d, --db <URL>`: Connection string to PostgreSQL database.
   - `-p, --port <PORT>`: HTTP port to listen on (default: `3000`).

@@ -72,9 +72,11 @@ All unit and integration tests across all crates (`bosc-syntax`, `bosc-ir`, `bos
 # Check local database cluster
 cargo run -p bosc-cli -- detect-db
 
-# Launch the live HTTP API server (port 3000)
-cargo run -p bosc-cli -- serve --port 3000
+# Launch the BOS node (API on port 3000) from the local dev config
+cargo run -p bosc-cli -- node run --config nodes/dev.toml
 ```
+
+Or start the node and the UI (hot reload) together: `npm run dev` from the repo root.
 
 ### 3. Launch the Compact Svelte 5 API Endpoint Studio
 ```powershell

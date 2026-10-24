@@ -128,7 +128,7 @@ The BOS backend workspace consists of six tightly integrated Rust crates:
 
 ### 3.6. `bosc-cli` (Command Line Interface)
 - **Role:** Developer and DevOps command-line binary.
-- **Subcommands:** `build`, `run`, `deploy`, `test-live`, `detect-db`, `serve`, `provision`, `create-db`, and `package`.
+- **Subcommands:** `build`, `run`, `deploy`, `test-live`, `detect-db`, `node` (`node run --config <file>.toml` is the only supported way to run BOS), `serve` (legacy, no node config), `provision`, `create-db`, and `package`.
 
 ---
 
