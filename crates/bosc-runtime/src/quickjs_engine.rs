@@ -1807,7 +1807,11 @@ impl QuickJsEngine {
                             }}
                         }}
                         if (typeof fn === "function") {{
-                            __bosReturned = fn(rec, xRec, ctx);
+                            // Lifecycle triggers are declared as `onInsert(rec, ctx)` (docs/02 3.1),
+                            // while xRec-aware ones use `(rec, xRec, ctx)`. Dispatch by declared
+                            // arity so a 2-parameter trigger receives ctx, not a null xRec.
+                            const __isLifecycle = /^(on|before|after)(Insert|Modify|Delete|Rename)$/i.test(__triggerName);
+                            __bosReturned = (__isLifecycle && fn.length === 2) ? fn(rec, ctx) : fn(rec, xRec, ctx);
                         }} else {{
                             throw new Error(`Method '${{__triggerName}}' not found in compiled AOT bytecode module for '${{__tblName}}'`);
                         }}
