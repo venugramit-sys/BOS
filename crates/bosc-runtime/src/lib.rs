@@ -35,6 +35,8 @@ pub mod quickjs_engine;
 
 pub mod server;
 
+pub mod auth_guard;
+
 pub mod event_engine;
 
 pub mod wasm_engine;

@@ -69,6 +69,9 @@ COPY --from=rust-builder /app/target/release/bosc /usr/local/bin/bosc
 # Copy compiled Svelte 5 UI assets
 COPY --from=ui-builder /app/ui/dist /home/bos/app/ui-dist
 
+# Node config (bosc node run is the only way to run BOS)
+COPY --chown=bos:bos nodes/docker.toml /home/bos/app/config/bos-node.toml
+
 # Copy core meta-object packages
 COPY --chown=bos:bos packages/ /home/bos/app/packages/
 
@@ -91,4 +94,4 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:3000/api/health || exit 1
 
 ENTRYPOINT ["/usr/local/bin/bosc"]
-CMD ["serve", "--port", "3000"]
+CMD ["node", "run", "--config", "/home/bos/app/config/bos-node.toml"]

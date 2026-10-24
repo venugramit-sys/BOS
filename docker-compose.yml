@@ -21,6 +21,8 @@ services:
         condition: service_healthy
     ports:
       - "3000:3000"
+    # NOTE: the app reads its DB connection from nodes/docker.toml (baked into the image); those
+    # credentials must match the postgres service below. Secrets management (OpenBao) comes in a later phase.
     environment:
       - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-bos_secure_pass_2026}@postgres:5432/${POSTGRES_DB:-bos_prod}
       - PORT=3000

@@ -82,16 +82,16 @@ Compiles and applies schema updates to a live database in a single atomic transa
 
 ---
 
-### 3.3. `bosc serve`
-Starts the Axum 0.8 HTTP API Server.
-- **Flags & Options:**
-  - `-d, --db <URL>`: Connection string to PostgreSQL database.
-  - `-p, --port <PORT>`: HTTP port to listen on (default: `3000`).
+### 3.3. `bosc node`
+Runs BOS. `bosc node run --config <file>.toml` is the only way to start the API server (plus UI and NAS worker, as configured).
+- **Subcommands:**
+  - `node init [-o <file>] [--force]`: Write a node config template (`bos-node.toml`).
+  - `node check -c <file>`: Validate a node config.
+  - `node run -c <file>`: Start the node described by the config.
 - **Example:**
   ```powershell
-  bosc serve --port 3000 --db postgres://postgres:postgres@localhost:5432/bos_dev
+  bosc node run --config nodes/dev.toml   # or: npm run dev (node + Vite UI with hot reload)
   ```
-
 ---
 
 ### 3.4. `bosc run`

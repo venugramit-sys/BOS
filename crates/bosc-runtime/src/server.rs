@@ -345,6 +345,9 @@ pub fn create_node_router(engine: BosEngine, node_config: NodeConfig) -> Router 
             get(check_sidecar_health_handler),
         )
         .merge(crate::page_routes::page_routes())
+        // docs/08 2: every non-public /api route requires an authenticated session.
+        // Must sit inside the Extension layers so the guard can reach the engine.
+        .layer(axum::middleware::from_fn(crate::auth_guard::require_session))
         .layer(Extension(engine_arc))
         .layer(Extension(node_config_arc))
         .layer(cors)
@@ -463,7 +466,9 @@ pub(crate) fn extract_context(headers: &HeaderMap) -> Result<SessionContext, Res
         .get("x-bos-roles")
         .and_then(|v| v.to_str().ok())
         .map(|s| s.split(',').map(|r| r.trim().to_string()).collect())
-        .unwrap_or_else(|| vec!["SUPER".to_string(), "Admin".to_string()]);
+        // No implicit privileges: protected routes always receive a server-built
+        // x-bos-session from auth_guard; anything else is anonymous.
+        .unwrap_or_default();
 
     Ok(SessionContext {
         tenant_id,
@@ -517,14 +522,19 @@ async fn auth_status(Extension(engine): Extension<Arc<BosEngine>>) -> Response {
                 companies_count: 0,
             });
     let active_db = engine.active_db_name().await;
-    let needs_setup = !sys_status.is_provisioned;
+    // A provisioned node with no users or roles cannot be signed into: it still needs setup.
+    let identity = crate::auth_guard::identity_state(&engine).await;
+    let needs_bootstrap = sys_status.is_provisioned && identity.needs_bootstrap();
+    let needs_setup = !sys_status.is_provisioned || needs_bootstrap;
 
     (
         StatusCode::OK,
         Json(serde_json::json!({
             "isProvisioned": sys_status.is_provisioned,
             "needsSetup": needs_setup,
-            "needsBootstrap": false,
+            "needsBootstrap": needs_bootstrap,
+            "usersCount": identity.users,
+            "rolesCount": identity.roles,
             "activeDatabase": active_db,
             "storageStrategy": sys_status.storage_strategy.unwrap_or_else(|| "shared_rls".to_string()),
             "metaObjectsCount": sys_status.meta_objects_count,
@@ -680,11 +690,21 @@ async fn auth_login_handler(
     let node_config = node_config_opt.map(|Extension(c)| c);
 
     // 1. Check emergency Super Admin bypass (maintenance mode)
-    if username == "emergency_admin" {
-        let is_emergency_allowed = node_config
+    // docs/13 4.3: granted in maintenance mode, or under auto-fallback only when the
+    // identity store is missing/empty (nobody could otherwise sign in).
+    let is_emergency_name = username == "emergency_admin"
+        || node_config
             .as_ref()
-            .map(|c| c.security.maintenance_mode || c.security.auto_fallback_on_auth_failure)
+            .map(|c| c.security.emergency_username.eq_ignore_ascii_case(&username))
             .unwrap_or(false);
+    if is_emergency_name {
+        let maintenance = node_config.as_ref().map(|c| c.security.maintenance_mode).unwrap_or(false);
+        let auto_fallback = node_config
+            .as_ref()
+            .map(|c| c.security.auto_fallback_on_auth_failure)
+            .unwrap_or(false);
+        let is_emergency_allowed = maintenance
+            || (auto_fallback && crate::auth_guard::identity_state(&engine).await.needs_bootstrap());
 
         if is_emergency_allowed {
             let token = format!("bos_sess_emergency_{}", Uuid::new_v4().simple());
@@ -836,7 +856,11 @@ async fn auth_login_handler(
                 .map(|c| c.security.auto_fallback_on_auth_failure)
                 .unwrap_or(false);
 
-            if auto_fallback && username == "admin" {
+            // Only when the auth module is broken AND there is no identity data (docs/13 4.3).
+            if auto_fallback
+                && username == "admin"
+                && crate::auth_guard::identity_state(&engine).await.needs_bootstrap()
+            {
                 tracing::warn!("Auto fallback active: issuing emergency admin session");
                 let token = format!("bos_sess_fallback_{}", Uuid::new_v4().simple());
                 return (
