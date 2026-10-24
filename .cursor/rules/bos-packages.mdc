@@ -1,0 +1,11 @@
+﻿---
+description: BOS-Script and package rules for packages/ and .bos sources
+globs: packages/**, examples/**/*.bos, **/*.bos, **/bos.json
+alwaysApply: false
+---
+# BOS packages and BOS-Script
+- Specs: docs/01 (language), docs/02 (12 meta-objects), docs/10 (packaging), docs/06 (QuickJS: 8 MB RAM cap, 100k fuel).
+- packages/<package_id>/ with strict bos.json; non-invasive layering; singular PascalCase tables -> singular snake_case SQL.
+- table = schema/constraints/FlowFields; tablelogic = validate/onInsert/onModify/onDelete/record methods; codeunit = cross-record procedures, @businessEvent.
+- Zero N+1 (FlowFields/subqueries/pushdown), exact decimals, two-phase posting, immutable ledgers.
+- Verify with `bosc package check` / `bosc package build`.

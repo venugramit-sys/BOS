@@ -1,0 +1,10 @@
+﻿---
+trigger: glob
+description: "Docs governance rules for docs/"
+globs: "docs/**/*.md, **/ARCHITECTURE.md, **/AGENTS.md"
+---
+# Docs
+- docs/ (00-17, 30) is the source of truth; stale-docs/ is archive only - never cite it as current.
+- API contract, schema, config or workflow change -> update the matching doc in the same change; new feature -> new doc.
+- Keep AGENTS.md files short; detail belongs in docs/ or ARCHITECTURE.md. Keep docs/CODEMAP.md and per-crate ARCHITECTURE.md current when modules/public types/dependencies change.
+- Plain English for business readers; every requirement question pairs a Quick Example and a Real-World Business Example.

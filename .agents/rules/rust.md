@@ -1,0 +1,12 @@
+﻿---
+trigger: glob
+description: "Rust crate rules for crates/bosc-*"
+globs: "crates/**/*.rs, crates/**/Cargo.toml, Cargo.toml"
+---
+# Rust (crates/bosc-*)
+- Read the crate's AGENTS.md + ARCHITECTURE.md first; docs/CODEMAP.md for cross-crate flow.
+- Zero mocks; no todo!/unimplemented!/dummy returns; no bare .unwrap() in production paths; thiserror/anyhow.
+- Send + Sync, idiomatic, zero-cost; public API and meta-objects must match docs/.
+- Big files (parser.rs, quickjs_engine.rs, lib.rs in runtime/analyzer, meta_manager.rs, server.rs): locate with rg/ast-grep or Serena symbols, then read line ranges only.
+- Verify: cargo check / cargo test -p <crate> / cargo clippy -p <crate>. Prefer per-crate runs over the whole workspace.
+- Never read target*/ or Cargo.lock.
