@@ -1,5 +1,5 @@
 use crate::db_manager::{
-    CreateCompanyRequest, CreateDatabaseRequest, CreateTenantRequest, DropDatabaseQuery,
+    CloneCompanyRequest, CreateCompanyRequest, CreateDatabaseRequest, CreateTenantRequest, DropDatabaseQuery,
     ManageDatabaseRequest, SwitchDatabaseRequest, TestConnectionRequest, UpdateDatabaseRequest,
 };
 use crate::detector::DatabaseDetector;
@@ -15,7 +15,7 @@ use axum::{
     extract::{Extension, Path, Query},
     http::{HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use serde::Deserialize;
 use std::sync::Arc;
@@ -249,6 +249,7 @@ pub fn create_node_router(engine: BosEngine, node_config: NodeConfig) -> Router 
             get(list_meta_objects_handler).post(register_meta_object_handler),
         )
         .route("/api/meta/objects/{name}", get(get_meta_object_handler))
+        .route("/api/meta/objects/{name}/feature", post(assign_meta_object_feature_handler))
         .route("/api/pages/{name}", get(get_resolved_page_handler))
         .route("/api/v1/pages/{name}", get(get_resolved_page_handler))
         .route("/api/meta/ambient.d.ts", get(get_ambient_dts_handler))
@@ -280,6 +281,9 @@ pub fn create_node_router(engine: BosEngine, node_config: NodeConfig) -> Router 
             "/api/companies",
             get(list_companies_handler).post(create_company_handler),
         )
+        .route("/api/companies/clone", post(clone_company_handler))
+        .route("/api/companies/{code}", delete(drop_company_handler))
+        .route("/api/meta/schema-drift", get(schema_drift_handler))
         .route("/api/views/{name}", get(get_view_handler))
         .route("/api/views/{name}/refresh", post(refresh_view_handler))
         .route("/api/queries/{name}/run", post(execute_query_handler))
@@ -349,6 +353,7 @@ pub fn create_node_router(engine: BosEngine, node_config: NodeConfig) -> Router 
         // Must sit inside the Extension layers so the guard can reach the engine.
         .layer(axum::middleware::from_fn(crate::auth_guard::require_session))
         .layer(Extension(engine_arc))
+        .layer(axum::extract::DefaultBodyLimit::max(16 * 1024 * 1024))
         .layer(Extension(node_config_arc))
         .layer(cors)
         .layer(TraceLayer::new_for_http());
@@ -708,6 +713,11 @@ async fn auth_login_handler(
 
         if is_emergency_allowed {
             let token = format!("bos_sess_emergency_{}", Uuid::new_v4().simple());
+            let emergency_roles = node_config
+                .as_ref()
+                .map(|c| c.security.emergency_roles.clone())
+                .unwrap_or_else(|| vec!["SUPER".to_string(), "Admin".to_string(), "Global Admin".to_string()]);
+            engine.register_emergency_session(&token, emergency_roles.clone(), std::time::Duration::from_secs(15 * 60));
             return (
                 StatusCode::OK,
                 Json(serde_json::json!({
@@ -717,7 +727,7 @@ async fn auth_login_handler(
                         "username": "emergency_admin",
                         "name": "Emergency Super Admin",
                         "email": "emergency@system.local",
-                        "roles": ["SUPER", "Admin", "Global Admin"],
+                        "roles": emergency_roles,
                         "is_emergency": true
                     },
                     "emergency_fallback": true,
@@ -863,6 +873,8 @@ async fn auth_login_handler(
             {
                 tracing::warn!("Auto fallback active: issuing emergency admin session");
                 let token = format!("bos_sess_fallback_{}", Uuid::new_v4().simple());
+                let fallback_roles = vec!["SUPER".to_string(), "Admin".to_string(), "Global Admin".to_string()];
+                engine.register_emergency_session(&token, fallback_roles.clone(), std::time::Duration::from_secs(15 * 60));
                 return (
                     StatusCode::OK,
                     Json(serde_json::json!({
@@ -1015,6 +1027,42 @@ async fn create_company_handler(
     match engine.create_company(req).await {
         Ok(c) => (StatusCode::CREATED, Json(c)).into_response(),
         Err(e) => AppError(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+}
+
+async fn clone_company_handler(
+    Extension(engine): Extension<Arc<BosEngine>>,
+    Json(req): Json<CloneCompanyRequest>,
+) -> Response {
+    match engine.clone_company(req).await {
+        Ok(c) => (StatusCode::CREATED, Json(c)).into_response(),
+        Err(e) => {
+            eprintln!("*** CLONE_COMPANY ERROR ***: {:#?}", e);
+            AppError(StatusCode::BAD_REQUEST, e.to_string()).into_response()
+        }
+    }
+}
+
+async fn drop_company_handler(
+    Extension(engine): Extension<Arc<BosEngine>>,
+    Path(code): Path<String>,
+) -> Response {
+    match engine.drop_company(&code).await {
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => {
+            eprintln!("*** DROP_COMPANY ERROR ***: {:#?}", e);
+            AppError(StatusCode::BAD_REQUEST, e.to_string()).into_response()
+        }
+    }
+}
+
+async fn schema_drift_handler(Extension(engine): Extension<Arc<BosEngine>>) -> Response {
+    match engine.check_schema_drift().await {
+        Ok(report) => (StatusCode::OK, Json(report)).into_response(),
+        Err(e) => {
+            eprintln!("*** SCHEMA_DRIFT ERROR ***: {:#?}", e);
+            AppError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+        }
     }
 }
 
@@ -1595,6 +1643,26 @@ async fn register_meta_object_handler(
     match engine.register_meta_object(req).await {
         Ok(obj) => (StatusCode::CREATED, Json(obj)).into_response(),
         Err(e) => AppError(schema_error_status(&e), e.to_string()).into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AssignFeatureRequest {
+    pub feature: Option<String>,
+}
+
+async fn assign_meta_object_feature_handler(
+    Extension(engine): Extension<Arc<BosEngine>>,
+    Path(name): Path<String>,
+    Json(req): Json<AssignFeatureRequest>,
+) -> Response {
+    match engine.assign_meta_object_feature(&name, req.feature.as_deref()).await {
+        Ok(()) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "success": true, "name": name, "feature": req.feature })),
+        )
+            .into_response(),
+        Err(e) => AppError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
 

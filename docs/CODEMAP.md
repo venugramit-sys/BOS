@@ -7,7 +7,7 @@ Keep current: update this file and the crate ARCHITECTURE.md in the same commit 
 `.bos` source -> **bosc-syntax** (lexer, parser, AST) -> **bosc-analyzer** (semantic analysis, page lowering/merge/resolve, TS strip, bytecode) -> **bosc-ir** (ModelIR, PackageBundleIR, PageIR/CompiledPageIR)
 -> **bosc-codegen-db** (PostgreSQL DDL, migrations, FKs, PL/pgSQL pushdown) and **bosc-codegen-svelte** (Svelte 5 page components)
 -> **bosc-runtime** (BosEngine, Axum API, DB manager, schema sync, packages + vault, QuickJS/WASM, events, page service/designer)
--> **bosc-cli** (`bosc` binary). UI: **ui/** (Studio, bos-ui, page-kit runtime for generated pages). Packages: **packages/** (e.g. bos.auth).
+-> **bosc-cli** (`bosc` binary). UI: **ui/** (Studio, bos-ui, page-kit runtime for generated pages). Packages: **packages/** (e.g. bos.core).
 
 ## Dependency edges (Cargo)
 - syntax: none

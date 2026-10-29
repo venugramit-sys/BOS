@@ -30,6 +30,57 @@ export const StudioApi = {
   },
 
   /**
+   * Fetches the registered packages/modules catalog.
+   */
+  async listPackages() {
+    const res = await fetch('/api/meta/packages');
+    if (!res.ok) throw new Error(`Failed to fetch packages: ${res.statusText}`);
+    return await res.json();
+  },
+
+  /**
+   * Registers a new package / module in PostgreSQL _bos_meta_packages.
+   */
+  async registerPackage(pkg) {
+    const res = await fetch('/api/meta/packages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pkg),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Failed to register package');
+    return data;
+  },
+
+  /**
+   * Registers a new meta-object in PostgreSQL _bos_meta_objects.
+   */
+  async registerMetaObject(obj) {
+    const res = await fetch('/api/meta/objects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(obj),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Failed to register meta-object');
+    return data;
+  },
+
+  /**
+   * Assigns or clears a feature on an existing meta-object.
+   */
+  async assignObjectFeature(name, feature) {
+    const res = await fetch(`/api/meta/objects/${encodeURIComponent(name)}/feature`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ feature: feature || null }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || 'Failed to assign feature');
+    return data;
+  },
+
+  /**
    * Fetches details of a specific meta-object.
    */
   async getMetaObject(name) {

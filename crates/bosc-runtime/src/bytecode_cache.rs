@@ -112,8 +112,8 @@ mod tests {
     #[test]
     fn test_load_real_bytecode_from_dir() {
         let cache = BytecodeCache::new();
-        let path = std::path::Path::new("../../dist/packages/bos.auth/bytecode");
-        let alt_path = std::path::Path::new("dist/packages/bos.auth/bytecode");
+        let path = std::path::Path::new("../../dist/packages/bos.core/bytecode");
+        let alt_path = std::path::Path::new("dist/packages/bos.core/bytecode");
         let target = if path.exists() { path } else { alt_path };
         if target.exists() {
             let loaded = cache.load_from_dir(target).expect("load from dir");

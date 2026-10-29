@@ -1,0 +1,110 @@
+Loading node configuration from 'bos-node.toml'...
+========================================================
+🚀 STARTING BOS SERVER NODE: BOS Enterprise Primary Node
+========================================================
+Node ID:          node-main-01
+Role:             AllInOne
+Listening On:     http://0.0.0.0:3000
+Database Cluster: postgres://***:***@localhost:5432/my_db
+Storage Strategy: shared_rls
+Default Tenant:   DEFAULT_TENANT
+Default Company:  MAIN_COMPANY
+UI Static Files:  ACTIVE (dir: ./ui/dist)
+NAS Batch Worker: ACTIVE
+========================================================
+Connecting BOS Engine to database...
+[2m2026-10-25T10:53:27.189445Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "storage_strategy" of relation "_bos_sys_info" already exists, skipping
+[2m2026-10-25T10:53:27.563087Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m index "idx_bos_meta_objects_ir" does not exist, skipping
+[2m2026-10-25T10:53:27.566249Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "idx_bos_meta_objects_def" already exists, skipping
+[2m2026-10-25T10:53:27.567526Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "_bos_job_queue" already exists, skipping
+[2m2026-10-25T10:53:27.567895Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "idx_bos_job_queue_status" already exists, skipping
+[2m2026-10-25T10:53:27.572461Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "_bos_schema_migrations" already exists, skipping
+[2m2026-10-25T10:53:27.574862Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "idx_bos_schema_migrations_pkg" already exists, skipping
+[2m2026-10-25T10:53:27.589499Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "_bos_event_subscribers" already exists, skipping
+[2m2026-10-25T10:53:27.590841Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "idx_bos_event_subscribers_pub_evt" already exists, skipping
+[2m2026-10-25T10:53:27.592916Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "_bos_event_outbox" already exists, skipping
+[2m2026-10-25T10:53:27.594910Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "idx_bos_event_outbox_status_created" already exists, skipping
+[2m2026-10-25T10:53:27.620384Z[0m [32m INFO[0m [2mbosc_runtime::bytecode_cache[0m[2m:[0m [BYTECODE CACHE] Loaded verified AOT bytecode: AuthConfigurationLogic (type: unknown, crc32: 0x8f1f98df)
+[2m2026-10-25T10:53:27.622870Z[0m [32m INFO[0m [2mbosc_runtime::bytecode_cache[0m[2m:[0m [BYTECODE CACHE] Loaded verified AOT bytecode: AuthManager (type: unknown, crc32: 0x4eccd5b6)
+[2m2026-10-25T10:53:27.624932Z[0m [32m INFO[0m [2mbosc_runtime::bytecode_cache[0m[2m:[0m [BYTECODE CACHE] Loaded verified AOT bytecode: package.bundle (type: unknown, crc32: 0x70798967)
+[2m2026-10-25T10:53:27.626183Z[0m [32m INFO[0m [2mbosc_runtime::bytecode_cache[0m[2m:[0m [BYTECODE CACHE] Loaded verified AOT bytecode: RoleLogic (type: unknown, crc32: 0xdb8d0e6d)
+[2m2026-10-25T10:53:27.627194Z[0m [32m INFO[0m [2mbosc_runtime::bytecode_cache[0m[2m:[0m [BYTECODE CACHE] Loaded verified AOT bytecode: SecurityAuditLogLogic (type: unknown, crc32: 0xfdf395ff)
+[2m2026-10-25T10:53:27.628406Z[0m [32m INFO[0m [2mbosc_runtime::bytecode_cache[0m[2m:[0m [BYTECODE CACHE] Loaded verified AOT bytecode: UserLogic (type: unknown, crc32: 0x075fe470)
+[2m2026-10-25T10:53:27.629519Z[0m [32m INFO[0m [2mbosc_runtime::bytecode_cache[0m[2m:[0m [BYTECODE CACHE] Loaded verified AOT bytecode: UserRoleLogic (type: unknown, crc32: 0x91b1300a)
+[2m2026-10-25T10:53:27.630581Z[0m [32m INFO[0m [2mbosc_runtime::bytecode_cache[0m[2m:[0m [BYTECODE CACHE] Loaded verified AOT bytecode: UserSecuritySettingLogic (type: unknown, crc32: 0xd9a1b46e)
+[2m2026-10-25T10:53:27.631779Z[0m [32m INFO[0m [2mbosc_runtime::bytecode_cache[0m[2m:[0m [BYTECODE CACHE] Loaded verified AOT bytecode: UserSessionLogic (type: unknown, crc32: 0x8bf6816f)
+[2m2026-10-25T10:53:27.638587Z[0m [32m INFO[0m [2mbosc_runtime::bytecode_cache[0m[2m:[0m [BYTECODE CACHE] Loaded verified AOT bytecode: package.bundle (type: unknown, crc32: 0xacf8c1dd)
+[2m2026-10-25T10:53:27.649806Z[0m [32m INFO[0m [2mbosc_runtime::bytecode_cache[0m[2m:[0m [BYTECODE CACHE] Loaded verified AOT bytecode: package.bundle (type: unknown, crc32: 0x415bc2d0)
+[2m2026-10-25T10:53:27.653312Z[0m [32m INFO[0m [2mbosc_runtime::bytecode_cache[0m[2m:[0m [BYTECODE CACHE] Loaded verified AOT bytecode: ProcurementManagement (type: unknown, crc32: 0x7343a277)
+[2m2026-10-25T10:53:27.656168Z[0m [32m INFO[0m [2mbosc_runtime::bytecode_cache[0m[2m:[0m [BYTECODE CACHE] Loaded verified AOT bytecode: PurchaseOrderHeader (type: unknown, crc32: 0x47e9a5f3)
+[2m2026-10-25T10:53:27.658910Z[0m [32m INFO[0m [2mbosc_runtime::bytecode_cache[0m[2m:[0m [BYTECODE CACHE] Loaded verified AOT bytecode: PurchaseOrderWorkflow (type: unknown, crc32: 0x8814162e)
+[2m2026-10-25T10:53:27.662284Z[0m [32m INFO[0m [2mbosc_runtime::bytecode_cache[0m[2m:[0m [BYTECODE CACHE] Loaded verified AOT bytecode: StandardPricingCalculator (type: unknown, crc32: 0x12540165)
+[2m2026-10-25T10:53:27.665515Z[0m [32m INFO[0m [2mbosc_runtime::bytecode_cache[0m[2m:[0m [BYTECODE CACHE] Loaded verified AOT bytecode: Vendor (type: unknown, crc32: 0x0bb25c40)
+[2m2026-10-25T10:53:27.667414Z[0m [32m INFO[0m [2mbosc_runtime::bytecode_cache[0m[2m:[0m [BYTECODE CACHE] Loaded verified AOT bytecode: VolumePricingCalculator (type: unknown, crc32: 0xbd3791c1)
+[2m2026-10-25T10:53:27.678147Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: User_GetById (table: User, kind: get_by_id)
+[2m2026-10-25T10:53:27.678844Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: User_Exists (table: User, kind: exists)
+[2m2026-10-25T10:53:27.680200Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: User_Insert (table: User, kind: insert)
+[2m2026-10-25T10:53:27.681616Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: User_UpdateOptimistic (table: User, kind: update_optimistic)
+[2m2026-10-25T10:53:27.682371Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: User_Delete (table: User, kind: delete)
+[2m2026-10-25T10:53:27.683748Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: User_SIFT_activeSessionCount (table: User, kind: sift_sum)
+[2m2026-10-25T10:53:27.685051Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: Role_GetById (table: Role, kind: get_by_id)
+[2m2026-10-25T10:53:27.685521Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: Role_Exists (table: Role, kind: exists)
+[2m2026-10-25T10:53:27.685918Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: Role_Insert (table: Role, kind: insert)
+[2m2026-10-25T10:53:27.686399Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: Role_UpdateOptimistic (table: Role, kind: update_optimistic)
+[2m2026-10-25T10:53:27.686723Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: Role_Delete (table: Role, kind: delete)
+[2m2026-10-25T10:53:27.687000Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: Role_SIFT_assignedUsersCount (table: Role, kind: sift_sum)
+[2m2026-10-25T10:53:27.687269Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: UserRole_GetById (table: UserRole, kind: get_by_id)
+[2m2026-10-25T10:53:27.687769Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: UserRole_Exists (table: UserRole, kind: exists)
+[2m2026-10-25T10:53:27.688079Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: UserRole_Insert (table: UserRole, kind: insert)
+[2m2026-10-25T10:53:27.688350Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: UserRole_UpdateOptimistic (table: UserRole, kind: update_optimistic)
+[2m2026-10-25T10:53:27.689286Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: UserRole_Delete (table: UserRole, kind: delete)
+[2m2026-10-25T10:53:27.689645Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: UserSession_GetById (table: UserSession, kind: get_by_id)
+[2m2026-10-25T10:53:27.689923Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: UserSession_Exists (table: UserSession, kind: exists)
+[2m2026-10-25T10:53:27.690192Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: UserSession_Insert (table: UserSession, kind: insert)
+[2m2026-10-25T10:53:27.691038Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: UserSession_UpdateOptimistic (table: UserSession, kind: update_optimistic)
+[2m2026-10-25T10:53:27.691289Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: UserSession_Delete (table: UserSession, kind: delete)
+[2m2026-10-25T10:53:27.691563Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: UserSecuritySetting_GetById (table: UserSecuritySetting, kind: get_by_id)
+[2m2026-10-25T10:53:27.691842Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: UserSecuritySetting_Exists (table: UserSecuritySetting, kind: exists)
+[2m2026-10-25T10:53:27.692126Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: UserSecuritySetting_Insert (table: UserSecuritySetting, kind: insert)
+[2m2026-10-25T10:53:27.692413Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: UserSecuritySetting_UpdateOptimistic (table: UserSecuritySetting, kind: update_optimistic)
+[2m2026-10-25T10:53:27.692692Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: UserSecuritySetting_Delete (table: UserSecuritySetting, kind: delete)
+[2m2026-10-25T10:53:27.692963Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: SecurityAuditLog_GetById (table: SecurityAuditLog, kind: get_by_id)
+[2m2026-10-25T10:53:27.693236Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: SecurityAuditLog_Exists (table: SecurityAuditLog, kind: exists)
+[2m2026-10-25T10:53:27.693794Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: SecurityAuditLog_Insert (table: SecurityAuditLog, kind: insert)
+[2m2026-10-25T10:53:27.695802Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: SecurityAuditLog_UpdateOptimistic (table: SecurityAuditLog, kind: update_optimistic)
+[2m2026-10-25T10:53:27.696510Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: SecurityAuditLog_Delete (table: SecurityAuditLog, kind: delete)
+[2m2026-10-25T10:53:27.697812Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: AuthConfiguration_GetById (table: AuthConfiguration, kind: get_by_id)
+[2m2026-10-25T10:53:27.699738Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: AuthConfiguration_Exists (table: AuthConfiguration, kind: exists)
+[2m2026-10-25T10:53:27.700887Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: AuthConfiguration_Insert (table: AuthConfiguration, kind: insert)
+[2m2026-10-25T10:53:27.701756Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: AuthConfiguration_UpdateOptimistic (table: AuthConfiguration, kind: update_optimistic)
+[2m2026-10-25T10:53:27.702891Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: AuthConfiguration_Delete (table: AuthConfiguration, kind: delete)
+[2m2026-10-25T10:53:27.705249Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: User_GetById (table: User, kind: get_by_id)
+[2m2026-10-25T10:53:27.705831Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: User_Exists (table: User, kind: exists)
+[2m2026-10-25T10:53:27.706159Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: User_Insert (table: User, kind: insert)
+[2m2026-10-25T10:53:27.706464Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: User_UpdateOptimistic (table: User, kind: update_optimistic)
+[2m2026-10-25T10:53:27.706731Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: User_Delete (table: User, kind: delete)
+[2m2026-10-25T10:53:27.710704Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: Vendor_GetById (table: Vendor, kind: get_by_id)
+[2m2026-10-25T10:53:27.711413Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: Vendor_Exists (table: Vendor, kind: exists)
+[2m2026-10-25T10:53:27.712432Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: Vendor_Insert (table: Vendor, kind: insert)
+[2m2026-10-25T10:53:27.712783Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: Vendor_UpdateOptimistic (table: Vendor, kind: update_optimistic)
+[2m2026-10-25T10:53:27.713069Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: Vendor_Delete (table: Vendor, kind: delete)
+[2m2026-10-25T10:53:27.713341Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: PurchaseOrderHeader_GetById (table: PurchaseOrderHeader, kind: get_by_id)
+[2m2026-10-25T10:53:27.713894Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: PurchaseOrderHeader_Exists (table: PurchaseOrderHeader, kind: exists)
+[2m2026-10-25T10:53:27.715398Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: PurchaseOrderHeader_Insert (table: PurchaseOrderHeader, kind: insert)
+[2m2026-10-25T10:53:27.715867Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: PurchaseOrderHeader_UpdateOptimistic (table: PurchaseOrderHeader, kind: update_optimistic)
+[2m2026-10-25T10:53:27.716166Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: PurchaseOrderHeader_Delete (table: PurchaseOrderHeader, kind: delete)
+[2m2026-10-25T10:53:27.716565Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: PurchaseOrderLine_GetById (table: PurchaseOrderLine, kind: get_by_id)
+[2m2026-10-25T10:53:27.716840Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: PurchaseOrderLine_Exists (table: PurchaseOrderLine, kind: exists)
+[2m2026-10-25T10:53:27.717663Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: PurchaseOrderLine_Insert (table: PurchaseOrderLine, kind: insert)
+[2m2026-10-25T10:53:27.718172Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: PurchaseOrderLine_UpdateOptimistic (table: PurchaseOrderLine, kind: update_optimistic)
+[2m2026-10-25T10:53:27.718494Z[0m [32m INFO[0m [2mbosc_runtime::prepared_statement_registry[0m[2m:[0m [PREPARED STMTS] Registered AOT query: PurchaseOrderLine_Delete (table: PurchaseOrderLine, kind: delete)
+Resolving pages (artifacts: ./data/page-artifacts, compiler: ./ui/dist\bos-runtime)...
+[2m2026-10-25T10:53:27.720013Z[0m [32m INFO[0m [2mbosc_runtime::nas_worker[0m[2m:[0m 🚀 Navision Application Server (NAS) background worker started (poll: 1000ms, batch: 50)
+[2m2026-10-25T10:53:27.723496Z[0m [32m INFO[0m [2mbosc_runtime::nas_worker[0m[2m:[0m ⚡ NAS worker registered LISTEN on bos_event_outbox_channel (zero-latency event wakeups enabled)
+[2m2026-10-25T10:53:30.581950Z[0m [32m INFO[0m [2mbos::pages[0m[2m:[0m Svelte page compiler ready [3msvelte[0m[2m=[0m5.57.1 [3mworkers[0m[2m=[0m4
+[2m2026-10-25T10:53:30.785002Z[0m [32m INFO[0m [2mbos::pages[0m[2m:[0m page catalog resolved [3mpages[0m[2m=[0m13 [3mdb[0m[2m=[0mba670d256aa822f7
+✓ Page service ready (4 compiler workers).
+[2m2026-10-25T10:53:30.788502Z[0m [32m INFO[0m [2mbos::pages[0m[2m:[0m page artifacts warmed [3mcompiled[0m[2m=[0m0 [3mfailures[0m[2m=[0m0 [3mremoved[0m[2m=[0m0
+✓ Server Node ready. Clients can connect with just User ID & Password.
+Press Ctrl+C to stop the server node.
+

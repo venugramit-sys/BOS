@@ -52,10 +52,11 @@ pub enum PageType {
     Api,
     Board,
     Timeline,
+    Custom,
 }
 
 impl PageType {
-    pub const ALL: [PageType; 13] = [
+    pub const ALL: [PageType; 14] = [
         PageType::Card,
         PageType::List,
         PageType::Document,
@@ -69,6 +70,7 @@ impl PageType {
         PageType::Api,
         PageType::Board,
         PageType::Timeline,
+        PageType::Custom,
     ];
 
     /// Parses an authored page type, accepting the legacy designer layout names as aliases.
@@ -87,6 +89,7 @@ impl PageType {
             "api" => PageType::Api,
             "board" | "kanban" => PageType::Board,
             "timeline" => PageType::Timeline,
+            "custom" | "portal" | "canvas" | "blank" | "page" => PageType::Custom,
             _ => return None,
         })
     }
@@ -106,6 +109,7 @@ impl PageType {
             PageType::Api => "Api",
             PageType::Board => "Board",
             PageType::Timeline => "Timeline",
+            PageType::Custom => "Custom",
         }
     }
 
@@ -134,11 +138,12 @@ impl PageType {
         match kind {
             K::Other(_) => false,
             k if k.is_directive() => true,
-            K::Repeater => self.is_list_like() || matches!(self, PageType::Document | PageType::NavigatePage | PageType::Api),
-            K::CueGroup | K::Cue => matches!(self, PageType::RoleCenter | PageType::CardPart),
-            K::WizardStep => matches!(self, PageType::NavigatePage),
-            K::Part | K::SystemPart => !self.is_part() || matches!(self, PageType::CardPart),
-            K::Headline => matches!(self, PageType::RoleCenter),
+            K::Action => true,
+            K::Repeater => self.is_list_like() || matches!(self, PageType::Document | PageType::NavigatePage | PageType::Api | PageType::Custom),
+            K::CueGroup | K::Cue => matches!(self, PageType::RoleCenter | PageType::CardPart | PageType::Custom),
+            K::WizardStep => matches!(self, PageType::NavigatePage | PageType::Custom),
+            K::Part | K::SystemPart => !self.is_part() || matches!(self, PageType::CardPart | PageType::Custom),
+            K::Headline => matches!(self, PageType::RoleCenter | PageType::Custom),
             _ => true,
         }
     }
@@ -177,6 +182,13 @@ pub enum PageControlKind {
     Card,
     WizardStep,
     Container,
+    Section,
+    Header,
+    Footer,
+    Nav,
+    Aside,
+    Article,
+    Action,
     AddFirst,
     AddLast,
     AddBefore,
@@ -197,7 +209,13 @@ impl PageControlKind {
         use PageControlKind as K;
         match normalize_key(raw).as_str() {
             "area" | "region" | "regions" => K::Area,
-            "group" | "section" | "fasttab" | "accordion" | "panel" | "header" | "footer" | "main" | "side" | "content" => K::Group,
+            "section" => K::Section,
+            "header" => K::Header,
+            "footer" => K::Footer,
+            "nav" | "navbar" => K::Nav,
+            "aside" | "sidebar" => K::Aside,
+            "article" => K::Article,
+            "group" | "fasttab" | "accordion" | "panel" | "main" | "side" | "content" => K::Group,
             "grid" | "columns" | "column" | "bento" => K::Grid,
             "fixed" => K::Fixed,
             "repeater" | "lines" | "kanban" => K::Repeater,
@@ -212,6 +230,7 @@ impl PageControlKind {
             "cue" | "tile" => K::Cue,
             "headline" => K::Headline,
             "usercontrol" | "chart" => K::UserControl,
+            "action" | "button" | "cta" => K::Action,
             "tabs" => K::Tabs,
             "tab" => K::Tab,
             "flex" | "stack" => K::Flex,
@@ -261,6 +280,13 @@ impl PageControlKind {
             K::Card => "card",
             K::WizardStep => "wizardstep",
             K::Container => "container",
+            K::Section => "section",
+            K::Header => "header",
+            K::Footer => "footer",
+            K::Nav => "nav",
+            K::Aside => "aside",
+            K::Article => "article",
+            K::Action => "action",
             K::AddFirst => "addFirst",
             K::AddLast => "addLast",
             K::AddBefore => "addBefore",
@@ -302,7 +328,25 @@ impl PageControlKind {
         use PageControlKind as K;
         matches!(
             self,
-            K::Area | K::Group | K::Grid | K::Fixed | K::Repeater | K::CueGroup | K::Tabs | K::Tab | K::Flex | K::Split | K::Card | K::WizardStep | K::Container
+            K::Area
+                | K::Group
+                | K::Section
+                | K::Header
+                | K::Footer
+                | K::Nav
+                | K::Aside
+                | K::Article
+                | K::Grid
+                | K::Fixed
+                | K::Repeater
+                | K::CueGroup
+                | K::Tabs
+                | K::Tab
+                | K::Flex
+                | K::Split
+                | K::Card
+                | K::WizardStep
+                | K::Container
         )
     }
 
@@ -557,10 +601,94 @@ pub struct PageStyleIR {
     /// Lucide icon name in kebab-case (`receipt`, `truck`, `user-minus`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// Icon size (e.g. "xs", "sm", "md", "lg", "xl", "2xl", "16px", "24px").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_size: Option<String>,
+    /// Icon color (token or hex "#rrggbb").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_color: Option<ColorValue>,
+    /// Icon background color (token or hex "#rrggbb").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_background: Option<ColorValue>,
+    /// Icon shape / corner radius.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_radius: Option<Radius>,
+    /// Font size (e.g. "sm", "md", "lg", "xl", "14px", "18px", "24px").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_size: Option<String>,
+    /// Font weight (e.g. "normal", "medium", "semibold", "bold", "600", "700").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_weight: Option<String>,
+    /// Text alignment ("left", "center", "right", "justify").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_align: Option<String>,
+    /// Letter spacing (e.g. "-0.5px", "0px", "1px").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub letter_spacing: Option<String>,
+    /// Line height (e.g. "1.2", "1.5", "24px", "32px").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_height: Option<String>,
+    /// Text transform ("none", "uppercase", "lowercase", "capitalize").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_transform: Option<String>,
+    /// Text decoration ("none", "underline", "line-through").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_decoration: Option<String>,
+    /// Border style ("solid", "dashed", "dotted", "none").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub border_style: Option<String>,
+    /// Padding box spacing (e.g. "8px", "12px 16px", "8px 12px 8px 12px").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub padding: Option<String>,
+    /// Margin box spacing (e.g. "0px", "8px", "16px 0").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub margin: Option<String>,
+    /// Flex or Grid gap spacing (e.g. "4px", "8px", "16px").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gap: Option<String>,
+    /// Explicit width (e.g. "100%", "auto", "320px").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<String>,
+    /// Maximum width (e.g. "40rem", "640px", "100%").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_width: Option<String>,
+    /// Minimum width (e.g. "0", "280px").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_width: Option<String>,
+    /// Explicit height (e.g. "auto", "100%", "300px").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<String>,
+    /// Minimum height (e.g. "6rem", "200px").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_height: Option<String>,
+    /// Maximum height (e.g. "500px", "80vh").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_height: Option<String>,
+    /// Opacity (0.0 to 1.0, e.g. "0.8").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opacity: Option<String>,
+    /// Overflow behaviour ("visible", "hidden", "auto", "scroll").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overflow: Option<String>,
+    /// CSS display ("block", "flex", "grid", "inline-flex", "none").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display: Option<String>,
+    /// Flex justify content ("start", "center", "end", "between", "around", "evenly").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub justify_content: Option<String>,
+    /// Flex align items ("start", "center", "end", "stretch", "baseline").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub align_items: Option<String>,
+    /// Flex direction ("row", "column", "row-reverse", "column-reverse").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flex_direction: Option<String>,
+    /// Flex wrap ("wrap", "nowrap", "wrap-reverse").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flex_wrap: Option<String>,
 }
 
 impl PageStyleIR {
-    pub const MAX_BORDER_WIDTH: u8 = 4;
+    pub const MAX_BORDER_WIDTH: u8 = 8;
 
     pub fn is_empty(&self) -> bool {
         self == &PageStyleIR::default()
@@ -594,6 +722,90 @@ impl PageStyleIR {
         }
         if other.icon.is_some() {
             self.icon = other.icon.clone();
+        }
+        if other.icon_size.is_some() {
+            self.icon_size = other.icon_size.clone();
+        }
+        if other.icon_color.is_some() {
+            self.icon_color = other.icon_color.clone();
+        }
+        if other.icon_background.is_some() {
+            self.icon_background = other.icon_background.clone();
+        }
+        if other.icon_radius.is_some() {
+            self.icon_radius = other.icon_radius;
+        }
+        if other.font_size.is_some() {
+            self.font_size = other.font_size.clone();
+        }
+        if other.font_weight.is_some() {
+            self.font_weight = other.font_weight.clone();
+        }
+        if other.text_align.is_some() {
+            self.text_align = other.text_align.clone();
+        }
+        if other.letter_spacing.is_some() {
+            self.letter_spacing = other.letter_spacing.clone();
+        }
+        if other.line_height.is_some() {
+            self.line_height = other.line_height.clone();
+        }
+        if other.text_transform.is_some() {
+            self.text_transform = other.text_transform.clone();
+        }
+        if other.text_decoration.is_some() {
+            self.text_decoration = other.text_decoration.clone();
+        }
+        if other.border_style.is_some() {
+            self.border_style = other.border_style.clone();
+        }
+        if other.padding.is_some() {
+            self.padding = other.padding.clone();
+        }
+        if other.margin.is_some() {
+            self.margin = other.margin.clone();
+        }
+        if other.gap.is_some() {
+            self.gap = other.gap.clone();
+        }
+        if other.width.is_some() {
+            self.width = other.width.clone();
+        }
+        if other.max_width.is_some() {
+            self.max_width = other.max_width.clone();
+        }
+        if other.min_width.is_some() {
+            self.min_width = other.min_width.clone();
+        }
+        if other.height.is_some() {
+            self.height = other.height.clone();
+        }
+        if other.min_height.is_some() {
+            self.min_height = other.min_height.clone();
+        }
+        if other.max_height.is_some() {
+            self.max_height = other.max_height.clone();
+        }
+        if other.opacity.is_some() {
+            self.opacity = other.opacity.clone();
+        }
+        if other.overflow.is_some() {
+            self.overflow = other.overflow.clone();
+        }
+        if other.display.is_some() {
+            self.display = other.display.clone();
+        }
+        if other.justify_content.is_some() {
+            self.justify_content = other.justify_content.clone();
+        }
+        if other.align_items.is_some() {
+            self.align_items = other.align_items.clone();
+        }
+        if other.flex_direction.is_some() {
+            self.flex_direction = other.flex_direction.clone();
+        }
+        if other.flex_wrap.is_some() {
+            self.flex_wrap = other.flex_wrap.clone();
         }
     }
 }

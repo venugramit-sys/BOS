@@ -38,5 +38,6 @@ export { default as Repeater } from "./Repeater.svelte";
 export { default as Tabs } from "./Tabs.svelte";
 export { default as Split } from "./Split.svelte";
 export { default as WizardSteps } from "./WizardSteps.svelte";
+export { default as Action } from "./Action.svelte";
 export { default as Icon } from "./Icon.svelte";
 export { default as PageHost } from "./PageHost.svelte";

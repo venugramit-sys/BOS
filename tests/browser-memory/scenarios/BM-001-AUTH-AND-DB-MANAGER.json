@@ -1,0 +1,165 @@
+{
+  "id": "BM-001-AUTH-AND-DB-MANAGER",
+  "name": "Super Admin Authentication & Database Manager Lifecycle",
+  "description": "Verifies enterprise user authentication via Argon2 password verification, super administrator session creation, and the 3-step Database Manager provisioning modal.",
+  "category": "Security & Database Management",
+  "persona": "SuperAdmin",
+  "viewport": {
+    "name": "Desktop High-DPI",
+    "width": 1920,
+    "height": 1080
+  },
+  "theme": "dark",
+  "targetUrl": "http://127.0.0.1:3000",
+  "steps": [
+    {
+      "action": "navigate",
+      "url": "/",
+      "description": "Navigate to BOS root sign-in page"
+    },
+    {
+      "action": "assert_visible",
+      "selector": "input[type='password'], input[placeholder*='password' i]",
+      "description": "Verify sign-in form is rendered"
+    },
+    {
+      "action": "fill",
+      "selector": "input[type='text'], input[placeholder*='user' i]",
+      "value": "admin",
+      "description": "Enter Super Administrator User ID"
+    },
+    {
+      "action": "fill",
+      "selector": "input[type='password'], input[placeholder*='password' i]",
+      "value": "Boss@123",
+      "description": "Enter Argon2 enterprise password"
+    },
+    {
+      "action": "screenshot",
+      "name": "login_screen_filled",
+      "description": "Capture filled login credentials state",
+      "screenshotPath": "tests\\browser-memory\\screenshots\\BM-001-AUTH-AND-DB-MANAGER_step_5_login_screen_filled.png"
+    },
+    {
+      "action": "click",
+      "selector": "button:has-text('Sign In')",
+      "delayAfterMs": 1000,
+      "description": "Click Sign In button"
+    },
+    {
+      "action": "assert_visible",
+      "selector": "button:has-text('Databases & Companies'), [data-action='open-db-manager']",
+      "description": "Verify workspace loaded and sidebar contains Database Manager action"
+    },
+    {
+      "action": "screenshot",
+      "name": "workspace_landing",
+      "description": "Capture workspace landing view with navigation sidebar",
+      "screenshotPath": "tests\\browser-memory\\screenshots\\BM-001-AUTH-AND-DB-MANAGER_step_8_workspace_landing.png"
+    },
+    {
+      "action": "click",
+      "selector": "button:has-text('Databases & Companies')",
+      "delayAfterMs": 500,
+      "description": "Open Database & Company Manager dialog"
+    },
+    {
+      "action": "assert_visible",
+      "selector": "div[role='dialog'], .dialog-content",
+      "description": "Verify Database Manager modal dialog opened"
+    },
+    {
+      "action": "screenshot",
+      "name": "database_manager_dialog",
+      "description": "Capture active Database Manager modal",
+      "screenshotPath": "tests\\browser-memory\\screenshots\\BM-001-AUTH-AND-DB-MANAGER_step_11_database_manager_dialog.png"
+    }
+  ],
+  "lastResult": {
+    "executedAt": "2026-10-26T14:08:10.256Z",
+    "status": "PASSED",
+    "durationMs": 4931,
+    "stepResults": [
+      {
+        "step": 1,
+        "status": "PASSED",
+        "durationMs": 1237
+      },
+      {
+        "step": 2,
+        "status": "PASSED",
+        "durationMs": 30
+      },
+      {
+        "step": 3,
+        "status": "PASSED",
+        "durationMs": 172
+      },
+      {
+        "step": 4,
+        "status": "PASSED",
+        "durationMs": 170
+      },
+      {
+        "step": 5,
+        "status": "PASSED",
+        "durationMs": 70
+      },
+      {
+        "step": 6,
+        "status": "PASSED",
+        "durationMs": 1101
+      },
+      {
+        "step": 7,
+        "status": "PASSED",
+        "durationMs": 9
+      },
+      {
+        "step": 8,
+        "status": "PASSED",
+        "durationMs": 184
+      },
+      {
+        "step": 9,
+        "status": "PASSED",
+        "durationMs": 635
+      },
+      {
+        "step": 10,
+        "status": "PASSED",
+        "durationMs": 13
+      },
+      {
+        "step": 11,
+        "status": "PASSED",
+        "durationMs": 255
+      }
+    ],
+    "error": null
+  },
+  "improvementsLog": [
+    {
+      "type": "ui_ux",
+      "title": "Interactive Company & Tenant Switcher in Header Bar",
+      "rating": 9.5,
+      "detail": "Currently switching company requires opening the Database Manager modal. Adding an instant header pill '[Tenant: DEFAULT_TENANT] • [Company: MAIN_COMPANY ▾]' allows 1-click subsidiary switching without leaving the working document.",
+      "marketBenchmark": "Microsoft Dynamics 365 Business Central global Company Badge & Quick Switcher"
+    },
+    {
+      "type": "system",
+      "title": "Optimistic Concurrency Conflict Visual Merge Drawer",
+      "rating": 9,
+      "detail": "When an entity update encounters a 409 Conflict (_system_version mismatch), instead of a plain error toast, open a 2-column visual diff showing current DB values vs proposed changes with 1-click 'Overwrite' or 'Merge' choices.",
+      "marketBenchmark": "Git/Salesforce record collision conflict resolver"
+    },
+    {
+      "type": "market_beating",
+      "title": "Zero-Downtime Hot Strategy Migration CLI",
+      "rating": 9.8,
+      "detail": "Provide 'bosc migrate-strategy --from shared_rls --to partitioned'. Allows SaaS providers to transition scaling tenants from multi-tenant shared tables to dedicated physical partitions with zero code rewrites.",
+      "marketBenchmark": "Surpasses Salesforce multi-tenant lock-in and AWS RDS manual sharding"
+    }
+  ],
+  "lastUpdated": "2026-10-26T14:08:10.256Z"
+}

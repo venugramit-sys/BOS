@@ -325,6 +325,20 @@ async fn page_service_end_to_end() {
     assert!(edited["model"]["pages"].as_array().unwrap().iter().any(|p| p["name"] == "CustomerCard"));
     assert_eq!(call(post_json("/api/v1/pages/edit", "Clerk", edit)).await.status(), StatusCode::FORBIDDEN);
 
+    let edit_style = serde_json::json!({
+        "source": PACKAGE,
+        "page": "CustomerCard",
+        "ops": [
+            { "op": "setProperty", "path": "page", "name": "margin", "value": "\"16px\"", "block": "style" },
+            { "op": "setProperty", "path": "page", "name": "padding", "value": "\"24px\"", "block": "style" },
+            { "op": "setProperty", "path": "area:Content/group:General/field:name", "name": "margin", "value": "\"8px\"", "block": "style" }
+        ],
+    });
+    let res = call(post_json("/api/v1/pages/edit", "Admin", edit_style)).await;
+    assert_eq!(res.status(), StatusCode::OK);
+    let edited_style = json_of(res).await;
+    assert!(edited_style["error"].is_null(), "edit with margin and padding should not produce error: {:?}", edited_style["error"]);
+
     let changes = serde_json::json!({ "changes": {
         "controls": [{ "name": "name", "caption": "Client Name", "style": { "emphasis": "Strong", "background": "#fff7ed" } }],
         "actions": [{ "name": "Risky", "visible": false }],

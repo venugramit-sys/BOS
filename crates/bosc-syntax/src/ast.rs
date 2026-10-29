@@ -313,6 +313,8 @@ pub struct TablePermissionDef {
     pub table_name: String,
     pub actions: Vec<PermissionAction>,
     pub row_filter: Option<Expr>,
+    #[serde(default)]
+    pub exclude_fields: Vec<String>,
     pub span: Span,
 }
 

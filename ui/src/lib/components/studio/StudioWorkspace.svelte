@@ -18,7 +18,9 @@
     Play,
     Database,
     Menu,
+    Zap,
   } from "lucide-svelte";
+  import { pageManifest } from "$lib/page-kit/loader.svelte.js";
   import { shell } from "$lib/components/shell/index.js";
   import {
     Menubar,
@@ -33,6 +35,8 @@
   } from "$lib/bos-ui/index.js";
   import NavigationPane from "./NavigationPane.svelte";
   import NewObjectModal from "./NewObjectModal.svelte";
+  import ArchitectureModal from "./ArchitectureModal.svelte";
+  import ArchitectureDetailCard from "./ArchitectureDetailCard.svelte";
   import TableDesigner from "./designers/TableDesigner.svelte";
   import QueryDesigner from "./designers/QueryDesigner.svelte";
   import PageDesigner from "./designers/PageDesigner.svelte";
@@ -92,16 +96,34 @@
     }))
   );
 
+  let activePageActions = $derived.by(() => {
+    if (currentTab?.type !== "page") return [];
+    const pMeta = pageManifest.manifest?.pages?.[currentTab.title];
+    return pMeta?.actions ?? [];
+  });
+
   let commands = $derived([
+    ...(activePageActions.length > 0 ? [{
+      heading: `Page Actions (${currentTab.title})`,
+      items: activePageActions.map((a) => ({
+        id: `page-action-${a.name}`,
+        label: `${a.caption || a.name} · ${a.area || "Processing"}`,
+        keywords: [a.name, a.area || "", a.group || "", "action", "run", "page"],
+        icon: Zap,
+        action: () => {
+          window.dispatchEvent(new CustomEvent("bos:execute-page-action", { detail: { name: a.name } }));
+        }
+      }))
+    }] : []),
     {
       heading: "Commands",
       items: [
         {
           id: "new-object",
-          label: "New meta-object",
+          label: "Add Architecture Component (Module, Feature, Object)...",
           shortcut: "Ctrl+N",
           icon: Plus,
-          action: () => (studioStore.isNewObjectModalOpen = true),
+          action: () => studioStore.openArchitectureModal("module"),
         },
         {
           id: "relationships",
@@ -134,7 +156,7 @@
       id: "file",
       label: "File",
       items: [
-        MenuHelpers.item("New Meta-Object...", () => (studioStore.isNewObjectModalOpen = true), {
+        MenuHelpers.item("New Architecture Component...", () => studioStore.openArchitectureModal("module"), {
           icon: Plus,
           shortcut: "Ctrl+N",
         }),
@@ -447,6 +469,8 @@
 
 <ToastViewport />
 <CommandPalette bind:open={paletteOpen} groups={commands} recentKey="bos.studio.recent" />
+<ArchitectureModal />
+<ArchitectureDetailCard />
 <NewObjectModal />
 <RelationshipsViewer bind:isOpen={studioStore.isRelationshipsOpen} />
 

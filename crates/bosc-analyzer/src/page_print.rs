@@ -102,6 +102,90 @@ fn style_entries(style: &PageStyleIR) -> Vec<String> {
     if let Some(i) = &style.icon {
         v.push(format!("icon = {};", quote(i)));
     }
+    if let Some(s) = &style.icon_size {
+        v.push(format!("iconSize = {};", quote(s)));
+    }
+    if let Some(c) = &style.icon_color {
+        v.push(format!("iconColor = {};", color(c)));
+    }
+    if let Some(c) = &style.icon_background {
+        v.push(format!("iconBackground = {};", color(c)));
+    }
+    if let Some(r) = style.icon_radius {
+        v.push(format!("iconRadius = {};", r.as_str()));
+    }
+    if let Some(s) = &style.font_size {
+        v.push(format!("fontSize = {};", quote(s)));
+    }
+    if let Some(w) = &style.font_weight {
+        v.push(format!("fontWeight = {};", quote(w)));
+    }
+    if let Some(a) = &style.text_align {
+        v.push(format!("textAlign = {};", quote(a)));
+    }
+    if let Some(ls) = &style.letter_spacing {
+        v.push(format!("letterSpacing = {};", quote(ls)));
+    }
+    if let Some(lh) = &style.line_height {
+        v.push(format!("lineHeight = {};", quote(lh)));
+    }
+    if let Some(tt) = &style.text_transform {
+        v.push(format!("textTransform = {};", quote(tt)));
+    }
+    if let Some(td) = &style.text_decoration {
+        v.push(format!("textDecoration = {};", quote(td)));
+    }
+    if let Some(bs) = &style.border_style {
+        v.push(format!("borderStyle = {};", quote(bs)));
+    }
+    if let Some(p) = &style.padding {
+        v.push(format!("padding = {};", quote(p)));
+    }
+    if let Some(m) = &style.margin {
+        v.push(format!("margin = {};", quote(m)));
+    }
+    if let Some(g) = &style.gap {
+        v.push(format!("gap = {};", quote(g)));
+    }
+    if let Some(w) = &style.width {
+        v.push(format!("width = {};", quote(w)));
+    }
+    if let Some(mw) = &style.max_width {
+        v.push(format!("maxWidth = {};", quote(mw)));
+    }
+    if let Some(minw) = &style.min_width {
+        v.push(format!("minWidth = {};", quote(minw)));
+    }
+    if let Some(h) = &style.height {
+        v.push(format!("height = {};", quote(h)));
+    }
+    if let Some(minh) = &style.min_height {
+        v.push(format!("minHeight = {};", quote(minh)));
+    }
+    if let Some(maxh) = &style.max_height {
+        v.push(format!("maxHeight = {};", quote(maxh)));
+    }
+    if let Some(op) = &style.opacity {
+        v.push(format!("opacity = {};", quote(op)));
+    }
+    if let Some(ov) = &style.overflow {
+        v.push(format!("overflow = {};", quote(ov)));
+    }
+    if let Some(disp) = &style.display {
+        v.push(format!("display = {};", quote(disp)));
+    }
+    if let Some(jc) = &style.justify_content {
+        v.push(format!("justifyContent = {};", quote(jc)));
+    }
+    if let Some(ai) = &style.align_items {
+        v.push(format!("alignItems = {};", quote(ai)));
+    }
+    if let Some(fd) = &style.flex_direction {
+        v.push(format!("flexDirection = {};", quote(fd)));
+    }
+    if let Some(fw) = &style.flex_wrap {
+        v.push(format!("flexWrap = {};", quote(fw)));
+    }
     v
 }
 

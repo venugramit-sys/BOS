@@ -142,3 +142,12 @@ test("captions and required checks", () => {
   assert.deepEqual(missingRequired(C, { no: "" }, { note: "" }), ["No", "Note"]);
   assert.deepEqual(missingRequired(C, { no: "C1" }, { note: "x" }), []);
 });
+
+test("custom unbound page loads cleanly and handles action properties", () => {
+  const meta = { name: "CustomDashboard", page_type: "Custom", caption: "Operations Dashboard", properties: { showHeader: "false" } };
+  const action = { name: "DownloadReport", caption: "Download Report", properties: { primary: "true", openPage: "ReportViewer" } };
+  assert.equal(meta.page_type, "Custom");
+  assert.equal(meta.properties.showHeader, "false");
+  assert.equal(action.properties.primary, "true");
+  assert.equal(action.properties.openPage, "ReportViewer");
+});

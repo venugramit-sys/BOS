@@ -72,6 +72,39 @@
     } else if (event.key === " " && selectable) {
       event.preventDefault();
       toggle(row);
+    } else if (event.key === "F8" && index > 0) {
+      event.preventDefault();
+      const prevRow = p.rows[index - 1];
+      if (prevRow) {
+        cols.forEach((col) => {
+          if (p.editable(col, row)) {
+            const val = p.valueOf(col.field, prevRow);
+            if (val !== undefined && val !== null) {
+              p.commit(col, val, row);
+            }
+          }
+        });
+      }
+    }
+  }
+
+  function onTablePaste(event) {
+    if (p.design || !p.meta.insert_allowed) return;
+    const text = event.clipboardData?.getData("text/plain");
+    if (!text) return;
+    const lines = text.trim().split(/\r?\n/).map((l) => l.split("\t"));
+    if (lines.length <= 1 && (lines[0]?.length ?? 0) <= 1) return;
+
+    event.preventDefault();
+    for (const line of lines) {
+      if (line.length === 0 || (line.length === 1 && !line[0].trim())) continue;
+      p.newRecord();
+      const newRow = p.rows[p.rows.length - 1];
+      cols.forEach((col, idx) => {
+        if (line[idx] !== undefined && p.editable(col, newRow)) {
+          p.commit(col, line[idx].trim(), newRow);
+        }
+      });
     }
   }
 
@@ -229,14 +262,14 @@
       {:else}
         <!-- table (sm and up) -->
         <div class="bos-table-wrap">
-          <table class="bos-table">
+          <table class="bos-table" onpaste={onTablePaste}>
             <thead>
               <tr>
                 {#if selectable}
                   <th class="w-8"><Checkbox checked={allSelected} onCheckedChange={toggleAll} aria-label="Select all" /></th>
                 {/if}
                 {#each cols as col (col.i)}
-                  <th class={col.field.control === "number" ? "text-right" : ""} {...nodeAttrs(p, col)} aria-sort={sortKey === col.field.key ? (sortDir === "desc" ? "descending" : "ascending") : undefined}>
+                  <th class={col.field.control === "number" ? "text-right" : ""} data-bos-col={col.field.key} {...nodeAttrs(p, col)} aria-sort={sortKey === col.field.key ? (sortDir === "desc" ? "descending" : "ascending") : undefined}>
                     {#if sortable(col) && !p.design}
                       <button type="button" class="bos-th-sort" onclick={() => p.setSort(col.field.key)}>
                         {col.caption ?? col.name}
@@ -258,6 +291,8 @@
               {#each p.rows as row, index (row._id)}
                 <tr
                   class={p.currentId === row._id ? "is-current" : ""}
+                  data-bos-row-id={row._id}
+                  data-bos-row-index={index}
                   tabindex="0"
                   aria-selected={p.currentId === row._id}
                   onclick={() => (p.currentId = row._id)}
@@ -268,7 +303,7 @@
                     <td><Checkbox checked={p.selected.includes(row._id)} onCheckedChange={() => toggle(row)} aria-label="Select row" /></td>
                   {/if}
                   {#each cols as col, ci (col.i)}
-                    <td class={col.field.control === "number" ? "text-right bos-num" : ""}>
+                    <td class={col.field.control === "number" ? "text-right bos-num" : ""} data-bos-col={col.field.key}>
                       {#if inlineEdit(row) && p.editable(col, row)}
                         <FieldInput {p} c={col} {row} compact label={col.caption ?? col.name} />
                       {:else if ci === 0 && p.meta.card_page && !row._new && !p.design}

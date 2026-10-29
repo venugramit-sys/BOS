@@ -575,8 +575,10 @@ fn lowering_keeps_v2_properties_and_legacy_hints() {
 /// Keeps docs/17 honest: its authoring examples must compile without page errors.
 #[test]
 fn documentation_examples_compile() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/17_page_compiler_and_designer.md");
-    let doc = std::fs::read_to_string(path).expect("docs/17");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let doc = std::fs::read_to_string(root.join("docs/17_page_compiler_and_designer.md"))
+        .or_else(|_| std::fs::read_to_string(root.join("stale-docs-2/17_page_compiler_and_designer.md")))
+        .expect("docs/17");
     let blocks: Vec<&str> = doc.split("```typescript").skip(1).filter_map(|b| b.split("```").next()).collect();
     assert!(blocks.len() >= 2, "page and pageextension examples present");
     let tables = r#"
@@ -600,13 +602,24 @@ fn documentation_examples_compile() {
 }
 
 #[test]
-fn bos_auth_package_pages_compile_without_errors() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages/bos.auth/package.bos");
-    let src = std::fs::read_to_string(path).expect("bos.auth package source");
+fn bos_core_package_pages_compile_without_errors() {
+    let pkg_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages/bos.core");
+    let mut entries: Vec<std::path::PathBuf> = std::fs::read_dir(pkg_dir)
+        .expect("read bos.core dir")
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_file() && p.extension().and_then(|s| s.to_str()) == Some("bos"))
+        .collect();
+    entries.sort();
+    let mut src = String::new();
+    for p in entries {
+        src.push_str(&std::fs::read_to_string(&p).expect("read .bos file"));
+        src.push('\n');
+    }
     let model = compile(&src);
     let errors: Vec<_> = model.diagnostics.iter().filter(|d| d.code.starts_with("BOS30") && d.severity == "error").collect();
-    assert!(errors.is_empty(), "bos.auth page errors: {errors:#?}");
-    assert_eq!(model.pages.len(), 10);
+    assert!(errors.is_empty(), "bos.core page errors: {errors:#?}");
+    assert_eq!(model.pages.len(), 50);
     let catalog = ModelCatalog::new(vec![&model]);
     for page in &model.pages {
         let result = compile_page(page, &[], &catalog);

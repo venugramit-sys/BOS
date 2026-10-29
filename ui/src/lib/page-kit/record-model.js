@@ -10,9 +10,9 @@ export function fieldControls(C) {
   return C.filter((c) => c.kind === "field" || c.kind === "cue").filter((c) => c.field);
 }
 
-/** Keys the user may write to the table: bound columns that are editable. */
+/** Keys the user may write to the table: bound columns that are editable or primary keys for creation. */
 export function writableKeys(C) {
-  return [...new Set(fieldControls(C).filter((c) => c.field.binding === "column" && c.field.editable).map((c) => c.field.key))];
+  return [...new Set(fieldControls(C).filter((c) => c.field.binding === "column" && (c.field.editable || c.field.is_primary_key)).map((c) => c.field.key))];
 }
 
 /** Typed default value of a field for a new record. */
@@ -131,12 +131,45 @@ export function normalizeDirectives(list) {
   return (Array.isArray(list) ? list : []).filter((d) => d && typeof d.type === "string" && !d.pending);
 }
 
+function toSnake(s) {
+  return String(s).replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+}
+function toCamel(s) {
+  return String(s).replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
+}
+
 /** Classifies a save error for the page frame. */
 export function classifySaveError(error) {
-  if (error?.status === 409) return { kind: "conflict", message: error.message };
-  if (error?.status === 428) return { kind: "version", message: error.message };
-  if (error?.fieldErrors && Object.keys(error.fieldErrors).length) return { kind: "fields", message: error.message, fields: error.fieldErrors };
-  return { kind: "error", message: error?.message ?? String(error) };
+  const msg = String(error?.message ?? error ?? "");
+  if (error?.status === 409) return { kind: "conflict", message: msg };
+  if (error?.status === 428) return { kind: "version", message: msg };
+
+  const fields = {};
+  if (error?.fieldErrors && typeof error.fieldErrors === "object") {
+    for (const [k, v] of Object.entries(error.fieldErrors)) {
+      fields[k] = v;
+      fields[toSnake(k)] = v;
+      fields[toCamel(k)] = v;
+    }
+  }
+
+  // Extract field mentions from business logic / tablelogic errors
+  const m =
+    /Field ['"]?(\w+)['"]? is required/i.exec(msg) ||
+    /Validation Failed:\s*Field ['"]?(\w+)['"]?/i.exec(msg) ||
+    /['"]?(\w+)['"]? cannot be blank/i.exec(msg) ||
+    /column ['"]?(\w+)['"]? of relation/i.exec(msg);
+  if (m) {
+    const rawKey = m[1];
+    fields[rawKey] = msg;
+    fields[toSnake(rawKey)] = msg;
+    fields[toCamel(rawKey)] = msg;
+  }
+
+  if (Object.keys(fields).length) {
+    return { kind: "fields", message: msg, fields };
+  }
+  return { kind: "error", message: msg };
 }
 
 /** Values of `data_caption_fields`, joined for the page header ("C1000 · Adatum"). */

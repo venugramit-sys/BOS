@@ -11,6 +11,8 @@ use std::fs;
 use std::path::PathBuf;
 use uuid::Uuid;
 
+mod lsp;
+
 #[derive(ClapParser)]
 #[command(name = "bosc")]
 #[command(about = "BOS Script Compiler and Infrastructure Engine", long_about = None)]
@@ -102,6 +104,8 @@ enum Commands {
         #[command(subcommand)]
         action: NodeCommands,
     },
+    /// Run the Language Server Protocol (LSP) daemon for IDE integration
+    Lsp,
 }
 
 #[derive(Subcommand)]
@@ -128,10 +132,13 @@ enum NodeCommands {
 
 #[derive(Subcommand)]
 enum PackageCommands {
-    /// Compile a BOS script into a verified .bospkg package bundle
+    /// Compile a BOS package directory or script into a verified .bospkg package bundle
     Build {
+        /// Package directory (containing bos.json) or path to .bos script
+        #[arg(value_name = "PATH")]
+        path: Option<PathBuf>,
         #[arg(short, long)]
-        input: PathBuf,
+        input: Option<PathBuf>,
         #[arg(short, long)]
         output: Option<PathBuf>,
         #[arg(long)]
@@ -143,10 +150,13 @@ enum PackageCommands {
         #[arg(long)]
         publisher: Option<String>,
     },
-    /// Install a .bospkg package bundle or BOS script into PostgreSQL database
+    /// Install a .bospkg package bundle, package directory, or BOS script into PostgreSQL database
     Install {
+        /// Package directory (containing bos.json), .bospkg bundle, or .bos script
+        #[arg(value_name = "PATH")]
+        path: Option<PathBuf>,
         #[arg(short, long)]
-        input: PathBuf,
+        input: Option<PathBuf>,
         #[arg(short, long, default_value = "postgres://postgres:postgres@localhost:5432/bos_dev")]
         db: String,
         #[arg(long)]
@@ -192,6 +202,60 @@ async fn start_pages(engine: &BosEngine, config: &NodeConfig) {
             Some(e) => println!("⚠ Pages are listed but cannot be compiled: {e}"),
         },
         Err(e) => println!("⚠ Page service failed to start: {e}"),
+    }
+}
+
+/// Binds a TCP listener to the given address. If the port is already occupied by a stale
+/// process (common during rapid dev restarts or Ctrl+C residue), automatically terminates
+/// the stale process, waits for socket release, and cleanly binds.
+async fn bind_listener_with_port_recovery(addr: &str, port: u16) -> Result<tokio::net::TcpListener> {
+    match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => Ok(l),
+        Err(e)
+            if e.kind() == std::io::ErrorKind::AddrInUse
+                || e.raw_os_error() == Some(10048)
+                || e.raw_os_error() == Some(98) =>
+        {
+            println!("⚠️  PORT CONFLICT: Port {} is currently occupied.", port);
+            println!("🔄 Reclaiming port {} by terminating stale instance...", port);
+
+            #[cfg(target_os = "windows")]
+            {
+                let cmd = format!(
+                    "Get-NetTCPConnection -LocalPort {port} -ErrorAction SilentlyContinue | ForEach-Object {{ Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }}"
+                );
+                let _ = std::process::Command::new("powershell")
+                    .args(["-NoProfile", "-Command", &cmd])
+                    .status();
+                tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+            }
+
+            #[cfg(not(target_os = "windows"))]
+            {
+                let cmd = format!("lsof -ti :{port} | xargs kill -9 2>/dev/null || true");
+                let _ = std::process::Command::new("sh")
+                    .args(["-c", &cmd])
+                    .status();
+                tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+            }
+
+            match tokio::net::TcpListener::bind(addr).await {
+                Ok(l) => {
+                    println!("✓ Successfully reclaimed port {} and initialized listener.", port);
+                    Ok(l)
+                }
+                Err(retry_err) => {
+                    anyhow::bail!(
+                        "Port {port} is occupied by another process and could not be reclaimed: {retry_err}.\n\
+                        Remediation:\n  \
+                        - Check active processes with: netstat -ano | findstr :{port}\n  \
+                        - Run 'npm run node:kill' to force-stop all stale node processes.\n  \
+                        - Or change the port in 'bos-node.toml'."
+                    );
+                }
+            }
+        }
+        Err(e) => Err(anyhow::anyhow!("Failed to bind to {addr}: {e}")),
     }
 }
 
@@ -325,7 +389,7 @@ async fn main() -> Result<()> {
 
             let (resolved_id, resolved_name, resolved_ver, resolved_pub) =
                 resolve_package_metadata(&input, Some(package.clone()), None, None, None);
-            let (bundle, _ddl, _model) = compile_package_bundle(&source, &resolved_id, &resolved_name, &resolved_ver, &resolved_pub)?;
+            let (bundle, _ddl, _model) = compile_package_bundle(&source, &resolved_id, &resolved_name, &resolved_ver, &resolved_pub, &input.display().to_string())?;
             let res = engine.install_package(bundle, allow_destructive).await?;
 
             println!(
@@ -645,11 +709,12 @@ async fn main() -> Result<()> {
             println!("========================================================");
         }
         Commands::Package { action } => match action {
-            PackageCommands::Build { input, output, package_id, name, version, publisher } => {
+            PackageCommands::Build { path, input, output, package_id, name, version, publisher } => {
+                let target = path.or(input).unwrap_or_else(|| PathBuf::from("."));
+                let (source, source_label) = collect_package_source(&target)?;
                 let (resolved_id, resolved_name, resolved_ver, resolved_pub) =
-                    resolve_package_metadata(&input, package_id, name, version, publisher);
-                let source = fs::read_to_string(&input)?;
-                let (bundle, _ddl, model_ir) = compile_package_bundle(&source, &resolved_id, &resolved_name, &resolved_ver, &resolved_pub)?;
+                    resolve_package_metadata(&target, package_id, name, version, publisher);
+                let (bundle, _ddl, model_ir) = compile_package_bundle(&source, &resolved_id, &resolved_name, &resolved_ver, &resolved_pub, &source_label)?;
 
                 let dist_pkg_dir = PathBuf::from("dist").join("packages").join(&resolved_id);
                 let bytecode_dir = dist_pkg_dir.join("bytecode");
@@ -757,9 +822,13 @@ async fn main() -> Result<()> {
                 fs::write(&manifest_file, serde_json::to_string_pretty(&manifest_json)?)?;
 
                 let out_path = output.unwrap_or_else(|| {
-                    let dir = PathBuf::from("packages");
-                    let _ = fs::create_dir_all(&dir);
-                    dir.join(format!("{}.bospkg", resolved_id))
+                    if target.is_dir() {
+                        target.join(format!("{}.bospkg", resolved_id))
+                    } else if let Some(parent) = target.parent() {
+                        parent.join(format!("{}.bospkg", resolved_id))
+                    } else {
+                        PathBuf::from(format!("{}.bospkg", resolved_id))
+                    }
                 });
 
                 if let Some(parent) = out_path.parent() {
@@ -785,7 +854,8 @@ async fn main() -> Result<()> {
                 println!("Static Directory:  {:?}", dist_pkg_dir);
                 println!("========================================================");
             }
-            PackageCommands::Install { input, db, package_id, name, version, publisher, allow_destructive } => {
+            PackageCommands::Install { path, input, db, package_id, name, version, publisher, allow_destructive } => {
+                let target = path.or(input).unwrap_or_else(|| PathBuf::from("."));
                 println!("Connecting to PostgreSQL database at {}...", db);
                 let engine = BosEngine::connect(&db).await?;
 
@@ -796,40 +866,56 @@ async fn main() -> Result<()> {
                     println!("✓ BOS System Kernel provisioned successfully.");
                 }
 
-                let content = fs::read_to_string(&input)?;
-                let bundle = if input.extension().and_then(|s| s.to_str()) == Some("bospkg") || content.trim_start().starts_with('{') {
+                let bundle = if target.is_dir() {
+                    let (resolved_id, resolved_name, resolved_ver, resolved_pub) =
+                        resolve_package_metadata(&target, package_id.clone(), name.clone(), version.clone(), publisher.clone());
+                    let pkg_bundle_path = target.join(format!("{}.bospkg", resolved_id));
+                    if !pkg_bundle_path.exists() {
+                        println!("Building package '{}' before installation...", resolved_id);
+                        let (source, source_label) = collect_package_source(&target)?;
+                        let (built_bundle, _ddl, _model) = compile_package_bundle(&source, &resolved_id, &resolved_name, &resolved_ver, &resolved_pub, &source_label)?;
+                        let bundle_json = serde_json::to_string_pretty(&built_bundle)?;
+                        fs::write(&pkg_bundle_path, &bundle_json)?;
+                    }
+                    let content = fs::read_to_string(&pkg_bundle_path)?;
                     serde_json::from_str::<bosc_ir::PackageBundleIR>(&content)?
                 } else {
-                    let (resolved_id, resolved_name, resolved_ver, resolved_pub) =
-                        resolve_package_metadata(&input, package_id, name, version, publisher);
-                    let (b, ddl, _model) = compile_package_bundle(
-                        &content,
-                        &resolved_id,
-                        &resolved_name,
-                        &resolved_ver,
-                        &resolved_pub,
-                    )?;
-                    let tables: Vec<bosc_ir::TableIR> = b
-                        .objects
-                        .iter()
-                        .filter(|obj| obj.get("object_type").and_then(|v| v.as_str()).unwrap_or("table") == "table")
-                        .filter_map(|obj| serde_json::from_value(obj.get("definition").unwrap_or(obj).clone()).ok())
-                        .collect();
-                    let report = engine
-                        .sync_schema(
-                            &SchemaSyncRequest {
-                                package_name: b.manifest.package_id.clone(),
-                                source: "cli".to_string(),
-                                tables,
-                                extensions: Vec::new(),
-                                ddl,
-                                applied_by: None,
-                            },
-                            &SchemaSyncOptions { allow_destructive, dry_run: false },
-                        )
-                        .await?;
-                    print_schema_report(&report);
-                    b
+                    let content = fs::read_to_string(&target)?;
+                    if target.extension().and_then(|s| s.to_str()) == Some("bospkg") || content.trim_start().starts_with('{') {
+                        serde_json::from_str::<bosc_ir::PackageBundleIR>(&content)?
+                    } else {
+                        let (resolved_id, resolved_name, resolved_ver, resolved_pub) =
+                            resolve_package_metadata(&target, package_id, name, version, publisher);
+                        let (b, ddl, _model) = compile_package_bundle(
+                            &content,
+                            &resolved_id,
+                            &resolved_name,
+                            &resolved_ver,
+                            &resolved_pub,
+                            &target.display().to_string(),
+                        )?;
+                        let tables: Vec<bosc_ir::TableIR> = b
+                            .objects
+                            .iter()
+                            .filter(|obj| obj.get("object_type").and_then(|v| v.as_str()).unwrap_or("table") == "table")
+                            .filter_map(|obj| serde_json::from_value(obj.get("definition").unwrap_or(obj).clone()).ok())
+                            .collect();
+                        let report = engine
+                            .sync_schema(
+                                &SchemaSyncRequest {
+                                    package_name: b.manifest.package_id.clone(),
+                                    source: "cli".to_string(),
+                                    tables,
+                                    extensions: Vec::new(),
+                                    ddl,
+                                    applied_by: None,
+                                },
+                                &SchemaSyncOptions { allow_destructive, dry_run: false },
+                            )
+                            .await?;
+                        print_schema_report(&report);
+                        b
+                    }
                 };
 
                 let res = engine.install_package(bundle, allow_destructive).await?;
@@ -878,13 +964,18 @@ async fn main() -> Result<()> {
             NodeCommands::Check { config } => {
                 let resolved_path = if config.exists() {
                     config.clone()
-                } else if let Ok(cwd) = std::env::current_dir() {
-                    cwd.parent()
-                        .map(|p| p.join(&config))
-                        .filter(|p| p.exists())
-                        .unwrap_or_else(|| config.clone())
                 } else {
-                    config.clone()
+                    let mut dir = std::env::current_dir().ok();
+                    let mut found = None;
+                    while let Some(d) = dir {
+                        let candidate = d.join(&config);
+                        if candidate.exists() {
+                            found = Some(candidate);
+                            break;
+                        }
+                        dir = d.parent().map(|p| p.to_path_buf());
+                    }
+                    found.unwrap_or_else(|| config.clone())
                 };
 
                 println!("Checking server node configuration profile '{}'...", resolved_path.display());
@@ -917,18 +1008,29 @@ async fn main() -> Result<()> {
             NodeCommands::Run { config } => {
                 let resolved_path = if config.exists() {
                     Some(config.clone())
-                } else if let Ok(cwd) = std::env::current_dir() {
-                    cwd.parent()
-                        .map(|p| p.join(&config))
-                        .filter(|p| p.exists())
                 } else {
-                    None
+                    let mut dir = std::env::current_dir().ok();
+                    let mut found = None;
+                    while let Some(d) = dir {
+                        let candidate = d.join(&config);
+                        if candidate.exists() {
+                            found = Some(candidate);
+                            break;
+                        }
+                        dir = d.parent().map(|p| p.to_path_buf());
+                    }
+                    found
                 };
 
                 let node_config = match resolved_path {
                     Some(ref path) => {
-                        println!("Loading node configuration from '{}'...", path.display());
-                        NodeConfig::from_file(path)?
+                        let abs_path = path.canonicalize().unwrap_or_else(|_| path.clone());
+                        println!("Loading node configuration from '{}'...", abs_path.display());
+                        let cfg = NodeConfig::from_file(&abs_path)?;
+                        if let Some(parent) = abs_path.parent() {
+                            let _ = std::env::set_current_dir(parent);
+                        }
+                        cfg
                     }
                     None => {
                         let is_default = config.as_os_str() == "bos-node.toml";
@@ -978,24 +1080,43 @@ async fn main() -> Result<()> {
                 }
 
                 let app = create_node_router(engine, node_config.clone());
-                let listener = tokio::net::TcpListener::bind(&addr).await?;
+                let listener = bind_listener_with_port_recovery(&addr, node_config.network.port).await?;
                 println!("✓ Server Node ready. Clients can connect with just User ID & Password.");
                 println!("Press Ctrl+C to stop the server node.\n");
 
-                axum::serve(listener, app)
+                let serve_result = axum::serve(listener, app)
                     .with_graceful_shutdown(async {
-                        tokio::signal::ctrl_c().await.ok();
-                        println!("\n🛑 Shutdown signal received (Ctrl+C). Stopping BOS Server Node...");
+                        if std::env::var("BOS_DAEMON").map(|v| v == "1" || v == "true").unwrap_or(false) {
+                            std::future::pending::<()>().await;
+                        } else {
+                            match tokio::signal::ctrl_c().await {
+                                Ok(()) => {
+                                    println!("\n🛑 Shutdown signal received (Ctrl+C). Stopping BOS Server Node...");
+                                }
+                                Err(e) => {
+                                    eprintln!("⚠️  Console Ctrl+C handler not available ({e}); running indefinitely until process termination.");
+                                    std::future::pending::<()>().await;
+                                }
+                            }
+                        }
                     })
-                    .await?;
+                    .await;
+
+                if let Err(ref e) = serve_result {
+                    eprintln!("🛑 Server encountered fatal error: {}", e);
+                }
 
                 if let Some(nas_handle) = _nas_handle {
                     println!("Stopping NAS worker daemon...");
                     nas_handle.stop().await;
                 }
                 println!("✓ BOS Server Node shutdown complete.");
+                serve_result?;
             }
         },
+        Commands::Lsp => {
+            lsp::run_lsp_server().await?;
+        }
     }
 
     Ok(())
@@ -1058,17 +1179,58 @@ fn print_schema_report(report: &SchemaSyncReport) {
     }
 }
 
+fn collect_package_source(input: &std::path::Path) -> Result<(String, String)> {
+    if input.is_dir() {
+        let mut source = String::new();
+        let mut found_any = false;
+        let mut entries: Vec<PathBuf> = Vec::new();
+        for entry in fs::read_dir(input)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("bos") {
+                entries.push(path);
+            }
+        }
+        entries.sort();
+        for path in entries {
+            let file_content = fs::read_to_string(&path)?;
+            source.push_str(&format!("\n// === Source: {} ===\n", path.display()));
+            source.push_str(&file_content);
+            source.push('\n');
+            found_any = true;
+        }
+        if !found_any {
+            anyhow::bail!("No .bos source files found in package directory '{}'", input.display());
+        }
+        Ok((source, input.display().to_string()))
+    } else {
+        let source = fs::read_to_string(input)?;
+        Ok((source, input.display().to_string()))
+    }
+}
+
 fn compile_package_bundle(
     source: &str,
     package_id: &str,
     name: &str,
     version: &str,
     publisher: &str,
+    source_label: &str,
 ) -> Result<(bosc_ir::PackageBundleIR, String, bosc_ir::ModelIR)> {
     let mut lexer = Lexer::new(source);
-    let tokens = lexer.tokenize()?;
+    let tokens = match lexer.tokenize() {
+        Ok(t) => t,
+        Err(e) => anyhow::bail!("Lexer error in '{}': {}", source_label, e),
+    };
     let mut parser = Parser::with_source(tokens, source.to_string());
-    let program = parser.parse_program()?;
+    let program = match parser.parse_program() {
+        Ok(p) => p,
+        Err(err) => {
+            let visual = err.format_with_source(source, source_label);
+            eprintln!("\n{}", visual);
+            anyhow::bail!("Syntax error in '{}': {}", source_label, err);
+        }
+    };
 
     let analyzer = SemanticAnalyzer::new(package_id);
     let model_ir = analyzer.analyze_and_lower(&program)?;
@@ -1194,8 +1356,13 @@ fn resolve_package_metadata(
     let mut resolved_version = version;
     let mut resolved_pub = publisher;
 
-    // Check adjacent bos.json or package.json
-    if let Some(parent) = input.parent() {
+    let candidate_dirs = if input.is_dir() {
+        vec![input.to_path_buf()]
+    } else {
+        vec![input.parent().unwrap_or(input).to_path_buf()]
+    };
+
+    for parent in candidate_dirs {
         let manifest_path = parent.join("bos.json");
         let pkg_json_path = parent.join("package.json");
         let candidate = if manifest_path.exists() {

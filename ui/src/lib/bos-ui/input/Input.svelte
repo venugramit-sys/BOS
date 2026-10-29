@@ -14,6 +14,7 @@
     Mail,
     Globe,
     Phone,
+    User,
     MoreHorizontal,
     AlertCircle,
     AlertTriangle,
@@ -29,6 +30,7 @@
   import { resolveSurface } from "../theme/index.js";
 
   let {
+    id = "",
     ref = $bindable(null),
     value = $bindable(""),
     type = "text",
@@ -92,6 +94,7 @@
   let showCalcBadge = $state(false);
   let lastFormula = $state("");
   let calcBadgeTimer = $state(null);
+  let isCapsLockOn = $state(false);
 
   // Resolved input type for native HTML input
   let resolvedNativeType = $derived.by(() => {
@@ -115,19 +118,8 @@
     return status;
   });
 
-  // Auto-inferred leading icon if none explicitly provided
-  let ResolvedPrefixIcon = $derived.by(() => {
-    if (prefixIcon) return prefixIcon;
-    if (type === "search") return Search;
-    if (type === "password") return Lock;
-    if (type === "email") return Mail;
-    if (type === "url") return Globe;
-    if (type === "tel") return Phone;
-    if (type === "currency" && !prefixText) return DollarSign;
-    if (type === "code") return Hash;
-    if ((type === "masked" || masked) && !prefixText) return Lock;
-    return null;
-  });
+  // Prefix icon is rendered only when explicitly provided
+  let ResolvedPrefixIcon = $derived(prefixIcon || null);
 
   // Value length tracking
   let currentLength = $derived(String(value ?? "").length);
@@ -210,10 +202,14 @@
 
   function handleBlur() {
     isFocused = false;
+    isCapsLockOn = false;
     executeMathEvaluation();
   }
 
   function handleKeyDown(e) {
+    if (type === "password" && typeof e.getModifierState === "function") {
+      isCapsLockOn = e.getModifierState("CapsLock");
+    }
     if (e.key === "F8") {
       e.preventDefault();
       onCopyAbove?.();
@@ -334,6 +330,7 @@
     <!-- Core Primitive Native Input Element -->
     <input
       bind:this={ref}
+      id={id || undefined}
       type={resolvedNativeType}
       value={displayValue}
       oninput={handleInput}
@@ -405,6 +402,17 @@
             <Shield class={surface.iconClass} />
           {/if}
         </button>
+      {/if}
+
+      <!-- CapsLock Warning Indicator -->
+      {#if isCapsLockOn && type === "password"}
+        <span
+          class="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 animate-in fade-in"
+          title="Caps Lock is on"
+          aria-label="Caps Lock is on"
+        >
+          <span>Caps Lock</span>
+        </span>
       {/if}
 
       <!-- Password Reveal / Mask Toggle -->

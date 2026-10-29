@@ -135,7 +135,7 @@ pub fn property_schema() -> serde_json::Value {
     let kinds = [
         K::Area, K::Group, K::Grid, K::Fixed, K::Repeater, K::Part, K::SystemPart, K::Field, K::Label, K::Image, K::Spacer,
         K::Divider, K::CueGroup, K::Cue, K::Headline, K::UserControl, K::Tabs, K::Tab, K::Flex, K::Split, K::Card,
-        K::WizardStep, K::Container,
+        K::WizardStep, K::Container, K::Section, K::Header, K::Footer, K::Nav, K::Aside, K::Article, K::Action,
     ];
     let page_types: Vec<serde_json::Value> = PageType::ALL
         .iter()
@@ -167,6 +167,7 @@ pub fn property_schema() -> serde_json::Value {
         // Property sheet rows: `customize` marks what Customize mode may change (server-enforced).
         "page_properties": [
             { "name": "caption", "type": "text", "customize": true },
+            { "name": "icon", "type": "icon", "customize": true },
             { "name": "pageType", "type": "enum:page_types" },
             { "name": "cardPageId", "type": "page" },
             { "name": "dataCaptionFields", "type": "fields" },
@@ -178,6 +179,7 @@ pub fn property_schema() -> serde_json::Value {
         ],
         "control_properties": [
             { "name": "caption", "type": "text", "customize": true },
+            { "name": "icon", "type": "icon", "customize": true, "kinds": ["field", "group", "part", "action", "actionref", "cue"] },
             { "name": "tooltip", "type": "text", "customize": true },
             { "name": "visible", "type": "bool", "customize": true },
             { "name": "importance", "type": "enum:importance", "customize": true, "kinds": ["field"] },
@@ -202,6 +204,7 @@ pub fn property_schema() -> serde_json::Value {
             { "name": "size", "type": "enum:sm,md,lg,xl", "kinds": ["image", "spacer"] },
             { "name": "updatePropagation", "type": "bool", "kinds": ["part"] },
             { "name": "showCaption", "type": "bool" },
+            { "name": "labelPosition", "type": "enum:top,left,right,none", "kinds": ["field", "label"], "customize": true },
         ],
         "style_properties": [
             { "name": "background", "type": "color", "customize": true },
@@ -213,6 +216,35 @@ pub fn property_schema() -> serde_json::Value {
             { "name": "density", "type": "enum:density", "customize": true },
             { "name": "emphasis", "type": "enum:emphasis", "customize": true },
             { "name": "icon", "type": "icon", "customize": true },
+            { "name": "fontSize", "type": "text", "customize": true },
+            { "name": "fontWeight", "type": "text", "customize": true },
+            { "name": "textAlign", "type": "enum:left,center,right,justify", "customize": true },
+            { "name": "letterSpacing", "type": "text", "customize": true },
+            { "name": "lineHeight", "type": "text", "customize": true },
+            { "name": "textTransform", "type": "enum:none,uppercase,lowercase,capitalize", "customize": true },
+            { "name": "textDecoration", "type": "enum:none,underline,line-through", "customize": true },
+            { "name": "borderStyle", "type": "enum:solid,dashed,dotted,none", "customize": true },
+            { "name": "padding", "type": "text", "customize": true },
+            { "name": "margin", "type": "text", "customize": true },
+            { "name": "gap", "type": "text", "customize": true },
+            { "name": "width", "type": "text", "customize": true },
+            { "name": "maxWidth", "type": "text", "customize": true },
+            { "name": "minWidth", "type": "text", "customize": true },
+            { "name": "height", "type": "text", "customize": true },
+            { "name": "minHeight", "type": "text", "customize": true },
+            { "name": "maxHeight", "type": "text", "customize": true },
+            { "name": "opacity", "type": "text", "customize": true },
+            { "name": "overflow", "type": "enum:visible,hidden,auto,scroll", "customize": true },
+            { "name": "display", "type": "enum:block,flex,grid,inline-flex,none", "customize": true },
+            { "name": "justifyContent", "type": "enum:start,center,end,between,around,evenly", "customize": true },
+            { "name": "alignItems", "type": "enum:start,center,end,stretch,baseline", "customize": true },
+            { "name": "flexDirection", "type": "enum:row,column,row-reverse,column-reverse", "customize": true },
+            { "name": "flexWrap", "type": "enum:wrap,nowrap", "customize": true },
+            { "name": "icon", "type": "icon", "customize": true },
+            { "name": "iconSize", "type": "enum:xs,sm,md,lg,xl,2xl", "customize": true },
+            { "name": "iconColor", "type": "color", "customize": true },
+            { "name": "iconBackground", "type": "color", "customize": true },
+            { "name": "iconRadius", "type": "enum:radius", "customize": true },
         ],
         "responsive_properties": [
             { "name": "xs", "type": "span", "customize": true },

@@ -1,0 +1,11 @@
+const { chromium } = require('D:/Work Studio/Bos/ui/node_modules/playwright');
+const out='D:/Work Studio/Bos/reports/qa_dev_journey_screens/'; const r={codes:[]};
+(async()=>{const b=await chromium.launch({channel:'msedge'});const p=await (await b.newContext({viewport:{width:1440,height:900}})).newPage();
+ p.on('response',s=>{if(s.status()>=400)r.codes.push(s.status()+' '+s.request().method()+' '+s.url())});
+ await p.goto('http://localhost:5173/dev-studio.html',{waitUntil:'networkidle'});
+ await p.click('text=Create Meta-Object'); await p.waitForTimeout(800);
+ await p.click('[role=dialog] button:has-text("Table")'); 
+ const inp=await p.$('[role=dialog] input'); await inp.fill('QaItem'); await p.screenshot({path:out+'12_create_table_filled.png'});
+ let t=Date.now(); await p.click('text=Create & Open'); await p.waitForTimeout(3000); r.ms=Date.now()-t;
+ await p.screenshot({path:out+'13_create_table_result.png'}); r.text=(await p.evaluate(()=>document.body.innerText)).slice(0,700);
+ console.log(JSON.stringify(r,null,1)); await b.close();})();

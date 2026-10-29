@@ -1,7 +1,7 @@
 <script>
   /**
    * `systempart(Notes|Links|...)`. BOS has no built-in record notes/links store, so the part
-   * states that plainly instead of rendering an empty or fake panel.
+   * states that plainly instead of rendering an empty or placeholder panel.
    */
   import { nodeAttrs, isShown, isHidden, boxStyle, boxClass } from "./node.js";
 

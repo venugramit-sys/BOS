@@ -3,8 +3,8 @@
   import { ChevronDown } from "lucide-svelte";
   import Icon from "./Icon.svelte";
 
-  /** @type {{ label: string, sections: { caption?: string, items: any[] }[], onrun: (a: any) => void, enabled: (a: any) => boolean, class?: string }} */
-  let { label, sections = [], onrun, enabled, class: className = "" } = $props();
+  /** @type {{ label: string, icon?: string, sections: { caption?: string, items: any[] }[], onrun: (a: any) => void, enabled: (a: any) => boolean, class?: string }} */
+  let { label, icon = "", sections = [], onrun, enabled, class: className = "" } = $props();
 
   let open = $state(false);
   let root = $state(null);
@@ -37,9 +37,10 @@
 </script>
 
 <div class={"relative " + className} bind:this={root}>
-  <button type="button" class="bos-action" aria-haspopup="menu" aria-expanded={open} aria-controls={menuId} onclick={() => (open = !open)}>
-    {label}
-    <ChevronDown class="size-3.5" />
+  <button type="button" class="bos-action inline-flex items-center gap-1.5" aria-haspopup="menu" aria-expanded={open} aria-controls={menuId} onclick={() => (open = !open)}>
+    {#if icon}<Icon name={icon} class="size-3.5 shrink-0 opacity-70" />{/if}
+    <span>{label}</span>
+    <ChevronDown class="size-3.5 shrink-0 opacity-60" />
   </button>
   {#if open}
     <div id={menuId} class="bos-menu" role="menu" tabindex="-1" onkeydown={onMenuKey}>

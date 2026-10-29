@@ -1,0 +1,852 @@
+// ============================================================================
+// BOS Core Mega-Package: Feature 2 - User & Identity Management
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// 1. EXTENSIBLE ENUMERATIONS (User Management)
+// ----------------------------------------------------------------------------
+
+enum UserStatus {
+    extensible = true;
+    Active;
+    Inactive;
+    Suspended;
+    LockedOut;
+    PendingVerification;
+}
+
+enum UserType {
+    extensible = true;
+    Internal;
+    External;
+    ServiceAccount;
+    System;
+}
+
+// ----------------------------------------------------------------------------
+// 2. DOMAIN TABLES
+// ----------------------------------------------------------------------------
+
+table User {
+    caption = "User Master";
+    tableType = Normal;
+    dataPerCompany = false;
+
+    username: String(50) {
+        notNull = true;
+        unique = true;
+    };
+    passwordHash: String(255) {
+        notNull = true;
+    };
+    email: String(100) {
+        notNull = true;
+        unique = true;
+    };
+    fullName: String(100);
+    phoneNumber: String(25);
+    userType: Enum(UserType) {
+        default = "Internal";
+    };
+    status: Enum(UserStatus) {
+        default = "Active";
+    };
+    failedAttempts: Integer {
+        default = 0;
+    };
+    lockoutUntil: DateTime;
+    lastLoginAt: DateTime;
+    passwordChangedAt: DateTime;
+    isActive: Boolean {
+        default = true;
+    };
+
+    activeSessionCount: Integer {
+        computed = count(UserSession where { username == username && sessionState == "Active" });
+    };
+
+    primaryKey(username);
+    key(email);
+    key(status);
+}
+
+table Role {
+    caption = "Security Role";
+    tableType = Normal;
+    dataPerCompany = false;
+
+    code: String(30) {
+        notNull = true;
+        unique = true;
+    };
+    name: String(100) {
+        notNull = true;
+    };
+    description: String(255);
+    isSystemRole: Boolean {
+        default = false;
+    };
+    isActive: Boolean {
+        default = true;
+    };
+
+    assignedUsersCount: Integer {
+        computed = count(UserRole where { roleCode == code });
+    };
+
+    primaryKey(code);
+}
+
+table UserRole {
+    caption = "User Role Assignment";
+    tableType = Normal;
+    dataPerCompany = false;
+
+    username: String(50) {
+        notNull = true;
+        relation = User.username;
+        onDelete = cascade;
+    };
+    roleCode: String(30) {
+        notNull = true;
+        relation = Role.code;
+        onDelete = cascade;
+    };
+    assignedBy: String(50);
+
+    primaryKey(username, roleCode);
+    key(roleCode);
+}
+
+table UserGroup {
+    caption = "User Security Group";
+    tableType = Normal;
+    dataPerCompany = false;
+
+    code: String(30) {
+        notNull = true;
+        unique = true;
+    };
+    name: String(100) {
+        notNull = true;
+    };
+    description: String(255);
+    defaultRoleCode: String(30) {
+        relation = Role.code;
+    };
+    isActive: Boolean {
+        default = true;
+    };
+
+    memberCount: Integer {
+        computed = count(UserGroupMember where { groupCode == code });
+    };
+
+    primaryKey(code);
+}
+
+table UserGroupMember {
+    caption = "User Group Membership";
+    tableType = Normal;
+    dataPerCompany = false;
+
+    groupCode: String(30) {
+        notNull = true;
+        relation = UserGroup.code;
+        onDelete = cascade;
+    };
+    username: String(50) {
+        notNull = true;
+        relation = User.username;
+        onDelete = cascade;
+    };
+    assignedBy: String(50);
+
+    primaryKey(groupCode, username);
+    key(username);
+}
+
+table UserPersonalization {
+    caption = "User UI Personalization Settings";
+    tableType = Normal;
+    dataPerCompany = false;
+
+    username: String(50) {
+        notNull = true;
+        unique = true;
+        relation = User.username;
+        onDelete = cascade;
+    };
+    themeMode: Enum(ThemeMode) {
+        default = "SystemAuto";
+    };
+    colorTheme: Enum(ColorTheme) {
+        default = "CorporateBlue";
+    };
+    locale: String(20) {
+        default = "en-US";
+    };
+    timezone: String(60) {
+        default = "UTC";
+    };
+    defaultCompanyCode: String(30);
+    compactDensity: Boolean {
+        default = false;
+    };
+
+    primaryKey(username);
+}
+
+table UserSecuritySetting {
+    caption = "User Security Settings and Policies";
+    tableType = Normal;
+    dataPerCompany = false;
+
+    username: String(50) {
+        notNull = true;
+        unique = true;
+        relation = User.username;
+        onDelete = cascade;
+    };
+    mfaMethod: Enum(MfaMethod) {
+        default = "None";
+    };
+    mfaSecret: String(128);
+    mfaEnabled: Boolean {
+        default = false;
+    };
+    maxConcurrentSessions: Integer {
+        default = 5;
+    };
+    mustChangePassword: Boolean {
+        default = false;
+    };
+    passwordExpiryDays: Integer {
+        default = 90;
+    };
+
+    primaryKey(username);
+}
+
+// ----------------------------------------------------------------------------
+// 3. TABLE LOGIC COMPANIONS
+// ----------------------------------------------------------------------------
+
+tablelogic UserLogic for User {
+    onInsert(rec, ctx) {
+        if (!rec.username || String(rec.username).trim().length === 0) {
+            throw new Error("Validation Failed: Field 'username' is required.");
+        }
+        rec.username = String(rec.username).trim();
+
+        if (rec.username.length < 3 || rec.username.length > 50) {
+            throw new Error("Validation Failed: 'username' length must be between 3 and 50 characters.");
+        }
+
+        if (!/^[a-zA-Z0-9_\-\.@]+$/.test(rec.username)) {
+            throw new Error("Validation Failed: 'username' can only contain alphanumeric characters, dots, underscores, dashes, and at-signs.");
+        }
+
+        if (!rec.email || String(rec.email).trim().length === 0) {
+            throw new Error("Validation Failed: Field 'email' is required.");
+        }
+        rec.email = String(rec.email).toLowerCase().trim();
+
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rec.email)) {
+            throw new Error("Validation Failed: Field 'email' must be a valid email format.");
+        }
+
+        if (rec.password) {
+            const rawPassword = String(rec.password);
+            if (rawPassword.length < 6) {
+                throw new Error("Validation Failed: Password must be at least 6 characters.");
+            }
+            rec.passwordHash = (rawPassword.startsWith("$2") || rawPassword.startsWith("$argon2"))
+                ? rawPassword
+                : ctx.crypto.bcryptHash(rawPassword);
+            delete rec.password;
+        } else if (rec.passwordHash && (!String(rec.passwordHash).startsWith("$2") && !String(rec.passwordHash).startsWith("$argon2"))) {
+            rec.passwordHash = ctx.crypto.bcryptHash(rec.passwordHash);
+        }
+
+        if (!rec.passwordHash) {
+            throw new Error("Validation Failed: Field 'passwordHash' or 'password' is required.");
+        }
+
+        if (rec.failedAttempts === undefined || rec.failedAttempts === null) {
+            rec.failedAttempts = 0;
+        }
+
+        if (rec.isActive === undefined || rec.isActive === null) {
+            rec.isActive = true;
+        }
+
+        if (!rec.status) {
+            rec.status = "Active";
+        }
+
+        rec.passwordChangedAt = new Date().toISOString();
+    }
+
+    onModify(rec, xRec, ctx) {
+        if (rec.username && xRec.username && rec.username !== xRec.username) {
+            throw new Error("Mutation Rejected: Field 'username' is the immutable primary key and cannot be altered.");
+        }
+
+        if (rec.email !== undefined) {
+            rec.email = String(rec.email).toLowerCase().trim();
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rec.email)) {
+                throw new Error("Validation Failed: Field 'email' must be a valid email format.");
+            }
+        }
+
+        if (rec.password) {
+            const rawPassword = String(rec.password);
+            if (rawPassword.length < 6) {
+                throw new Error("Validation Failed: Password must be at least 6 characters.");
+            }
+            rec.passwordHash = (rawPassword.startsWith("$2") || rawPassword.startsWith("$argon2"))
+                ? rawPassword
+                : ctx.crypto.bcryptHash(rawPassword);
+            rec.passwordChangedAt = new Date().toISOString();
+            delete rec.password;
+        } else if (rec.passwordHash && rec.passwordHash !== xRec.passwordHash && (!String(rec.passwordHash).startsWith("$2") && !String(rec.passwordHash).startsWith("$argon2"))) {
+            rec.passwordHash = ctx.crypto.bcryptHash(rec.passwordHash);
+            rec.passwordChangedAt = new Date().toISOString();
+        }
+    }
+
+    onDelete(rec, ctx) {
+        if (rec.username === "admin") {
+            throw new Error("Deletion Rejected: The built-in root administrator account 'admin' cannot be deleted.");
+        }
+    }
+}
+
+tablelogic RoleLogic for Role {
+    onInsert(rec, ctx) {
+        if (!rec.code || String(rec.code).trim().length === 0) {
+            throw new Error("Validation Failed: Field 'code' is required for Role.");
+        }
+        rec.code = String(rec.code).toUpperCase().trim();
+
+        if (!/^[A-Z0-9_]{2,30}$/.test(rec.code)) {
+            throw new Error("Validation Failed: Role code must be uppercase alphanumeric/underscore between 2 and 30 characters.");
+        }
+
+        if (!rec.name || String(rec.name).trim().length === 0) {
+            throw new Error("Validation Failed: Field 'name' is required for Role.");
+        }
+        rec.name = String(rec.name).trim();
+
+        if (rec.isSystemRole === undefined) {
+            rec.isSystemRole = false;
+        }
+    }
+
+    onModify(rec, xRec, ctx) {
+        if (xRec.isSystemRole && rec.isActive === false) {
+            throw new Error("System Protection: Built-in system roles cannot be deactivated.");
+        }
+    }
+
+    onDelete(rec, ctx) {
+        if (rec.isSystemRole || rec.code === "SUPER" || rec.code === "ADMIN") {
+            throw new Error("Deletion Blocked: System baseline roles cannot be deleted.");
+        }
+    }
+}
+
+tablelogic UserRoleLogic for UserRole {
+    onInsert(rec, ctx) {
+        if (!rec.username || !rec.roleCode) {
+            throw new Error("Validation Failed: Both 'username' and 'roleCode' are required.");
+        }
+        rec.username = String(rec.username).trim();
+        rec.roleCode = String(rec.roleCode).toUpperCase().trim();
+    }
+}
+
+tablelogic UserGroupLogic for UserGroup {
+    onInsert(rec, ctx) {
+        if (!rec.code || String(rec.code).trim().length === 0) {
+            throw new Error("Validation Failed: Group 'code' is required.");
+        }
+        rec.code = String(rec.code).toUpperCase().trim();
+        if (!rec.name || String(rec.name).trim().length === 0) {
+            throw new Error("Validation Failed: Group 'name' is required.");
+        }
+    }
+}
+
+tablelogic UserGroupMemberLogic for UserGroupMember {
+    onInsert(rec, ctx) {
+        if (!rec.groupCode || !rec.username) {
+            throw new Error("Validation Failed: 'groupCode' and 'username' are required.");
+        }
+        rec.groupCode = String(rec.groupCode).toUpperCase().trim();
+        rec.username = String(rec.username).trim();
+    }
+}
+
+tablelogic UserPersonalizationLogic for UserPersonalization {
+    onInsert(rec, ctx) {
+        if (!rec.username || String(rec.username).trim().length === 0) {
+            throw new Error("Validation Failed: 'username' is required.");
+        }
+        rec.username = String(rec.username).trim();
+    }
+}
+
+tablelogic UserSecuritySettingLogic for UserSecuritySetting {
+    onInsert(rec, ctx) {
+        if (!rec.username) {
+            throw new Error("Validation Failed: 'username' is required.");
+        }
+        if (rec.maxConcurrentSessions !== undefined && rec.maxConcurrentSessions < 1) {
+            throw new Error("Validation Failed: 'maxConcurrentSessions' must be at least 1.");
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// 4. CODEUNIT: UserManager
+// ----------------------------------------------------------------------------
+
+codeunit UserManager {
+    @businessEvent
+    onUserGroupAssigned(username: String, groupCode: String) {}
+
+    AssignUserToGroup(username: String, groupCode: String, assignedBy: String) {
+        const u = (rec && rec.username !== undefined) ? rec.username : username;
+        const g = (rec && rec.groupCode !== undefined) ? rec.groupCode : groupCode;
+        const by = (rec && rec.assignedBy !== undefined) ? rec.assignedBy : (assignedBy || "system");
+
+        if (!u || !g) throw new Error("Both username and groupCode are required.");
+        const cleanUser = String(u).trim();
+        const cleanGroup = String(g).toUpperCase().trim();
+
+        const group = UserGroup.get(cleanGroup);
+        if (!group) throw new Error(`UserGroup '${cleanGroup}' does not exist.`);
+
+        const key = `${cleanGroup}|${cleanUser}`;
+        if (!UserGroupMember.get(key)) {
+            UserGroupMember.insert({
+                groupCode: cleanGroup,
+                username: cleanUser,
+                assignedBy: by
+            });
+        }
+
+        // If the group has a default role, automatically map it
+        if (group.defaultRoleCode) {
+            const roleKey = `${cleanUser}|${group.defaultRoleCode}`;
+            if (!UserRole.get(roleKey)) {
+                UserRole.insert({
+                    username: cleanUser,
+                    roleCode: group.defaultRoleCode,
+                    assignedBy: by
+                });
+            }
+        }
+
+        return { success: true, username: cleanUser, groupCode: cleanGroup };
+    }
+
+    GetUserProfile(username: String) {
+        const u = (rec && rec.username !== undefined) ? rec.username : username;
+        if (!u) throw new Error("Username is required.");
+        const cleanUser = String(u).trim();
+
+        const userRec = User.get(cleanUser);
+        if (!userRec) throw new Error(`User '${cleanUser}' not found.`);
+
+        const roleAssignments = UserRole.find({ username: cleanUser }) || [];
+        const roles = roleAssignments.map(r => r.roleCode);
+
+        const groupMemberships = UserGroupMember.find({ username: cleanUser }) || [];
+        const groups = groupMemberships.map(m => m.groupCode);
+
+        const personalization = UserPersonalization.get(cleanUser) || {};
+        const security = UserSecuritySetting.get(cleanUser) || {};
+
+        return {
+            username: cleanUser,
+            email: userRec.email,
+            fullName: userRec.fullName,
+            userType: userRec.userType,
+            status: userRec.status,
+            roles: roles,
+            groups: groups,
+            personalization: personalization,
+            mfaEnabled: security.mfaEnabled || false
+        };
+    }
+}
+
+// ----------------------------------------------------------------------------
+// 5. USER INTERFACE PAGES
+// ----------------------------------------------------------------------------
+
+page UserList for User {
+    pageType = List;
+    caption = "Users";
+
+    layout {
+        area(Content) {
+            repeater(UsersRepeater) {
+                field(username) {
+                    caption = "Username";
+                }
+                field(fullName) {
+                    caption = "Full Name";
+                }
+                field(email) {
+                    caption = "Email Address";
+                }
+                field(userType) {
+                    caption = "Type";
+                }
+                field(status) {
+                    caption = "Status";
+                }
+                field(failedAttempts) {
+                    caption = "Failed Attempts";
+                }
+                field(lastLoginAt) {
+                    caption = "Last Login";
+                }
+                field(activeSessionCount) {
+                    caption = "Active Sessions";
+                }
+                field(isActive) {
+                    caption = "Active";
+                }
+            }
+        }
+    }
+}
+
+page UserCard for User {
+    pageType = Card;
+    caption = "User Profile";
+
+    layout {
+        area(Content) {
+            group(UserGeneralFastTab) {
+                caption = "General Information";
+                field(username) {
+                    caption = "Username";
+                }
+                field(email) {
+                    caption = "Email Address";
+                }
+                field(fullName) {
+                    caption = "Full Name";
+                }
+                field(passwordHash) {
+                    caption = "Password";
+                    control = password;
+                }
+                field(phoneNumber) {
+                    caption = "Phone Number";
+                }
+                field(userType) {
+                    caption = "User Type";
+                }
+                field(status) {
+                    caption = "Account Status";
+                }
+                field(isActive) {
+                    caption = "Active Indicator";
+                }
+            }
+
+            group(UserSecurityFastTab) {
+                caption = "Security and Compliance";
+                field(failedAttempts) {
+                    caption = "Failed Login Attempts";
+                }
+                field(lockoutUntil) {
+                    caption = "Lockout Expiration";
+                }
+                field(lastLoginAt) {
+                    caption = "Last Login Timestamp";
+                }
+                field(passwordChangedAt) {
+                    caption = "Password Last Changed";
+                }
+                field(activeSessionCount) {
+                    caption = "Active Sessions Count";
+                }
+            }
+        }
+    }
+
+    actions {
+        area(Processing) {
+            action(UnlockUserAction) {
+                caption = "Unlock Account";
+                icon = "Unlock";
+                promotes = true;
+                onAction(rec, ctx) {
+                    const res = ctx.call("AuthManager", "UnlockUser", { username: rec.username });
+                    ctx.ui.message("Account unlocked successfully.");
+                }
+            }
+            action(ResetPasswordAction) {
+                caption = "Dispatch Password Reset";
+                icon = "Mail";
+                onAction(rec, ctx) {
+                    const res = ctx.call("AuthManager", "RequestPasswordReset", { username: rec.username });
+                    ctx.ui.message("Password reset instructions dispatched.");
+                }
+            }
+        }
+    }
+}
+
+page RoleList for Role {
+    pageType = List;
+    caption = "Security Roles";
+
+    layout {
+        area(Content) {
+            repeater(RolesRepeater) {
+                field(code) {
+                    caption = "Role Code";
+                }
+                field(name) {
+                    caption = "Role Name";
+                }
+                field(description) {
+                    caption = "Description";
+                }
+                field(isSystemRole) {
+                    caption = "System Role";
+                }
+                field(assignedUsersCount) {
+                    caption = "Assigned Users";
+                }
+                field(isActive) {
+                    caption = "Active";
+                }
+            }
+        }
+    }
+}
+
+page RoleCard for Role {
+    pageType = Card;
+    caption = "Security Role Details";
+
+    layout {
+        area(Content) {
+            group(RoleGeneralFastTab) {
+                caption = "Role Information";
+                field(code) {
+                    caption = "Role Code";
+                }
+                field(name) {
+                    caption = "Role Name";
+                }
+                field(description) {
+                    caption = "Description";
+                }
+                field(isSystemRole) {
+                    caption = "System Protected";
+                }
+                field(assignedUsersCount) {
+                    caption = "Total Assigned Users";
+                }
+                field(isActive) {
+                    caption = "Active Status";
+                }
+            }
+        }
+    }
+}
+
+page UserGroupList for UserGroup {
+    pageType = List;
+    caption = "User Security Groups";
+
+    layout {
+        area(Content) {
+            repeater(GroupsRepeater) {
+                field(code) {
+                    caption = "Group Code";
+                }
+                field(name) {
+                    caption = "Group Name";
+                }
+                field(defaultRoleCode) {
+                    caption = "Default Role";
+                }
+                field(memberCount) {
+                    caption = "Members";
+                }
+                field(isActive) {
+                    caption = "Active";
+                }
+            }
+        }
+    }
+}
+
+page UserGroupCard for UserGroup {
+    pageType = Card;
+    caption = "User Group Details";
+
+    layout {
+        area(Content) {
+            group(GroupGeneralFastTab) {
+                caption = "General Information";
+                field(code) {
+                    caption = "Group Code";
+                }
+                field(name) {
+                    caption = "Group Name";
+                }
+                field(description) {
+                    caption = "Description";
+                }
+                field(defaultRoleCode) {
+                    caption = "Default Role Code";
+                }
+                field(memberCount) {
+                    caption = "Total Members";
+                }
+                field(isActive) {
+                    caption = "Active Status";
+                }
+            }
+        }
+    }
+}
+
+page UserRoleList for UserRole {
+    pageType = List;
+    caption = "User Role Mappings";
+
+    layout {
+        area(Content) {
+            repeater(UserRolesRepeater) {
+                field(username) {
+                    caption = "Username";
+                }
+                field(roleCode) {
+                    caption = "Role Code";
+                }
+                field(assignedBy) {
+                    caption = "Assigned By";
+                }
+            }
+        }
+    }
+}
+
+page UserPersonalizationList for UserPersonalization {
+    pageType = List;
+    caption = "User Personalizations";
+
+    layout {
+        area(Content) {
+            repeater(PersonalizationsRepeater) {
+                field(username) {
+                    caption = "User ID";
+                }
+                field(themeMode) {
+                    caption = "Theme Mode";
+                }
+                field(colorTheme) {
+                    caption = "Color Theme";
+                }
+                field(locale) {
+                    caption = "Locale";
+                }
+                field(timezone) {
+                    caption = "Timezone";
+                }
+                field(defaultCompanyCode) {
+                    caption = "Default Company";
+                }
+                field(compactDensity) {
+                    caption = "Compact Density";
+                }
+            }
+        }
+    }
+}
+
+page UserPersonalizationCard for UserPersonalization {
+    pageType = Card;
+    caption = "User Personalization Settings";
+
+    layout {
+        area(Content) {
+            group(UserPersonalizationGeneralFastTab) {
+                caption = "User Identity";
+                field(username) {
+                    caption = "User ID";
+                }
+                field(defaultCompanyCode) {
+                    caption = "Default Active Company";
+                }
+            }
+
+            group(UserPersonalizationThemeFastTab) {
+                caption = "Appearance and Theme";
+                field(themeMode) {
+                    caption = "UI Theme Mode (Light / Dark / Auto)";
+                }
+                field(colorTheme) {
+                    caption = "Preferred Color Palette";
+                }
+                field(compactDensity) {
+                    caption = "Enable Compact Table Density";
+                }
+            }
+
+            group(UserPersonalizationRegionalFastTab) {
+                caption = "Regional Formatting";
+                field(locale) {
+                    caption = "Display Locale";
+                }
+                field(timezone) {
+                    caption = "Preferred Timezone";
+                }
+            }
+        }
+    }
+}
+
+page UserSecuritySettingList for UserSecuritySetting {
+    pageType = List;
+    caption = "User Security Settings";
+
+    layout {
+        area(Content) {
+            repeater(SecuritySettingsRepeater) {
+                field(username) {
+                    caption = "Username";
+                }
+                field(mfaMethod) {
+                    caption = "MFA Method";
+                }
+                field(mfaEnabled) {
+                    caption = "MFA Enabled";
+                }
+                field(maxConcurrentSessions) {
+                    caption = "Max Sessions";
+                }
+                field(mustChangePassword) {
+                    caption = "Must Change Password";
+                }
+                field(passwordExpiryDays) {
+                    caption = "Password Expiry Days";
+                }
+            }
+        }
+    }
+}

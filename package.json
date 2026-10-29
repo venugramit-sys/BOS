@@ -17,6 +17,11 @@
     "build:dist": "powershell -ExecutionPolicy Bypass -File ./scripts/build-distribution.ps1",
     "build:dist:fast": "powershell -ExecutionPolicy Bypass -File ./scripts/build-distribution.ps1 -SkipFrontend -SkipBackend",
     "build:linux": "bash ./scripts/build-distribution.sh",
-    "start:prod": "cargo run --release -p bosc-cli -- node run --config dist/bos-server/config/bos-node.toml"
+    "start:prod": "node ./scripts/run-node.mjs --config dist/bos-server/config/bos-node.toml --release",
+    "start:node": "node ./scripts/run-node.mjs",
+    "node": "node ./scripts/run-node.mjs",
+    "node:ps": "powershell -ExecutionPolicy Bypass -File ./scripts/run-node.ps1",
+    "node:check": "cargo run -p bosc-cli -- node check --config bos-node.toml",
+    "node:kill": "powershell -ExecutionPolicy Bypass -Command \"Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; Write-Host 'Port 3000 cleared.' -ForegroundColor Green\""
   }
 }

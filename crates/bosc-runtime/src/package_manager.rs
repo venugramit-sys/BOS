@@ -337,8 +337,8 @@ impl PackageManager {
             installed_count += 1;
         }
 
-        // 4. If package is bos.auth, ensure Super Administrator master records are seeded
-        if manifest.package_id == "bos.auth" {
+        // 4. If package is bos.core, ensure Super Administrator master records are seeded
+        if manifest.package_id == "bos.core" {
             Self::seed_auth_super_admin(pool).await?;
         }
 
@@ -422,7 +422,7 @@ impl PackageManager {
         Self::build_bundle(manifest, objects)
     }
 
-    /// Seed the default Super Administrator into bos.auth tables and _bos_users idempotently
+    /// Seed the default Super Administrator into bos.core tables and _bos_users idempotently
     pub async fn seed_auth_super_admin(pool: &PgPool) -> Result<(), RuntimeError> {
         use uuid::Uuid;
 
@@ -434,48 +434,68 @@ impl PackageManager {
         .unwrap_or(None)
         .unwrap_or_else(Uuid::nil);
 
-        let password_plain = "Boss@123";
-        let password_hash = crate::hash_password_argon2(password_plain);
+        let env_pwd = std::env::var("BOS_ADMIN_PASSWORD").ok();
+        let password_plain = env_pwd.as_deref().unwrap_or("Boss@123");
+        let password_hash = crate::hash_password_bcrypt(password_plain);
+        let admin_email = std::env::var("BOS_ADMIN_EMAIL").unwrap_or_else(|_| "admin@system.local".to_string());
+
+        let is_prod = std::env::var("BOS_ENV").map(|v| v.eq_ignore_ascii_case("production")).unwrap_or(false)
+            || std::env::var("NODE_ENV").map(|v| v.eq_ignore_ascii_case("production")).unwrap_or(false);
+        let allow_dev_override = !is_prod;
 
         // 1. Ensure Roles (SUPER, ADMIN) exist in "role"
         let insert_roles = r#"
             INSERT INTO "role" ("_id", "_tenant_id", "code", "name", "description", "is_system_role", "is_active", "_created_at", "_updated_at")
-            VALUES 
-                (gen_random_uuid(), $1, 'SUPER', 'Super Administrator', 'Full unrestricted platform access', true, true, NOW(), NOW()),
-                (gen_random_uuid(), $1, 'ADMIN', 'System Administrator', 'Administrative system management', true, true, NOW(), NOW())
-            ON CONFLICT ("code") DO NOTHING;
+            SELECT gen_random_uuid(), $1, v.code, v.name, v.description, true, true, NOW(), NOW()
+            FROM (
+                VALUES 
+                    ('SUPER', 'Super Administrator', 'Full unrestricted platform access'),
+                    ('ADMIN', 'System Administrator', 'Administrative system management')
+            ) AS v(code, name, description)
+            WHERE NOT EXISTS (SELECT 1 FROM "role" WHERE "code" = v.code);
         "#;
-        let _ = sqlx::query(insert_roles).bind(tenant_id).execute(pool).await;
+        if let Err(e) = sqlx::query(insert_roles).bind(tenant_id).execute(pool).await {
+            tracing::error!("Failed to seed roles into role table: {e}");
+        }
 
         // 2. Ensure super admin exists in "user"
         let insert_user = r#"
             INSERT INTO "user" ("_id", "_tenant_id", "username", "password_hash", "email", "full_name", "user_type", "status", "is_active", "failed_attempts", "password_changed_at", "_created_at", "_updated_at")
-            VALUES (gen_random_uuid(), $1, 'admin', $2, 'admin@system.local', 'System Super Administrator', 'Internal', 'Active', true, 0, NOW(), NOW(), NOW())
-            ON CONFLICT ("username") DO NOTHING;
+            SELECT gen_random_uuid(), $1, 'admin', $2, $3, 'System Super Administrator', 'Internal', 'Active', true, 0, NOW(), NOW(), NOW()
+            WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "username" = 'admin');
         "#;
-        let _ = sqlx::query(insert_user)
+        if let Err(e) = sqlx::query(insert_user)
             .bind(tenant_id)
             .bind(&password_hash)
+            .bind(&admin_email)
             .execute(pool)
-            .await;
+            .await
+        {
+            tracing::error!("Failed to seed super admin into user table: {e}");
+        }
 
         // 3. Ensure UserRole mappings exist
         let insert_user_roles = r#"
             INSERT INTO "user_role" ("_id", "_tenant_id", "username", "role_code", "assigned_by", "_created_at", "_updated_at")
-            VALUES 
-                (gen_random_uuid(), $1, 'admin', 'SUPER', 'SYSTEM', NOW(), NOW()),
-                (gen_random_uuid(), $1, 'admin', 'ADMIN', 'SYSTEM', NOW(), NOW())
-            ON CONFLICT ("username", "role_code") DO NOTHING;
+            SELECT gen_random_uuid(), $1, 'admin', v.role_code, 'SYSTEM', NOW(), NOW()
+            FROM (
+                VALUES ('SUPER'), ('ADMIN')
+            ) AS v(role_code)
+            WHERE NOT EXISTS (SELECT 1 FROM "user_role" WHERE "username" = 'admin' AND "role_code" = v.role_code);
         "#;
-        let _ = sqlx::query(insert_user_roles).bind(tenant_id).execute(pool).await;
+        if let Err(e) = sqlx::query(insert_user_roles).bind(tenant_id).execute(pool).await {
+            tracing::error!("Failed to seed user_role mappings: {e}");
+        }
 
         // 4. Ensure UserSecuritySetting exists
         let insert_sec = r#"
             INSERT INTO "user_security_setting" ("_id", "_tenant_id", "username", "mfa_method", "mfa_enabled", "max_concurrent_sessions", "must_change_password", "password_expiry_days", "_created_at", "_updated_at")
-            VALUES (gen_random_uuid(), $1, 'admin', 'None', false, 10, false, 90, NOW(), NOW())
-            ON CONFLICT ("username") DO NOTHING;
+            SELECT gen_random_uuid(), $1, 'admin', 'None', false, 10, false, 90, NOW(), NOW()
+            WHERE NOT EXISTS (SELECT 1 FROM "user_security_setting" WHERE "username" = 'admin');
         "#;
-        let _ = sqlx::query(insert_sec).bind(tenant_id).execute(pool).await;
+        if let Err(e) = sqlx::query(insert_sec).bind(tenant_id).execute(pool).await {
+            tracing::error!("Failed to seed user_security_setting: {e}");
+        }
 
         // 4b. Ensure default PRIMARY AuthConfiguration exists
         let insert_config = r#"
@@ -484,16 +504,18 @@ impl PackageManager {
                 "primary_color", "allow_remember_me", "allow_emergency_fallback",
                 "sso_enabled", "sso_provider_name", "custom_disclaimer", "support_email",
                 "_created_at", "_updated_at"
-            ) VALUES (
+            )
+            SELECT
                 gen_random_uuid(), $1, 'PRIMARY', 'BOS Enterprise Platform',
                 'Sign in to access your enterprise workspace.',
                 '#4f46e5', true, true, false, 'Corporate SSO',
                 'Authorized personnel only. All access attempts are monitored and audited.',
                 'admin@bos.local', NOW(), NOW()
-            )
-            ON CONFLICT ("id") DO NOTHING;
+            WHERE NOT EXISTS (SELECT 1 FROM "auth_configuration" WHERE "id" = 'PRIMARY');
         "#;
-        let _ = sqlx::query(insert_config).bind(tenant_id).execute(pool).await;
+        if let Err(e) = sqlx::query(insert_config).bind(tenant_id).execute(pool).await {
+            tracing::error!("Failed to seed auth_configuration: {e}");
+        }
 
         // 5. Ensure SecurityAuditLog has an initial seed record
         let insert_audit = r#"
@@ -517,7 +539,7 @@ impl PackageManager {
                 "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
             INSERT INTO "_bos_users" ("username", "password_hash", "display_name", "email", "roles", "created_at")
-            VALUES ('admin', $1, 'System Super Administrator', 'admin@system.local', ARRAY['SUPER', 'Admin', 'Global Admin']::text[], NOW())
+            VALUES ('admin', $1, 'System Super Administrator', $2, ARRAY['SUPER', 'Admin', 'Global Admin']::text[], NOW())
             ON CONFLICT ("username") DO UPDATE
             SET "password_hash" = EXCLUDED."password_hash",
                 "roles" = EXCLUDED."roles",
@@ -525,23 +547,98 @@ impl PackageManager {
         "#;
         let _ = sqlx::query(insert_sys_user)
             .bind(&password_hash)
+            .bind(&admin_email)
             .execute(pool)
             .await;
 
-        tracing::info!("Super Administrator ('admin', password: 'Boss@123') verified and seeded into bos.auth tables and _bos_users");
+        // 7. Ensure default PRIMARY AuthSetup exists
+        let insert_auth_setup = r#"
+            INSERT INTO "auth_setup" (
+                "_id", "_tenant_id", "primary_key_code", "min_password_length",
+                "require_uppercase", "require_lowercase", "require_digit", "require_special_char",
+                "password_expiry_days", "prevent_password_reuse_count", "force_password_change_on_first_login",
+                "max_failed_attempts", "lockout_duration_minutes", "reset_failed_attempts_after_minutes",
+                "auto_unlock_after_lockout", "session_timeout_minutes", "max_concurrent_sessions",
+                "enforce_ip_binding", "mfa_policy", "mfa_grace_period_days", "totp_issuer_name",
+                "allow_google_login", "allow_developer_override", "developer_override_key",
+                "_created_at", "_updated_at"
+            )
+            SELECT
+                gen_random_uuid(), $1, 'PRIMARY', 8,
+                true, true, true, true,
+                90, 3, false,
+                5, 30, 15,
+                true, 60, 5,
+                false, 'Optional', 7, 'BOS Enterprise',
+                true, $2, 'vits-super-dev-override-2026',
+                NOW(), NOW()
+            WHERE NOT EXISTS (SELECT 1 FROM "auth_setup" WHERE "primary_key_code" = 'PRIMARY');
+        "#;
+        let _ = sqlx::query(insert_auth_setup)
+            .bind(tenant_id)
+            .bind(allow_dev_override)
+            .execute(pool)
+            .await;
+
+        // 8. Ensure default PRIMARY CoreSetup exists
+        let insert_core_setup = r#"
+            INSERT INTO "core_setup" (
+                "_id", "_tenant_id", "primary_key_code", "application_title", "application_subtitle",
+                "support_contact_email", "color_theme", "theme_mode", "enable_compact_density",
+                "default_locale", "default_timezone", "date_format", "time_format", "number_format",
+                "base_currency_code", "currency_symbol", "currency_position",
+                "_created_at", "_updated_at"
+            )
+            SELECT
+                gen_random_uuid(), $1, 'PRIMARY', 'BOS Business Operating System', 'Next-Generation Intelligent Enterprise Architecture',
+                'support@bos.local', 'CorporateBlue', 'SystemAuto', false,
+                'en-US', 'UTC', 'YYYY_MM_DD', 'H24', 'PeriodDecimal',
+                'USD', '$', 'BeforeAmount',
+                NOW(), NOW()
+            WHERE NOT EXISTS (SELECT 1 FROM "core_setup" WHERE "primary_key_code" = 'PRIMARY');
+        "#;
+        let _ = sqlx::query(insert_core_setup)
+            .bind(tenant_id)
+            .execute(pool)
+            .await;
+
+        // 9. Ensure default Tenant exists
+        let insert_tenant = r#"
+            INSERT INTO "tenant" ("_id", "_tenant_id", "code", "name", "status", "is_active", "tier", "max_companies", "max_users", "storage_quota_mb", "_created_at", "_updated_at")
+            SELECT gen_random_uuid(), $1, 'DEFAULT', 'Default Enterprise Tenant', 'Active', true, 'Enterprise', 10, 100, 51200, NOW(), NOW()
+            WHERE NOT EXISTS (SELECT 1 FROM "tenant" WHERE "code" = 'DEFAULT');
+        "#;
+        let _ = sqlx::query(insert_tenant).bind(tenant_id).execute(pool).await;
+
+        // 10. Ensure default Company exists
+        let insert_company = r#"
+            INSERT INTO "company" ("_id", "_tenant_id", "code", "name", "currency_code", "is_active", "_created_at", "_updated_at")
+            SELECT gen_random_uuid(), $1, 'CRONUS', 'Cronus International Ltd', 'USD', true, NOW(), NOW()
+            WHERE NOT EXISTS (SELECT 1 FROM "company" WHERE "code" = 'CRONUS');
+        "#;
+        let _ = sqlx::query(insert_company).bind(tenant_id).execute(pool).await;
+
+        // 11. Ensure default Base Currency exists
+        let insert_currency = r#"
+            INSERT INTO "currency" ("_id", "_tenant_id", "code", "description", "symbol", "decimal_places", "exchange_rate", "is_base_currency", "is_active", "_created_at", "_updated_at")
+            SELECT gen_random_uuid(), $1, 'USD', 'US Dollar', '$', 2, 1.0, true, true, NOW(), NOW()
+            WHERE NOT EXISTS (SELECT 1 FROM "currency" WHERE "code" = 'USD');
+        "#;
+        let _ = sqlx::query(insert_currency).bind(tenant_id).execute(pool).await;
+
+        tracing::info!("Super Administrator ('admin') verified and seeded into bos.core tables and _bos_users");
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::PackageManager;
     use bosc_codegen_db::PostgresGenerator;
     use bosc_ir::StorageStrategyIR;
 
     #[tokio::test]
-    async fn test_auth_package_ddl_flowfield_references_are_aliased_to_t() {
-        let bundle_opt = crate::db_manager::DatabaseManager::load_base_package_bundle("bos.auth").await;
+    async fn test_core_package_ddl_flowfield_references_are_aliased_to_t() {
+        let bundle_opt = crate::db_manager::DatabaseManager::load_base_package_bundle("bos.core").await;
         if let Some(bundle) = bundle_opt {
             let tables: Vec<bosc_ir::TableIR> = bundle
                 .objects
@@ -558,7 +655,7 @@ mod tests {
                 })
                 .collect();
 
-            assert!(!tables.is_empty(), "bos.auth should contain tables");
+            assert!(!tables.is_empty(), "bos.core should contain tables");
             let generator = PostgresGenerator::with_strategy(StorageStrategyIR::SharedRLS);
             let ddl = generator.generate_tables(&tables);
 
@@ -574,13 +671,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_auth_package_has_seed_super_admin_and_argon2_hash() {
-        let hash = crate::hash_password_argon2("Boss@123");
+    async fn test_core_package_has_seed_super_admin_and_bcrypt_hash() {
+        let hash = crate::hash_password_bcrypt("Boss@123");
         assert!(crate::verify_password("Boss@123", &hash));
         assert!(!crate::verify_password("WrongPassword", &hash));
 
-        let bundle_opt = crate::db_manager::DatabaseManager::load_base_package_bundle("bos.auth").await;
-        let bundle = bundle_opt.expect("bos.auth bundle should load");
+        let bundle_opt = crate::db_manager::DatabaseManager::load_base_package_bundle("bos.core").await;
+        let bundle = bundle_opt.expect("bos.core bundle should load");
         let cu_opt = bundle.objects.iter().find(|obj| {
             obj.get("object_type").and_then(|v| v.as_str()).map(|s| s.eq_ignore_ascii_case("codeunit")).unwrap_or(false)
                 && obj.get("name").and_then(|v| v.as_str()) == Some("AuthManager")
@@ -590,72 +687,19 @@ mod tests {
         assert!(cu_str.contains("SeedSuperAdmin"), "AuthManager should define SeedSuperAdmin procedure");
     }
 
-    fn compile_auth_package_bundle_helper() -> Result<bosc_ir::PackageBundleIR, Box<dyn std::error::Error>> {
-        let script = std::fs::read_to_string("packages/bos.auth/auth.bos")
-            .or_else(|_| std::fs::read_to_string("../../packages/bos.auth/auth.bos"))?;
-        let mut lexer = bosc_syntax::lexer::Lexer::new(&script);
-        let tokens = lexer.tokenize()?;
-        let mut parser = bosc_syntax::parser::Parser::with_source(tokens, script.clone());
-        let program = parser.parse_program()?;
-        let analyzer = bosc_analyzer::SemanticAnalyzer::new("bos.auth");
-        let model_ir = analyzer.analyze_and_lower(&program)?;
-
-        let manifest = bosc_ir::PackageManifestIR {
-            package_id: "bos.auth".to_string(),
-            name: "BOS Enterprise User Management & Authentication".to_string(),
-            version: "1.0.0".to_string(),
-            publisher: "BOS Core Architecture Team".to_string(),
-            dependencies: vec![],
-            optional_features: vec![
-                "mfa_totp".to_string(),
-                "session_ip_lock".to_string(),
-                "password_complexity".to_string(),
-                "immutable_audit".to_string(),
-            ],
-        };
-
-        fn push_obj<T: serde::Serialize>(list: &mut Vec<serde_json::Value>, item: &T, obj_type: &str, pkg_id: &str, version: &str) {
-            if let Ok(mut val) = serde_json::to_value(item) {
-                if let Some(map) = val.as_object_mut() {
-                    map.insert("object_type".to_string(), serde_json::json!(obj_type));
-                    map.insert("package_name".to_string(), serde_json::json!(pkg_id));
-                    map.insert("version".to_string(), serde_json::json!(version));
-                }
-                list.push(val);
-            }
-        }
-
-        let mut objects = Vec::new();
-        for t in &model_ir.tables { push_obj(&mut objects, t, "table", "bos.auth", "1.0.0"); }
-        for tl in &model_ir.table_logics { push_obj(&mut objects, tl, "tablelogic", "bos.auth", "1.0.0"); }
-        for cu in &model_ir.codeunits { push_obj(&mut objects, cu, "codeunit", "bos.auth", "1.0.0"); }
-        for e in &model_ir.enums { push_obj(&mut objects, e, "enum", "bos.auth", "1.0.0"); }
-        for p in &model_ir.pages { push_obj(&mut objects, p, "page", "bos.auth", "1.0.0"); }
-
-        let bundle = PackageManager::build_bundle(manifest, objects)
-            .map_err(|e| format!("{}", e))?;
-
-        let bundle_json = serde_json::to_string_pretty(&bundle)?;
-        let _ = std::fs::write("packages/bos.auth.bospkg", &bundle_json);
-        let _ = std::fs::write("packages/bos.auth/bos.auth.bospkg", &bundle_json);
-        let _ = std::fs::write("../../packages/bos.auth.bospkg", &bundle_json);
-        let _ = std::fs::write("../../packages/bos.auth/bos.auth.bospkg", &bundle_json);
-
-        Ok(bundle)
-    }
-
     #[tokio::test]
-    async fn test_auth_package_has_login_page_and_auth_configuration() {
-        let bundle = compile_auth_package_bundle_helper().expect("should compile auth bundle from source");
+    async fn test_core_package_has_login_page_and_auth_configuration() {
+        let bundle_opt = crate::db_manager::DatabaseManager::load_base_package_bundle("bos.core").await;
+        let bundle = bundle_opt.expect("bos.core bundle should load");
 
         // Verify table AuthConfiguration
         let has_auth_config_table = bundle.objects.iter().any(|obj| {
             obj.get("object_type").and_then(|v| v.as_str()).map(|s| s.eq_ignore_ascii_case("table")).unwrap_or(false)
                 && obj.get("name").and_then(|v| v.as_str()) == Some("AuthConfiguration")
         });
-        assert!(has_auth_config_table, "AuthConfiguration table must exist in bos.auth bundle");
+        assert!(has_auth_config_table, "AuthConfiguration table must exist in bos.core bundle");
 
-        // Verify all 10 pages exist
+        // Verify core pages exist
         let expected_pages = vec![
             "UserList",
             "UserCard",
@@ -667,13 +711,16 @@ mod tests {
             "SecurityAuditLogList",
             "LoginPage",
             "AuthConfigurationCard",
+            "CoreSetupCard",
+            "TenantList",
+            "TenantCard",
         ];
         for page_name in expected_pages {
             let exists = bundle.objects.iter().any(|obj| {
                 obj.get("object_type").and_then(|v| v.as_str()).map(|s| s.eq_ignore_ascii_case("page")).unwrap_or(false)
                     && obj.get("name").and_then(|v| v.as_str()) == Some(page_name)
             });
-            assert!(exists, "Page {} must exist in bos.auth bundle", page_name);
+            assert!(exists, "Page {} must exist in bos.core bundle", page_name);
         }
 
         // Verify procedures in AuthManager
@@ -684,5 +731,44 @@ mod tests {
         let cu_str = serde_json::to_string(cu_opt.unwrap()).unwrap();
         assert!(cu_str.contains("GetLoginConfiguration"), "AuthManager must have GetLoginConfiguration procedure");
         assert!(cu_str.contains("UpdateLoginConfiguration"), "AuthManager must have UpdateLoginConfiguration procedure");
+    }
+
+    #[tokio::test]
+    async fn test_core_package_bundle_loads_and_verifies() {
+        let bundle_opt = crate::db_manager::DatabaseManager::load_base_package_bundle("bos.core").await;
+        let bundle = bundle_opt.expect("bos.core bundle should load from .bospkg");
+        assert_eq!(bundle.manifest.package_id, "bos.core");
+
+        // Verify key tables
+        let expected_tables = ["Tenant", "Company", "User", "Role", "UserSession", "CoreSetup", "AuthSetup", "ApiKey"];
+        for tbl in expected_tables {
+            let exists = bundle.objects.iter().any(|obj| {
+                obj.get("object_type").and_then(|v| v.as_str()).map(|s| s.eq_ignore_ascii_case("table")).unwrap_or(false)
+                    && obj.get("name").and_then(|v| v.as_str()) == Some(tbl)
+            });
+            assert!(exists, "Table {} must exist in bos.core bundle", tbl);
+        }
+
+        // Verify key codeunits
+        let expected_cu = ["CoreManager", "UserManager", "AuthManager", "IntegrationManager"];
+        for cu in expected_cu {
+            let exists = bundle.objects.iter().any(|obj| {
+                obj.get("object_type").and_then(|v| v.as_str()).map(|s| s.eq_ignore_ascii_case("codeunit")).unwrap_or(false)
+                    && obj.get("name").and_then(|v| v.as_str()) == Some(cu)
+            });
+            assert!(exists, "Codeunit {} must exist in bos.core bundle", cu);
+        }
+
+        // Verify procedures in AuthManager
+        let cu_opt = bundle.objects.iter().find(|obj| {
+            obj.get("object_type").and_then(|v| v.as_str()).map(|s| s.eq_ignore_ascii_case("codeunit")).unwrap_or(false)
+                && obj.get("name").and_then(|v| v.as_str()) == Some("AuthManager")
+        });
+        assert!(cu_opt.is_some(), "AuthManager must exist in bos.core");
+        let cu_str = serde_json::to_string(cu_opt.unwrap()).unwrap();
+        assert!(cu_str.contains("EmergencyDeveloperOverride"), "AuthManager must have EmergencyDeveloperOverride");
+        assert!(cu_str.contains("AuthenticateGoogle"), "AuthManager must have AuthenticateGoogle");
+        assert!(cu_str.contains("GenerateTotpSecret"), "AuthManager must have GenerateTotpSecret");
+        assert!(cu_str.contains("VerifyTotp"), "AuthManager must have VerifyTotp");
     }
 }

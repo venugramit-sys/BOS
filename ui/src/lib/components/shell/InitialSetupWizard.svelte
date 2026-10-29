@@ -54,7 +54,7 @@
   // Step 2: Storage Strategy & Packages
   let storageStrategy = $state("shared_rls");
   let importBasePackages = $state(true);
-  let selectedPackages = $state(["bos.security", "bos.ledger"]);
+  let selectedPackages = $state(["bos.core"]);
 
   // Step 3: Organization & Scope
   let tenantCode = $state("DEFAULT");
@@ -241,13 +241,9 @@
 
     currentStep = 5;
     isProvisioning = true;
-    provisioningStage = 1;
     errorMessage = "";
 
     try {
-      const stageTimer1 = setTimeout(() => { if (isProvisioning) provisioningStage = 2; }, 800);
-      const stageTimer2 = setTimeout(() => { if (isProvisioning) provisioningStage = 3; }, 1800);
-
       const payload = {
         database: providerType === "local" ? dbName.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_") : undefined,
         connection_url: providerType === "cloud" ? cloudConnectionUrl.trim() : undefined,
@@ -269,11 +265,6 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
-
-      clearTimeout(stageTimer1);
-      clearTimeout(stageTimer2);
-
-      provisioningStage = 4;
 
       const result = await response.json().catch(() => ({}));
 
@@ -854,47 +845,55 @@
           </div>
 
           <!-- Progress Checklist -->
-          <div class="max-w-xs mx-auto text-left space-y-2 font-mono text-[11px]">
+          <div class="max-w-xs mx-auto text-left space-y-2.5 font-mono text-[11px]">
             <div class="flex items-center gap-2">
-              {#if provisioningStage >= 1}
-                <Check class="size-4 text-emerald-500" />
+              {#if provisioningStage >= 5}
+                <Check class="size-4 text-emerald-500 shrink-0" />
+              {:else if isProvisioning}
+                <Loader2 class="size-4 animate-spin text-indigo-500 shrink-0" />
               {:else}
                 <span class="size-4 rounded-full border border-slate-300 dark:border-slate-700 shrink-0"></span>
               {/if}
-              <span class={cn(provisioningStage >= 1 ? "text-slate-800 dark:text-slate-200" : "text-slate-400")}>
+              <span class={cn(isProvisioning || provisioningStage >= 5 ? "text-slate-800 dark:text-slate-200" : "text-slate-400")}>
                 {providerType === "cloud" ? "Connect to Cloud PostgreSQL Provider" : `Initialize Database '${dbName}'`}
               </span>
             </div>
 
             <div class="flex items-center gap-2">
-              {#if provisioningStage >= 2}
-                <Check class="size-4 text-emerald-500" />
+              {#if provisioningStage >= 5}
+                <Check class="size-4 text-emerald-500 shrink-0" />
+              {:else if isProvisioning}
+                <Loader2 class="size-4 animate-spin text-indigo-500 shrink-0" />
               {:else}
                 <span class="size-4 rounded-full border border-slate-300 dark:border-slate-700 shrink-0"></span>
               {/if}
-              <span class={cn(provisioningStage >= 2 ? "text-slate-800 dark:text-slate-200" : "text-slate-400")}>
+              <span class={cn(isProvisioning || provisioningStage >= 5 ? "text-slate-800 dark:text-slate-200" : "text-slate-400")}>
                 Kernel DDL & Strategy ({storageStrategy})
               </span>
             </div>
 
             <div class="flex items-center gap-2">
-              {#if provisioningStage >= 3}
-                <Check class="size-4 text-emerald-500" />
+              {#if provisioningStage >= 5}
+                <Check class="size-4 text-emerald-500 shrink-0" />
+              {:else if isProvisioning}
+                <Loader2 class="size-4 animate-spin text-indigo-500 shrink-0" />
               {:else}
                 <span class="size-4 rounded-full border border-slate-300 dark:border-slate-700 shrink-0"></span>
               {/if}
-              <span class={cn(provisioningStage >= 3 ? "text-slate-800 dark:text-slate-200" : "text-slate-400")}>
-                Deploy Base Packages (bos.security)
+              <span class={cn(isProvisioning || provisioningStage >= 5 ? "text-slate-800 dark:text-slate-200" : "text-slate-400")}>
+                Deploy Base Packages ({selectedPackages.join(", ") || "bos.core"})
               </span>
             </div>
 
             <div class="flex items-center gap-2">
-              {#if provisioningStage >= 4}
-                <Check class="size-4 text-emerald-500" />
+              {#if provisioningStage >= 5}
+                <Check class="size-4 text-emerald-500 shrink-0" />
+              {:else if isProvisioning}
+                <Loader2 class="size-4 animate-spin text-indigo-500 shrink-0" />
               {:else}
                 <span class="size-4 rounded-full border border-slate-300 dark:border-slate-700 shrink-0"></span>
               {/if}
-              <span class={cn(provisioningStage >= 4 ? "text-slate-800 dark:text-slate-200" : "text-slate-400")}>
+              <span class={cn(isProvisioning || provisioningStage >= 5 ? "text-slate-800 dark:text-slate-200" : "text-slate-400")}>
                 Seed Superuser '{adminUsername}'
               </span>
             </div>

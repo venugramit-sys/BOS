@@ -27,8 +27,12 @@
     // A new record got its id: keep the tab, re-key its params so a reload shows the saved record.
     shell.openTabs = shell.openTabs.map((t) => (t.id === tab.id ? { ...t, params: { ...(t.params ?? {}), recordId, mode: "edit" } } : t));
   }
+
+  function onDirtyChange(isDirty) {
+    shell.openTabs = shell.openTabs.map((t) => (t.id === tab.id ? { ...t, isDirty } : t));
+  }
 </script>
 
 {#key tab.id}
-  <PageHost {page} {params} {openPage} {closePage} {onRecordChange} navigate={(url) => shell.navigate(url)} />
+  <PageHost {page} {params} {openPage} {closePage} {onRecordChange} {onDirtyChange} navigate={(url) => shell.navigate(url)} />
 {/key}

@@ -48,15 +48,15 @@ if (fs.existsSync(resolvedConfig)) {
   if (match) port = parseInt(match[1], 10);
 }
 
-// 3. Clear port if occupied to eliminate "os error 10048"
+// 3. Terminate running bosc instances & port occupiers to prevent "Access is denied (os error 5)" and "os error 10048"
 try {
   if (process.platform === 'win32') {
     execSync(
-      `powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort ${port} -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"`,
+      `powershell -NoProfile -Command "Get-Process -Name 'bosc' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Get-NetTCPConnection -LocalPort ${port} -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"`,
       { stdio: 'ignore' }
     );
   } else {
-    execSync(`lsof -ti :${port} | xargs kill -9 2>/dev/null || true`, { stdio: 'ignore' });
+    execSync(`pkill -9 bosc 2>/dev/null || true; lsof -ti :${port} | xargs kill -9 2>/dev/null || true`, { stdio: 'ignore' });
   }
 } catch {
   // Ignore if no process was running

@@ -553,7 +553,8 @@ async fn sync_relations(
         let existing: Vec<String> = sqlx::query_scalar(
             r#"SELECT conname::text FROM pg_constraint
                WHERE conrelid = to_regclass(format('%I.%I', $1::text, $2::text))
-                 AND contype = 'f' AND left(conname, length($3)) = $3"#,
+                 AND contype = 'f' AND left(conname, length($3)) = $3
+                 AND conparentid = 0 AND conislocal"#,
         )
         .bind(&live.schema)
         .bind(&live.name)

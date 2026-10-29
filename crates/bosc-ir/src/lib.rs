@@ -766,6 +766,8 @@ pub struct TablePermissionIR {
     pub can_modify: bool,
     pub can_delete: bool,
     pub row_filter: Option<String>,
+    #[serde(default)]
+    pub exclude_fields: Vec<String>,
 }
 
 // ----------------------------------------------------

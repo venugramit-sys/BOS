@@ -87,9 +87,43 @@ pub(crate) fn lower_style(props: &[Property]) -> Option<PageStyleIR> {
             }
             "radius" | "borderRadius" | "rounded" => style.radius = Radius::parse(&text),
             "shadow" | "elevation" => style.shadow = Shadow::parse(&text),
-            "density" | "padding" => style.density = Density::parse(&text),
+            "density" => style.density = Density::parse(&text),
+            "padding" => {
+                if let Some(d) = Density::parse(&text) {
+                    style.density = Some(d);
+                } else {
+                    style.padding = Some(text.clone());
+                }
+            }
             "emphasis" | "style" => style.emphasis = Emphasis::parse(&text),
             "icon" | "image" => style.icon = normalize_icon_name(&text),
+            "iconSize" => style.icon_size = Some(text.clone()),
+            "iconColor" => style.icon_color = ColorValue::parse(&text).ok(),
+            "iconBg" | "iconBackground" => style.icon_background = ColorValue::parse(&text).ok(),
+            "iconRadius" => style.icon_radius = Radius::parse(&text),
+            "fontSize" | "textSize" | "size" => style.font_size = Some(text.clone()),
+            "fontWeight" | "weight" => style.font_weight = Some(text.clone()),
+            "textAlign" | "align" => style.text_align = Some(text.clone()),
+            "letterSpacing" | "charSpace" => style.letter_spacing = Some(text.clone()),
+            "lineHeight" => style.line_height = Some(text.clone()),
+            "textTransform" | "transform" => style.text_transform = Some(text.clone()),
+            "textDecoration" | "decoration" => style.text_decoration = Some(text.clone()),
+            "borderStyle" => style.border_style = Some(text.clone()),
+            "margin" => style.margin = Some(text.clone()),
+            "gap" => style.gap = Some(text.clone()),
+            "width" | "w" => style.width = Some(text.clone()),
+            "maxWidth" | "maxW" => style.max_width = Some(text.clone()),
+            "minWidth" | "minW" => style.min_width = Some(text.clone()),
+            "height" | "h" => style.height = Some(text.clone()),
+            "minHeight" | "minH" => style.min_height = Some(text.clone()),
+            "maxHeight" | "maxH" => style.max_height = Some(text.clone()),
+            "opacity" => style.opacity = Some(text.clone()),
+            "overflow" => style.overflow = Some(text.clone()),
+            "display" => style.display = Some(text.clone()),
+            "justifyContent" | "justify" => style.justify_content = Some(text.clone()),
+            "alignItems" => style.align_items = Some(text.clone()),
+            "flexDirection" | "direction" => style.flex_direction = Some(text.clone()),
+            "flexWrap" | "wrap" => style.flex_wrap = Some(text.clone()),
             _ => {}
         }
     }
@@ -176,6 +210,9 @@ pub(crate) fn lower_page(p: &PageDef) -> PageIR {
         match prop.name.as_str() {
             "pageType" | "page_type" | "layout" | "sourceTable" | "source_table" | "source" => {}
             "caption" | "label" => page.caption = property_text(v),
+            "icon" | "image" => {
+                page.style.get_or_insert_with(PageStyleIR::default).icon = normalize_icon_name(&value_text(v));
+            }
             "sourceKind" => page.source_kind = property_text(v),
             "editable" => page.editable = bool_value(v),
             "insertAllowed" => page.insert_allowed = bool_value(v),

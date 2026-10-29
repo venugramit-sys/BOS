@@ -20,6 +20,7 @@ export function onStudioChange(listener) {
 
 const state = $state({
   catalog: [],
+  packages: [],
   isLoadingCatalog: false,
   catalogError: null,
   activeCategory: "all",
@@ -30,6 +31,12 @@ const state = $state({
   isNewObjectModalOpen: false,
   isRelationshipsOpen: false,
   isNavCollapsed: false,
+  isArchitectureModalOpen: false,
+  architectureModalTab: "module",
+  targetModuleId: "",
+  targetFeatureId: "",
+  sidebarGroupingMode: "feature",
+  selectedDetailCard: null,
 });
 
 class StudioStore {
@@ -38,6 +45,13 @@ class StudioStore {
   }
   set catalog(value) {
     state.catalog = value;
+  }
+
+  get packages() {
+    return state.packages;
+  }
+  set packages(value) {
+    state.packages = value;
   }
 
   get isLoadingCatalog() {
@@ -123,6 +137,127 @@ class StudioStore {
     state.isNavCollapsed = true;
   }
 
+  get isArchitectureModalOpen() {
+    return state.isArchitectureModalOpen;
+  }
+  set isArchitectureModalOpen(val) {
+    state.isArchitectureModalOpen = val;
+  }
+
+  get architectureModalTab() {
+    return state.architectureModalTab;
+  }
+  set architectureModalTab(val) {
+    state.architectureModalTab = val;
+  }
+
+  get targetModuleId() {
+    return state.targetModuleId;
+  }
+  set targetModuleId(val) {
+    state.targetModuleId = val;
+  }
+
+  get targetFeatureId() {
+    return state.targetFeatureId;
+  }
+  set targetFeatureId(val) {
+    state.targetFeatureId = val;
+  }
+
+  get sidebarGroupingMode() {
+    return state.sidebarGroupingMode || "feature";
+  }
+  set sidebarGroupingMode(val) {
+    state.sidebarGroupingMode = val;
+    notify();
+  }
+
+  get selectedDetailCard() {
+    return state.selectedDetailCard;
+  }
+  set selectedDetailCard(val) {
+    state.selectedDetailCard = val;
+  }
+
+  openArchitectureModal(tab = "module", moduleId = null, featureId = null) {
+    state.architectureModalTab = tab;
+    if (moduleId) state.targetModuleId = moduleId;
+    else if (!state.targetModuleId && state.packages.length > 0) {
+      state.targetModuleId = state.packages[0].package_id || "bos.core";
+    }
+    state.targetFeatureId = featureId || "";
+    state.isArchitectureModalOpen = true;
+    notify();
+  }
+
+  closeArchitectureModal() {
+    state.isArchitectureModalOpen = false;
+    notify();
+  }
+
+  openDetailCard(type, data) {
+    state.selectedDetailCard = { type, data };
+    notify();
+  }
+
+  closeDetailCard() {
+    state.selectedDetailCard = null;
+    notify();
+  }
+
+  async createModule(pkgData) {
+    const res = await StudioApi.registerPackage(pkgData);
+    await this.loadCatalog();
+    state.targetModuleId = res.package_id;
+    notify();
+    return res;
+  }
+
+  async createFeature({ id, name, moduleId, description, status = "active" }) {
+    const res = await StudioApi.registerMetaObject({
+      object_type: "feature",
+      name: id,
+      package_name: moduleId,
+      caption: name,
+      definition: {
+        description: description || "",
+        status,
+        type: "feature",
+      },
+    });
+    await this.loadCatalog();
+    state.targetFeatureId = id;
+    notify();
+    return res;
+  }
+
+  async assignObjectFeature(name, feature) {
+    const res = await StudioApi.assignObjectFeature(name, feature);
+    await this.loadCatalog();
+    notify();
+    return res;
+  }
+
+  async createMetaObject({ objectType, name, moduleId, featureId, caption, subType, description }) {
+    const res = await StudioApi.registerMetaObject({
+      object_type: objectType,
+      name,
+      package_name: moduleId,
+      caption,
+      sub_type: subType,
+      definition: {
+        feature: featureId || null,
+        description: description || "",
+        sub_type: subType || "Normal",
+      },
+    });
+    await this.loadCatalog();
+    this.openObject(name, "design", objectType, moduleId);
+    notify();
+    return res;
+  }
+
   get filteredCatalog() {
     return state.catalog.filter((obj) => {
       const matchesCategory =
@@ -177,14 +312,20 @@ class StudioStore {
     state.isLoadingCatalog = true;
     state.catalogError = null;
     try {
-      const objs = await StudioApi.listMetaObjects();
+      const [objs, pkgs] = await Promise.all([
+        StudioApi.listMetaObjects().catch(() => []),
+        StudioApi.listPackages().catch(() => []),
+      ]);
       const raw = Array.isArray(objs) ? objs : [];
       state.catalog = raw.map((o) => ({
         ...o,
         id: o.object_id || o.id || `${o.object_type}-${o.object_name || o.name}`,
         name: o.name || o.object_name || "",
         object_name: o.object_name || o.name || "",
+        package_name: o.package_name || o.package || "bos.core",
+        feature: o.feature || o.definition?.feature || null,
       }));
+      state.packages = Array.isArray(pkgs) ? pkgs : [];
     } catch (err) {
       state.catalogError = err.message || "Failed to load meta-objects catalog";
     } finally {
@@ -272,7 +413,8 @@ class StudioStore {
       const savedPackage = details.summary?.package_name;
       if (savedPackage) current.packageName = savedPackage;
       const objectType = current.type;
-      const savedScript = typeof details.source_script === "string" ? details.source_script.trim() : "";
+      const rawScript = typeof details.source_script === "string" ? details.source_script.trim() : "";
+      const savedScript = extractObjectSlice(rawScript, objectType, name);
       if (!current.isDirty && savedScript && (objectType === "table" || objectType === "tableextension")) {
         current.sourceCode = await formatBosScriptSource(savedScript);
       } else if (!current.isDirty && (objectType === "table" || objectType === "tableextension")) {
@@ -280,11 +422,11 @@ class StudioStore {
         const model = documentFromDetails(name, details, companions);
         if (model.fields.length) {
           current.sourceCode = await formatBosScriptSource(emitDocument(model).combined);
-        } else if (details.source_script) {
-          current.sourceCode = await formatBosScriptSource(details.source_script);
+        } else if (savedScript) {
+          current.sourceCode = await formatBosScriptSource(savedScript);
         }
-      } else if (!current.isDirty && details.source_script) {
-        current.sourceCode = await formatBosScriptSource(details.source_script);
+      } else if (!current.isDirty && savedScript) {
+        current.sourceCode = await formatBosScriptSource(savedScript);
       }
     } catch {
       // A new draft has no saved definition yet.
@@ -317,6 +459,48 @@ class StudioStore {
   selectElement(element) {
     state.selectedElement = element;
   }
+}
+
+function extractObjectSlice(script, type, name) {
+  if (!script || !type || !name) return script;
+  const pattern = new RegExp(`\\b(${type})\\s+${name}\\b[^{]*\\{`, 'i');
+  const match = pattern.exec(script);
+  if (!match) return script;
+  const startIndex = match.index;
+  let depth = 0;
+  let inString = false;
+  let stringChar = '';
+  let inComment = false;
+  let endIndex = -1;
+  for (let i = startIndex; i < script.length; i++) {
+    const char = script[i];
+    const next = script[i + 1];
+    if (inComment) {
+      if (char === '\n' && inComment === 'line') inComment = false;
+      else if (char === '*' && next === '/' && inComment === 'block') { inComment = false; i++; }
+      continue;
+    }
+    if (inString) {
+      if (char === '\\') { i++; continue; }
+      if (char === stringChar) inString = false;
+      continue;
+    }
+    if (char === '/' && next === '/') { inComment = 'line'; i++; continue; }
+    if (char === '/' && next === '*') { inComment = 'block'; i++; continue; }
+    if (char === '"' || char === "'" || char === '`') { inString = true; stringChar = char; continue; }
+    if (char === '{') depth++;
+    else if (char === '}') {
+      depth--;
+      if (depth === 0) {
+        endIndex = i + 1;
+        break;
+      }
+    }
+  }
+  if (endIndex > startIndex) {
+    return script.slice(startIndex, endIndex).trim();
+  }
+  return script;
 }
 
 export const studioStore = new StudioStore();

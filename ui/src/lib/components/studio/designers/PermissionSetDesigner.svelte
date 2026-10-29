@@ -19,8 +19,8 @@
 
   let caption = $state("Sales Clerk Permissions");
   let rules = $state([
-    { entity: "Customer", read: true, insert: true, modify: true, delete: false, execute: false, rlsFilter: "blocked == false" },
-    { entity: "SalesHeader", read: true, insert: true, modify: true, delete: false, execute: true, rlsFilter: 'status == "Open"' },
+    { entity: "Customer", read: true, insert: true, modify: true, delete: false, execute: false, rlsFilter: "blocked == false", exclude: "" },
+    { entity: "SalesHeader", read: true, insert: true, modify: true, delete: false, execute: true, rlsFilter: 'status == "Open"', exclude: "creditLimit" },
   ]);
 
   let isApplying = $state(false);
@@ -33,13 +33,29 @@
 
     const parsedRules = [];
     const ruleRegex =
-      /(?:(tabledata|codeunit|page|query|table)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([RIMDXrimdx]+)(?:\s+where\s*(?:\(([^)]*)\)|\{([^}]*)\}))?\s*;/g;
+      /(?:(tabledata|codeunit|page|query|table)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([RIMDXrimdx]+)(?:\s*(?:\{([^}]*)\}|where\s*(?:\(([^)]*)\))))?\s*;/g;
     let m;
     while ((m = ruleRegex.exec(src)) !== null) {
       const ent = m[2];
       if (ent === "caption" || ent === "permissions" || ent === "execute") continue;
       const rights = m[3].toUpperCase();
-      const whereClause = (m[4] || m[5] || "").trim();
+      const blockBody = m[4] || "";
+      const directWhere = (m[5] || "").trim();
+
+      let rlsFilter = directWhere;
+      let exclude = "";
+
+      if (blockBody) {
+        const exMatch = blockBody.match(/exclude(?:Fields)?\s*[:=]\s*\[([^\]]*)\]/i);
+        if (exMatch) {
+          exclude = exMatch[1].trim();
+        }
+        const whereMatch = blockBody.match(/where\s*(?:\(([^)]*)\)|\{([^}]*)\})/i);
+        if (whereMatch) {
+          rlsFilter = (whereMatch[1] || whereMatch[2] || "").trim();
+        }
+      }
+
       parsedRules.push({
         entity: ent,
         read: rights.includes("R"),
@@ -47,7 +63,8 @@
         modify: rights.includes("M"),
         delete: rights.includes("D"),
         execute: rights.includes("X"),
-        rlsFilter: whereClause,
+        rlsFilter,
+        exclude,
       });
     }
     if (parsedRules.length > 0) rules = parsedRules;
@@ -71,7 +88,20 @@
       if (r.delete) mask += "D";
       if (r.execute) mask += "X";
       if (!mask) mask = "R";
-      if (r.rlsFilter && r.rlsFilter.trim()) {
+
+      const hasExclude = Boolean(r.exclude && r.exclude.trim());
+      const hasFilter = Boolean(r.rlsFilter && r.rlsFilter.trim());
+
+      if (hasExclude) {
+        lines.push(`    tabledata ${r.entity} = ${mask} {`);
+        const exList = r.exclude.split(',').map(s => s.trim()).filter(Boolean).join(', ');
+        lines.push(`        exclude: [${exList}];`);
+        if (hasFilter) {
+          const cleanWhere = r.rlsFilter.trim().replace(/^\(|\)$/g, "");
+          lines.push(`        where (${cleanWhere});`);
+        }
+        lines.push(`    };`);
+      } else if (hasFilter) {
         const cleanWhere = r.rlsFilter.trim().replace(/^\(|\)$/g, "");
         lines.push(`    tabledata ${r.entity} = ${mask} where (${cleanWhere});`);
       } else {
@@ -87,7 +117,7 @@
   function addRule() {
     rules = [
       ...rules,
-      { entity: "NewEntity", read: true, insert: false, modify: false, delete: false, execute: false, rlsFilter: "" },
+      { entity: "NewEntity", read: true, insert: false, modify: false, delete: false, execute: false, rlsFilter: "", exclude: "" },
     ];
     syncToSource();
   }
@@ -169,6 +199,7 @@
             <th class="px-2 py-2 text-center">Delete (D)</th>
             <th class="px-2 py-2 text-center">Execute (X)</th>
             <th class="px-3 py-2">Row-Level Security (RLS) Filter</th>
+            <th class="px-3 py-2">Field Redaction (exclude)</th>
             <th class="px-3 py-2 w-10"></th>
           </tr>
         </thead>
@@ -204,6 +235,15 @@
                   bind:value={rule.rlsFilter}
                   onchange={syncToSource}
                   placeholder='e.g. status == "Open"'
+                  class="font-mono text-xs bg-transparent border rounded px-2 py-1 border-slate-200 dark:border-slate-700 w-full"
+                />
+              </td>
+              <td class="px-3 py-2">
+                <input
+                  type="text"
+                  bind:value={rule.exclude}
+                  onchange={syncToSource}
+                  placeholder="e.g. creditLimit, bankAccount"
                   class="font-mono text-xs bg-transparent border rounded px-2 py-1 border-slate-200 dark:border-slate-700 w-full"
                 />
               </td>

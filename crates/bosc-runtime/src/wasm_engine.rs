@@ -145,6 +145,84 @@ impl WasmEngine {
             )))
         }
     }
+
+    /// Execute a Wasm function passing an input string buffer and reading the returned string from linear memory
+    pub fn execute_string_io(
+        &self,
+        module_name: &str,
+        func_name: &str,
+        input: &str,
+        fuel_limit: Option<u64>,
+    ) -> Result<String, RuntimeError> {
+        let module = self
+            .modules
+            .get(&module_name.trim().to_lowercase())
+            .ok_or_else(|| {
+                RuntimeError::NotFound("WasmModule".to_string(), module_name.to_string())
+            })?;
+
+        let mut store = Store::new(&self.engine, ());
+        let fuel = fuel_limit.unwrap_or(200_000);
+        store.set_fuel(fuel).map_err(|e| {
+            RuntimeError::Internal(format!("Failed to configure Wasm fuel: {:?}", e))
+        })?;
+
+        let linker = Linker::new(&self.engine);
+        let instance = linker
+            .instantiate_and_start(&mut store, &module)
+            .map_err(|e| {
+                RuntimeError::Internal(format!("Failed to instantiate Wasm module: {:?}", e))
+            })?;
+
+        let memory = instance
+            .get_memory(&store, "memory")
+            .ok_or_else(|| RuntimeError::Internal("Wasm module must export 'memory'".to_string()))?;
+
+        // Write input to linear memory starting at offset 0
+        let input_bytes = input.as_bytes();
+        memory.write(&mut store, 0, input_bytes).map_err(|e| {
+            RuntimeError::Internal(format!("Failed to write Wasm memory: {:?}", e))
+        })?;
+
+        let func = instance.get_func(&store, func_name).ok_or_else(|| {
+            RuntimeError::NotFound(
+                format!("Exported function '{}'", func_name),
+                module_name.to_string(),
+            )
+        })?;
+
+        let mut results = vec![Val::I32(0); func.ty(&store).results().len()];
+        func.call(
+            &mut store,
+            &[Val::I32(0), Val::I32(input_bytes.len() as i32)],
+            &mut results,
+        )
+        .map_err(|e| {
+            RuntimeError::Internal(format!(
+                "Wasm execution error in '{}.{}': {:?}",
+                module_name, func_name, e
+            ))
+        })?;
+
+        // Output length is returned by the export
+        let out_len = if let Some(Val::I32(len)) = results.first() {
+            (*len).max(0) as usize
+        } else {
+            0
+        };
+
+        if out_len == 0 {
+            return Ok(String::new());
+        }
+
+        let mut out_buf = vec![0u8; out_len];
+        memory.read(&store, 0, &mut out_buf).map_err(|e| {
+            RuntimeError::Internal(format!("Failed to read Wasm memory: {:?}", e))
+        })?;
+
+        String::from_utf8(out_buf)
+            .map_err(|e| RuntimeError::Internal(format!("Invalid UTF-8 from Wasm: {:?}", e)))
+    }
 }
 
 #[cfg(test)]
@@ -213,5 +291,28 @@ mod tests {
         // Execution must fail cleanly with fuel exhaustion, avoiding freezing the thread!
         let res = engine.execute("loop_module", "infinite_loop", &[], Some(10_000));
         assert!(res.is_err(), "Expected fuel exhaustion failure");
+    }
+
+    #[test]
+    fn test_wasm_string_io_roundtrip() {
+        let engine = WasmEngine::new().expect("Failed to create WasmEngine");
+
+        let wat_source = r#"
+            (module
+                (memory (export "memory") 1)
+                (func (export "echo") (param i32 i32) (result i32)
+                    local.get 1
+                )
+            )
+        "#;
+
+        engine
+            .load_module("echo_module", wat_source.as_bytes())
+            .expect("Compile echo");
+
+        let echo_res = engine
+            .execute_string_io("echo_module", "echo", "BOS_ENTERPRISE_PAYLOAD", Some(50_000))
+            .expect("Echo string execution");
+        assert_eq!(echo_res, "BOS_ENTERPRISE_PAYLOAD");
     }
 }

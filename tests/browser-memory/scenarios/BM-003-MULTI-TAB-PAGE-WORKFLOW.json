@@ -1,0 +1,179 @@
+{
+  "id": "BM-003-MULTI-TAB-PAGE-WORKFLOW",
+  "name": "Enterprise Multi-Document Tab Workflow & Inline Grid CRUD",
+  "description": "Verifies multi-document tabs in Svelte 5 shellStore, concurrent tab switching, inline grid editing, dirty state indicators, and persistent record creation.",
+  "category": "UI Studio & Page Architecture",
+  "persona": "OperationsManager",
+  "viewport": {
+    "name": "Desktop High-DPI",
+    "width": 1920,
+    "height": 1080
+  },
+  "theme": "dark",
+  "targetUrl": "http://127.0.0.1:3000",
+  "steps": [
+    {
+      "action": "navigate",
+      "url": "/",
+      "description": "Navigate to workspace"
+    },
+    {
+      "action": "fill",
+      "selector": "input[type='text'], input[placeholder*='user' i]",
+      "value": "admin",
+      "description": "Enter User ID"
+    },
+    {
+      "action": "fill",
+      "selector": "input[type='password'], input[placeholder*='password' i]",
+      "value": "Boss@123",
+      "description": "Enter password"
+    },
+    {
+      "action": "click",
+      "selector": "button:has-text('Sign In')",
+      "delayAfterMs": 1500,
+      "description": "Log in"
+    },
+    {
+      "action": "assert_visible",
+      "selector": "button:has-text('Company Transaction List')",
+      "timeout": 20000,
+      "description": "Wait for catalog pages to hydrate in sidebar navigation"
+    },
+    {
+      "action": "click",
+      "selector": "button:has-text('Company Transaction List')",
+      "delayAfterMs": 800,
+      "description": "Open Company Transaction List tab"
+    },
+    {
+      "action": "click",
+      "selector": "button:has-text('New')",
+      "delayAfterMs": 500,
+      "description": "Click New to insert draft row"
+    },
+    {
+      "action": "assert_visible",
+      "selector": "button:has-text('Save')",
+      "timeout": 10000,
+      "description": "Verify dirty form state and Save action become active"
+    },
+    {
+      "action": "screenshot",
+      "name": "inline_grid_draft_row",
+      "description": "Capture inline grid editing state",
+      "screenshotPath": "tests\\browser-memory\\screenshots\\BM-003-MULTI-TAB-PAGE-WORKFLOW_step_9_inline_grid_draft_row.png"
+    },
+    {
+      "action": "click",
+      "selector": "button:has-text('Tenant Master List')",
+      "delayAfterMs": 800,
+      "description": "Open second concurrent tab: Tenant Master List"
+    },
+    {
+      "action": "assert_visible",
+      "selector": "div[role='button']:has-text('Tenant Master List')",
+      "timeout": 10000,
+      "description": "Verify multi-document tab bar contains Tenant Master List tab"
+    },
+    {
+      "action": "screenshot",
+      "name": "multi_tab_workspace",
+      "description": "Capture concurrent open tabs in header",
+      "screenshotPath": "tests\\browser-memory\\screenshots\\BM-003-MULTI-TAB-PAGE-WORKFLOW_step_12_multi_tab_workspace.png"
+    }
+  ],
+  "lastResult": {
+    "executedAt": "2026-10-26T14:08:31.995Z",
+    "status": "PASSED",
+    "durationMs": 14874,
+    "stepResults": [
+      {
+        "step": 1,
+        "status": "PASSED",
+        "durationMs": 1372
+      },
+      {
+        "step": 2,
+        "status": "PASSED",
+        "durationMs": 199
+      },
+      {
+        "step": 3,
+        "status": "PASSED",
+        "durationMs": 172
+      },
+      {
+        "step": 4,
+        "status": "PASSED",
+        "durationMs": 1617
+      },
+      {
+        "step": 5,
+        "status": "PASSED",
+        "durationMs": 7998
+      },
+      {
+        "step": 6,
+        "status": "PASSED",
+        "durationMs": 910
+      },
+      {
+        "step": 7,
+        "status": "PASSED",
+        "durationMs": 619
+      },
+      {
+        "step": 8,
+        "status": "PASSED",
+        "durationMs": 7
+      },
+      {
+        "step": 9,
+        "status": "PASSED",
+        "durationMs": 113
+      },
+      {
+        "step": 10,
+        "status": "PASSED",
+        "durationMs": 923
+      },
+      {
+        "step": 11,
+        "status": "PASSED",
+        "durationMs": 10
+      },
+      {
+        "step": 12,
+        "status": "PASSED",
+        "durationMs": 98
+      }
+    ],
+    "error": null
+  },
+  "improvementsLog": [
+    {
+      "type": "ui_ux",
+      "title": "Dirty Tab Close Confirmation Modal",
+      "rating": 9.3,
+      "detail": "If a user attempts to close a tab with 'Unsaved changes' (or navigates away), trigger a clean modal: 'Discard changes or Save before closing?' with keyboard accelerators (Enter=Save, Esc=Cancel, D=Discard).",
+      "marketBenchmark": "VS Code and Microsoft Business Central dirty tab guard"
+    },
+    {
+      "type": "ui_ux",
+      "title": "Spreadsheet Keyboard Navigation in Repeater Grids (Excel-grade)",
+      "rating": 9.7,
+      "detail": "Allow power users to use Arrow keys (Up/Down/Left/Right) to navigate between cells, F2 to edit, Enter to confirm and move down, and Tab to move to next cell, matching Excel and Navision classic client speed.",
+      "marketBenchmark": "Microsoft Dynamics NAV / BC high-speed 10-key numeric entry"
+    },
+    {
+      "type": "market_beating",
+      "title": "Contextual AI Copilot in Action Bar",
+      "rating": 9.5,
+      "detail": "Embed an AI Assistant action button directly on list/card pages that can summarize ledger anomalies, suggest line item categorizations, or auto-complete tax codes using local LLM sidecars.",
+      "marketBenchmark": "Microsoft Copilot in Dynamics 365 Business Central"
+    }
+  ],
+  "lastUpdated": "2026-10-26T14:08:31.995Z"
+}

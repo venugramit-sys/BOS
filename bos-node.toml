@@ -1,0 +1,62 @@
+# =============================================================================
+# BOS Server Node Profile (Navision Application Server / NST Equivalent)
+# =============================================================================
+
+[node]
+id = "node-main-01"
+name = "BOS Enterprise Primary Node"
+# Operational Roles:
+# - "all_in_one": Serves Svelte 5 UI, REST/GraphQL API, and runs background NAS worker
+# - "interactive": Serves Svelte 5 UI and API (no background batch worker)
+# - "nas_worker": Headless background batch daemon (processes job queue & outbox, no UI)
+# - "api_gateway": Headless API-only node optimized for external integrations
+role = "all_in_one"
+
+[network]
+host = "0.0.0.0"
+port = 3000
+cors_origins = ["*"]
+
+[ui]
+# When true, the node serves compiled Svelte 5 UI assets on the same port
+enabled = true
+static_dir = "./ui/dist"
+index_file = "index.html"
+
+[database]
+# Securely isolated on this node - clients never receive or see this connection string
+url = "postgres://postgres:postgres@localhost:5432/bos_dev"
+min_pool_size = 5
+max_pool_size = 30
+storage_strategy = "shared_rls" # "shared_rls" | "schema_per_tenant" | "db_per_tenant"
+connection_timeout_seconds = 10
+
+[defaults]
+# Auto-resolve tenant & company for clients logging in with just User ID & Password
+default_tenant = "DEFAULT_TENANT"
+default_company = "MAIN_COMPANY"
+
+[nas_worker]
+# Equivalent to Navision Application Server (NAS) background batch processor
+enabled = true
+poll_interval_ms = 1000
+batch_size = 50
+process_outbox = true
+process_job_queue = true
+
+[security]
+# Emergency maintenance mode: bypass auth and create emergency super admin session to fix broken .bos scripts
+maintenance_mode = false
+emergency_username = "emergency.admin"
+emergency_name = "Emergency Maintenance Administrator"
+emergency_roles = ["SUPER", "Admin", "Global Admin"]
+auto_fallback_on_auth_failure = true
+
+[pages]
+# Pages are compiled to Svelte 5 modules at node start (only when their content changed) and served from disk
+enabled = true
+artifact_dir = "./data/page-artifacts"
+# runtime_dir = "./ui/dist/bos-runtime"   # svelte-compiler.js + version.json (defaults to <ui.static_dir>/bos-runtime)
+compiler_workers = 0                      # 0 = min(CPU cores, 4)
+seed_dirs = ["./dist/packages"]           # pre-built artifacts from `bosc package build`
+

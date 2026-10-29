@@ -8,7 +8,7 @@
  * - `openPage(name, { recordId, mode, filters, modal })`, `closePage()`, `navigate(url)`
  */
 import { untrack } from "svelte";
-import { toastStore } from "$lib/bos-ui/toast/index.js";
+import { notify } from "$lib/components/notifications/index.js";
 import * as api from "./api.js";
 import {
   LIST_TYPES,
@@ -57,11 +57,16 @@ export class PageController {
   saving = $state(false);
   busyAction = $state("");
   error = $state("");
+  errorTitle = $state("");
   conflict = $state(null);
   fieldErrors = $state({});
   overrides = $state({ visible: {}, editable: {} });
   prompt = $state(null);
   loaded = $state(false);
+
+  // ----- record navigation (card stepper) -----
+  siblingIds = $state([]);
+  stepping = $state(false);
 
   // ----- wizard (NavigatePage) -----
   step = $state(0);
@@ -69,6 +74,7 @@ export class PageController {
 
   #getCtx;
   #loadSeq = 0;
+  #lastLoadKey = null;
   #opened = false;
 
   /**
@@ -84,7 +90,9 @@ export class PageController {
     this.x = X;
     this.keys = writableKeys(C);
     this.flowKeys = [...new Set(C.filter((c) => c.field?.binding === "flowField").map((c) => c.field.key))];
-    this.vars = initialVariables(META);
+    const initialVars = initialVariables(META);
+    const hostVars = this.ctx?.variables ?? this.ctx?.params?.variables ?? {};
+    this.vars = { ...initialVars, ...hostVars };
     this.limit = META.page_type === "ListPart" ? 20 : 50;
     // Searchable columns (text-like, stored). The default is the first descriptive one (NAV searches by name
     // more often than by code); the list toolbar lets the user pick another.
@@ -99,13 +107,29 @@ export class PageController {
       const key = JSON.stringify([c.page, c.recordId ?? null, c.mode ?? null, c.filters ?? null]);
       untrack(() => this.load(key));
     });
+
+    $effect(() => {
+      const d = this.dirty;
+      untrack(() => {
+        this.ctx?.onDirtyChange?.(d);
+        if (typeof window !== "undefined" && !this.design) {
+          const draftKey = "bos_draft:" + this.meta.name + ":" + (this.ctx?.recordId || "new");
+          if (d) {
+            try {
+              const draftData = this.isList ? this.rowEdits : this.rec;
+              localStorage.setItem(draftKey, JSON.stringify({ savedAt: Date.now(), data: draftData }));
+            } catch {}
+          }
+        }
+      });
+    });
   }
 
   get ctx() {
     return this.#getCtx?.() ?? {};
   }
   get design() {
-    return Boolean(this.meta.design || this.ctx.design);
+    return this.ctx.design !== undefined ? Boolean(this.ctx.design) : Boolean(this.meta.design);
   }
   get embedded() {
     return Boolean(this.ctx.embedded);
@@ -115,6 +139,9 @@ export class PageController {
   }
   get table() {
     return this.meta.source_sql_table;
+  }
+  get isNew() {
+    return this.mode === "create";
   }
   get dirty() {
     if (this.isList) return Object.keys(this.rowEdits).length > 0;
@@ -129,6 +156,63 @@ export class PageController {
   }
   get current() {
     return this.rows.find((r) => r._id === this.currentId) ?? null;
+  }
+
+  get siblingIndex() {
+    return this.rec?._id ? this.siblingIds.indexOf(this.rec._id) : -1;
+  }
+  get hasPrevRecord() {
+    return !this.isList && this.siblingIndex > 0;
+  }
+  get hasNextRecord() {
+    return !this.isList && this.siblingIndex >= 0 && this.siblingIndex < this.siblingIds.length - 1;
+  }
+  get recordPositionText() {
+    if (this.isList || this.siblingIndex < 0) return "";
+    return `${this.siblingIndex + 1} of ${this.siblingIds.length}`;
+  }
+  get canNavigateRecords() {
+    return !this.isList && this.siblingIds.length > 1;
+  }
+
+  async prevRecord() {
+    if (!this.hasPrevRecord || this.stepping) return;
+    if (this.dirty) {
+      const ok = await this.save();
+      if (!ok) return;
+    }
+    const prevId = this.siblingIds[this.siblingIndex - 1];
+    if (!prevId) return;
+    this.stepping = true;
+    try {
+      const rec = await this.#fetchRecord(prevId);
+      if (rec) {
+        this.#setRecord(rec);
+        if (this.ctx?.onRecordChange) this.ctx.onRecordChange(rec._id ?? prevId);
+      }
+    } finally {
+      this.stepping = false;
+    }
+  }
+
+  async nextRecord() {
+    if (!this.hasNextRecord || this.stepping) return;
+    if (this.dirty) {
+      const ok = await this.save();
+      if (!ok) return;
+    }
+    const nextId = this.siblingIds[this.siblingIndex + 1];
+    if (!nextId) return;
+    this.stepping = true;
+    try {
+      const rec = await this.#fetchRecord(nextId);
+      if (rec) {
+        this.#setRecord(rec);
+        if (this.ctx?.onRecordChange) this.ctx.onRecordChange(rec._id ?? nextId);
+      }
+    } finally {
+      this.stepping = false;
+    }
   }
   /** NAV default order: the primary key. */
   get keySort() {
@@ -152,13 +236,18 @@ export class PageController {
   // LOADING
   // ----------------------------------------------------
 
-  async load() {
+  async load(key = null) {
+    if (key !== null && key === this.#lastLoadKey) return;
+    if (key !== null) this.#lastLoadKey = key;
     const seq = ++this.#loadSeq;
     this.error = "";
     this.conflict = null;
     this.fieldErrors = {};
-    if (!this.table) {
+    if (!this.table || this.ctx.unbound || (this.meta.page_type === "StandardDialog" && !this.ctx.recordId && Object.keys(this.filters).length === 0)) {
       this.loaded = true;
+      this.rec = {};
+      this.original = null;
+      this.mode = "view";
       await this.#openTrigger();
       return;
     }
@@ -213,6 +302,21 @@ export class PageController {
       return;
     }
     let record = null;
+    if (ctx.recordIds && Array.isArray(ctx.recordIds)) {
+      this.siblingIds = ctx.recordIds;
+    } else if (this.table && !this.isList && this.siblingIds.length === 0) {
+      api.listRecords(this.table, {
+        page: 1,
+        limit: 200,
+        sort: this.keySort || "_id:asc",
+        filter: exactFilter(this.filters)
+      }).then((res) => {
+        if (res?.records) {
+          this.siblingIds = res.records.map((r) => r._id);
+        }
+      }).catch(() => {});
+    }
+
     if (ctx.recordId) {
       record = await api.getRecord(this.table, ctx.recordId);
     } else {
@@ -270,6 +374,17 @@ export class PageController {
     this.original = null;
     this.rec = values;
     this.mode = "create";
+    if (typeof window !== "undefined" && !this.design) {
+      try {
+        const cached = localStorage.getItem("bos_draft:" + this.meta.name + ":new");
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed?.data && typeof parsed.data === "object") {
+            Object.assign(this.rec, parsed.data);
+          }
+        }
+      } catch {}
+    }
   }
 
   // ----------------------------------------------------
@@ -300,10 +415,11 @@ export class PageController {
     const f = c.field;
     if (!f || this.design) return false;
     if (this.overrides.editable[c.name] !== undefined) return this.overrides.editable[c.name];
-    if (!f.editable) return false;
+    const isNew = this.mode === "create" || row?._new;
+    if (!f.editable && !(isNew && f.is_primary_key)) return false;
     if (f.binding === "variable") return this.enabled(c, row);
     if (this.isList ? (!this.meta.modify_allowed || this.ctx.mode === "view") && !row?._new : this.mode === "view") return false;
-    if (f.is_primary_key && this.mode !== "create" && !row?._new) return false;
+    if (f.is_primary_key && !isNew) return false;
     const fn = this.x[c.i]?.editable;
     if (fn && !this.evaluate(fn, row)) return false;
     return this.enabled(c, row);
@@ -343,9 +459,17 @@ export class PageController {
     } else {
       this.rec[f.key] = value;
     }
-    if (this.fieldErrors[f.key]) {
-      const { [f.key]: _removed, ...rest } = this.fieldErrors;
-      this.fieldErrors = rest;
+    const toRemove = [f.key, f.source, c.name].filter(Boolean);
+    let changed = false;
+    let nextErrors = { ...this.fieldErrors };
+    for (const k of toRemove) {
+      if (nextErrors[k]) {
+        delete nextErrors[k];
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.fieldErrors = nextErrors;
     }
   }
 
@@ -375,9 +499,33 @@ export class PageController {
   async save() {
     if (!this.table || this.design) return true;
     if (this.isList) return this.saveRows();
-    const missing = missingRequired(this.C.filter((c) => c.field?.binding === "column"), this.rec, this.vars);
-    if (missing.length) {
-      this.error = `Fill in the required fields: ${missing.join(", ")}`;
+    const missingControls = this.C
+      .filter((c) => c.field?.binding === "column" && c.field?.required)
+      .filter((c) => {
+        const v = c.field.binding === "variable" ? this.vars?.[c.field.key] : this.rec?.[c.field.key];
+        return v === null || v === undefined || v === "";
+      });
+    if (missingControls.length) {
+      const errMap = { ...this.fieldErrors };
+      for (const c of missingControls) {
+        errMap[c.field.key] = `${c.caption || c.name} is required`;
+        if (c.field.source) errMap[c.field.source] = `${c.caption || c.name} is required`;
+        errMap[c.name] = `${c.caption || c.name} is required`;
+      }
+      this.fieldErrors = errMap;
+      // Single channel: in-field errors highlight the missing controls directly; suppress top banner
+      this.error = "";
+      const first = missingControls[0];
+      const firstKey = first.field.key || first.name;
+      if (typeof document !== "undefined") {
+        setTimeout(() => {
+          const el = document.querySelector(
+            `[data-field="${first.name}"] input, [data-field="${first.name}"] textarea, [data-field="${first.name}"] select, [data-field="${first.name}"] [role="combobox"], [data-key="${firstKey}"] input, input[name="${firstKey}"]`
+          );
+          el?.focus?.();
+          el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+        }, 50);
+      }
       return false;
     }
     this.saving = true;
@@ -400,6 +548,9 @@ export class PageController {
         this.#notify(res?.messages);
         this.#setRecord(await this.#fetchRecord(this.original._id));
         this.ctx.onChanged?.();
+        if (typeof window !== "undefined") {
+          try { localStorage.removeItem("bos_draft:" + this.meta.name + ":" + (this.ctx?.recordId || "new")); } catch {}
+        }
       }
       return true;
     } catch (e) {
@@ -413,8 +564,23 @@ export class PageController {
   #saveFailed(e) {
     const r = classifySaveError(e);
     if (r.kind === "conflict" || r.kind === "version") this.conflict = r.message;
-    else if (r.kind === "fields") this.fieldErrors = { ...r.fields };
-    this.error = r.message;
+    else if (r.kind === "fields") {
+      this.fieldErrors = { ...this.fieldErrors, ...r.fields };
+      // Single channel: in-field errors highlight the fields directly; suppress top banner
+      this.error = "";
+      const firstKey = Object.keys(r.fields)[0];
+      if (firstKey && typeof document !== "undefined") {
+        setTimeout(() => {
+          const el = document.querySelector(
+            `[data-field="${firstKey}"] input, [data-field="${firstKey}"] textarea, [data-field="${firstKey}"] select, [data-field="${firstKey}"] [role="combobox"], [data-key="${firstKey}"] input, input[name="${firstKey}"]`
+          );
+          el?.focus?.();
+          el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+        }, 50);
+      }
+    } else {
+      this.error = r.message;
+    }
   }
 
   async saveRows() {
@@ -501,7 +667,11 @@ export class PageController {
     if (!row || row._new) return;
     this.currentId = row._id;
     if (this.meta.card_page) {
-      this.ctx.openPage?.(this.meta.card_page, { recordId: row._id, mode: this.meta.modify_allowed ? "edit" : "view" });
+      this.ctx.openPage?.(this.meta.card_page, {
+        recordId: row._id,
+        recordIds: this.rows.map((r) => r._id),
+        mode: this.meta.modify_allowed ? "edit" : "view"
+      });
     }
   }
 
@@ -598,20 +768,35 @@ export class PageController {
 
   #notify(messages) {
     for (const m of Array.isArray(messages) ? messages : []) {
-      toastStore.push({ tone: toastTone(m.type ?? m.severity), title: m.title ?? "", description: m.message ?? m.description ?? "" });
+      const sev = (m.type ?? m.severity ?? "info").toLowerCase();
+      const msg = m.message ?? m.description ?? "";
+      const title = m.title ?? "";
+      if (sev === "error" || sev === "danger") {
+        notify.error(msg, { title: title || "Notification", page: this });
+      } else if (sev === "warning") {
+        notify.warning(msg, { title: title || "Warning" });
+      } else if (sev === "success") {
+        notify.success(msg, { title: title || "Success" });
+      } else {
+        notify.info(msg, { title: title || "Information" });
+      }
     }
   }
 
   #toastError(e) {
-    toastStore.push({ tone: "danger", title: "Error", description: e?.message ?? String(e) });
+    notify.error(e, { title: "Action Failed", page: this });
   }
 
   actionVisible(a) {
+    if (!a) return true;
+    if (a.visible === false || a.properties?.visible === "false") return false;
     return a.show ? this.evaluate(a.show, this.isList ? this.current : null) : true;
   }
 
   actionEnabled(a) {
+    if (!a) return true;
     if (this.busyAction) return false;
+    if (a.properties?.enabled === "false" || a.properties?.disabled === "true") return false;
     if (a.selection === "single" && this.isList && !this.current) return false;
     if (a.selection === "multiple" && this.isList && this.selected.length === 0) return false;
     return a.enable ? this.evaluate(a.enable, this.isList ? this.current : null) : true;
@@ -622,33 +807,46 @@ export class PageController {
     let a = action;
     if (a.target) a = actions.find((x) => x.name.toLowerCase() === a.target.toLowerCase()) ?? a;
     if (this.design || !this.actionEnabled(a)) return;
-    if (a.confirm && !(await this.ask(a.confirm))) return;
+    const confirmMsg = a.confirm || a.properties?.confirm;
+    if (confirmMsg && !(await this.ask(confirmMsg))) return;
     const row = this.isList ? this.current : null;
     const record = row ?? this.rec;
     this.busyAction = a.name;
     try {
-      if (!this.isList && this.dirty && this.mode !== "view" && (a.has_script || a.run_codeunit)) {
+      const codeunitTarget = a.run_codeunit || a.properties?.runCodeunit || a.properties?.codeunit;
+      const openPageTarget = a.open_page || a.properties?.openPage || a.properties?.open_page;
+      const hasScript = a.has_script || a.triggers?.includes("onAction") || a.triggers?.includes("onClick");
+
+      if (!this.isList && this.dirty && this.mode !== "view" && (this.meta.modify_allowed || (this.mode === "create" && this.meta.insert_allowed)) && (hasScript || codeunitTarget)) {
         if (!(await this.save())) return;
       }
-      if (a.has_script) {
-        const res = await this.runTrigger(`action.${a.name}`, record);
+      let res = null;
+      if (hasScript) {
+        res = await this.runTrigger(`action.${a.name}`, record);
         if (res?.record && !this.isList) Object.assign(this.rec, res.record);
       }
-      if (a.run_codeunit) {
+      if (codeunitTarget) {
         const params = { record: plain(record), records: this.isList ? plain(this.rows.filter((r) => this.selected.includes(r._id))) : undefined };
-        await this.#runCodeunit(a.run_codeunit, params);
+        await this.#runCodeunit(codeunitTarget, params);
       }
-      if (a.open_page) {
+      if (openPageTarget) {
         const values = {};
         for (const l of a.links ?? []) values[l.field] = l.value(record, this.vars);
-        this.ctx.openPage?.(a.open_page, { filters: values, mode: (a.run_page_mode ?? "View").toLowerCase() });
+        this.ctx.openPage?.(openPageTarget, { filters: values, mode: (a.run_page_mode ?? a.properties?.runPageMode ?? "View").toLowerCase() });
       }
-      if (a.has_script || a.run_codeunit) {
+      if (hasScript || codeunitTarget) {
         if (this.isList) await this.loadRows();
         else if (this.original?._id) this.#setRecord(await this.#fetchRecord(this.original._id));
       }
+      if (this.ctx?.onActionComplete) {
+        await this.ctx.onActionComplete(a.name, res, this);
+      }
     } catch (e) {
-      this.#toastError(e);
+      if (this.ctx?.onActionError) {
+        await this.ctx.onActionError(a.name, e, this);
+      } else {
+        this.#toastError(e);
+      }
     } finally {
       this.busyAction = "";
     }

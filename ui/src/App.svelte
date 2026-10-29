@@ -1,7 +1,8 @@
 <script>
   import { onMount } from "svelte";
-  import { AppShell, UserProfilePage, SignIn, PageSurface, EnvironmentDialog, shell } from "$lib/components/shell/index.js";
+  import { AppShell, UserProfilePage, SignIn, PageSurface, TemplatesGallery, EnvironmentDialog, DatabaseManagerDialog, shell } from "$lib/components/shell/index.js";
   import { StudioWorkspace } from "$lib/components/studio/index.js";
+  import { ToastContainer, AlertModal } from "$lib/components/notifications/index.js";
   import { MenuHelpers } from "$lib/bos-ui/menu/index.js";
   import {
     Search,
@@ -17,21 +18,31 @@
       ? (window.location.pathname.replace(/\/$/, "") || "/")
       : "/"
   );
+  let currentHash = $state(
+    typeof window !== "undefined" ? window.location.hash : ""
+  );
 
   let isDevStudio = $derived(
     currentPath === "/studio" ||
     currentPath.startsWith("/studio") ||
     currentPath === "/dev-studio" ||
     currentPath.startsWith("/dev-studio") ||
-    currentPath.includes("dev-studio")
+    currentPath.includes("dev-studio") ||
+    currentHash.startsWith("#/studio") ||
+    currentHash.startsWith("#/dev-studio")
   );
 
   onMount(() => {
-    const handlePopState = () => {
+    const handleUrlChange = () => {
       currentPath = window.location.pathname.replace(/\/$/, "") || "/";
+      currentHash = window.location.hash;
     };
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
+    window.addEventListener("popstate", handleUrlChange);
+    window.addEventListener("hashchange", handleUrlChange);
+    return () => {
+      window.removeEventListener("popstate", handleUrlChange);
+      window.removeEventListener("hashchange", handleUrlChange);
+    };
   });
 
   // Clean End-User Menubar Actions (Zero Developer Clutter on '/')
@@ -113,7 +124,7 @@
       ? "BOS Developer Studio · Superuser Meta-Objects & Monaco IDE"
       : shell.activeTab
       ? `${shell.activeTab.title} · BOS`
-      : `${shell.activeCompany || 'BOS'} · Workspace`}
+      : `${shell.companyDisplayName} · Workspace`}
   </title>
 </svelte:head>
 
@@ -151,32 +162,7 @@
     <!-- CLEAN BUSINESS USER APPLICATION: '/' -->
     <AppShell menus={liveMenus}>
     <div class="flex-1 flex flex-col p-4 sm:p-6 lg:p-8 max-w-6xl w-full mx-auto justify-center">
-      {#if shell.openTabs.length === 0}
-        <!-- 100% Blank Clean Workspace Ready for User Records -->
-        <div class="flex flex-col items-center justify-center text-center py-24 px-4 space-y-4 max-w-md mx-auto select-none">
-          <!-- Enterprise Logo -->
-          <div class="size-14 rounded-2xl bg-indigo-600/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shadow-xs">
-            <Layers class="size-7 stroke-[1.75]" />
-          </div>
-
-          <div class="space-y-1">
-            <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-              {shell.activeCompany || "BOS Platform"}
-            </h1>
-            <p class="text-xs text-slate-400">
-              {#if shell.isOnline}
-                Connected to <span class="font-mono font-medium text-slate-700 dark:text-slate-300">{shell.activeDatabase}</span> ({shell.runtimeStatus}). No open documents.
-              {:else}
-                Connecting to backend runtime...
-              {/if}
-            </p>
-          </div>
-
-          <p class="text-xs text-slate-400 max-w-sm leading-relaxed">
-            Workspace ready for business operations. Open an operational document or card from the left navigation, or press <kbd class="font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px]">Ctrl+K</kbd> to search records.
-          </p>
-        </div>
-      {:else}
+      {#if shell.openTabs.length > 0}
         <!-- Active Open Document View (Business Records / Profile) -->
         {#if shell.activeTab.type === "profile" || shell.activeTab.id === "user-profile"}
           <UserProfilePage />
@@ -206,11 +192,17 @@
             </div>
           </div>
         {/if}
+      {:else}
+        <!-- Modern Executive Dashboard & Ready-Made Templates Gallery -->
+        <TemplatesGallery />
       {/if}
     </div>
   </AppShell>
   {/if}
 {/if}
 
-<!-- Global Modals Accessible Everywhere (Sign-in, Studio, Workspace) -->
+<!-- Global Modals & Notifications Accessible Everywhere (Sign-in, Studio, Workspace) -->
+<ToastContainer />
+<AlertModal />
 <EnvironmentDialog />
+

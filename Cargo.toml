@@ -21,14 +21,14 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
 anyhow = "1.0"
-uuid = { version = "1.10", features = ["v4", "serde"] }
+uuid = { version = "1.10", features = ["v4", "v7", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 tokio = { version = "1.40", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 clap = { version = "4.5", features = ["derive"] }
 async-trait = "0.1"
-sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "json"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "json", "rust_decimal"] }
 dashmap = "6.1"
 regex = "1.11"
 axum = { version = "0.8", features = ["json", "macros"] }
@@ -42,4 +42,5 @@ ed25519-dalek = { version = "2.1", features = ["rand_core"] }
 memmap2 = "0.9"
 arc-swap = "1.7"
 rquickjs = { version = "0.14", features = ["classes", "properties"] }
+bcrypt = "0.17"
 

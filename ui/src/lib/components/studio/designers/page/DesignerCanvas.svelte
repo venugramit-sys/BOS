@@ -4,12 +4,23 @@
    * selection and drop indicators. Controls carry `data-bos-node` paths; dragging uses pointer events
    * (mouse, pen and touch), with auto-scroll near the edges and Alt+Arrow keys as the keyboard path.
    */
-  import { untrack } from "svelte";
+  import { untrack, onMount } from "svelte";
+  import { ArrowUp, ArrowDown, Trash2, ArrowUpCircle, Copy, Edit3 } from "lucide-svelte";
   import { Spinner } from "$lib/bos-ui/spinner/index.js";
-  import { CONTAINER_KINDS, isWithin } from "./design-values.js";
+  import { cn } from "$lib/utils.js";
+  import { CONTAINER_KINDS, isWithin, parentPath as parentOf } from "./design-values.js";
 
-  /** @type {{ model: import('./designer-model.svelte.js').PageDesignerModel }} */
-  let { model } = $props();
+  /** @type {{ model: import('./designer-model.svelte.js').PageDesignerModel, simulatedPersona?: string }} */
+  let { model, simulatedPersona = "admin" } = $props();
+
+  onMount(() => {
+    const handleReorder = (e) => {
+      const { source, target } = e.detail ?? {};
+      if (source && target) model.reorderAction(source, target);
+    };
+    window.addEventListener("bos:reorder-action", handleReorder);
+    return () => window.removeEventListener("bos:reorder-action", handleReorder);
+  });
 
   const WIDTHS = { phone: 375, tablet: 768, desktop: 1280, full: null };
   const DRAG_THRESHOLD = 5;
@@ -21,11 +32,71 @@
   let hoverPath = $state(null);
   let drag = $state(null); // { path?, item?, x, y, target, placement }
   let pending = null;
+  let inlineEdit = $state(null); // { path, text, left, top, width, height }
 
-  const ctx = $derived({ page: model.targetPage || model.name, design: true, mode: "view", openPage: () => {}, navigate: () => {} });
+  function focusInput(node) {
+    node.focus();
+    node.select();
+  }
+
+  function startInlineEdit(path) {
+    if (!path || path === "page" || isPreview) return;
+    const el = nodeEl(path);
+    if (!el || !scroller) return;
+
+    const textTarget = el.querySelector(".bos-field-label, .bos-caption, .bos-action, .bos-headline, h1, h2, h3, label") || el;
+    const currentText = model.selectedNode?.caption || model.selectedCompiled?.caption || textTarget?.textContent?.trim() || "";
+
+    const r = (textTarget || el).getBoundingClientRect();
+    const o = scroller.getBoundingClientRect();
+    inlineEdit = {
+      path,
+      text: currentText,
+      left: r.left - o.left + scroller.scrollLeft,
+      top: r.top - o.top + scroller.scrollTop,
+      width: Math.max(r.width, 140),
+      height: Math.max(r.height, 28)
+    };
+  }
+
+  async function commitInlineEdit(newText) {
+    if (!inlineEdit) return;
+    const { path, text } = inlineEdit;
+    inlineEdit = null;
+    const trimmed = String(newText ?? "").trim();
+    if (trimmed !== text) {
+      await model.setProperty(path, "caption", JSON.stringify(trimmed));
+    }
+  }
+
+  function onDoubleClick(e) {
+    if (isPreview) return;
+    const hit = nodeAt(e.clientX, e.clientY);
+    if (hit) {
+      model.selected = hit.path;
+      startInlineEdit(hit.path);
+    }
+  }
+
+  const isPreview = $derived(model.mode === "preview");
+  const ctx = $derived({
+    page: model.targetPage || model.name,
+    design: !isPreview,
+    mode: isPreview ? "edit" : "view",
+    openPage: (_target, _opts) => {
+      // Interactive preview handler for sub-page transition
+    },
+    navigate: (_path) => {
+      // Interactive preview handler for route navigation
+    }
+  });
 
   function nodeEl(path) {
     if (!surface || !path) return null;
+    if (path === "page") return surface.querySelector('.bos-page[data-bos-node="page"]') || surface.querySelector('.bos-page') || surface.querySelector('[data-bos-node="page"]');
+    if (path === "header") return surface.querySelector('.bos-page-header');
+    if (path === "header:title") return surface.querySelector('.bos-page-title');
+    if (path === "header:instruction") return surface.querySelector('.bos-hint');
     return surface.querySelector(`[data-bos-node="${CSS.escape(path)}"]`);
   }
 
@@ -111,7 +182,13 @@
   async function finishDrag() {
     const d = drag;
     drag = null;
-    if (!d?.target) return;
+    if (!d) return;
+    if (d.item && !d.target) {
+      // Empty canvas fallback: drop item onto root page layout
+      await model.insertAt(d.item, null, "inside");
+      return;
+    }
+    if (!d.target) return;
     if (d.item) await model.insertAt(d.item, { path: d.target.path }, d.placement);
     else if (d.path && d.target.path !== d.path) await model.moveTo(d.path, { path: d.target.path }, d.placement);
   }
@@ -119,15 +196,41 @@
   // ----- pointer handling on the canvas (capture: the page underneath never reacts) -----
   function onPointerDown(e) {
     if (e.button !== 0) return;
-    const hit = nodeAt(e.clientX, e.clientY);
+    // Check if clicked the canvas + Action button trigger
+    const actionTrigger = e.target.closest?.("[data-bos-action-trigger], .bos-action-designer-add");
+    if (actionTrigger) {
+      e.preventDefault();
+      e.stopPropagation();
+      window.dispatchEvent(new CustomEvent("bos:open-action-builder"));
+      return;
+    }
     const action = e.target.closest?.("[data-bos-node^='action:']");
-    e.preventDefault();
-    scroller?.focus({ preventScroll: true });
     if (action) {
+      e.preventDefault();
+      scroller?.focus({ preventScroll: true });
       model.selected = action.getAttribute("data-bos-node");
       return;
     }
+    const hit = nodeAt(e.clientX, e.clientY);
+    e.preventDefault();
+    scroller?.focus({ preventScroll: true });
     if (!hit) {
+      // Check if clicked in header regions or page background
+      const titleEl = e.target.closest?.(".bos-page-title, [data-bos-node='header:title']");
+      if (titleEl) {
+        model.selected = "header:title";
+        return;
+      }
+      const hintEl = e.target.closest?.(".bos-hint, [data-bos-node='header:instruction']");
+      if (hintEl) {
+        model.selected = "header:instruction";
+        return;
+      }
+      const headerEl = e.target.closest?.(".bos-page-header, [data-bos-node='header']");
+      if (headerEl) {
+        model.selected = "header";
+        return;
+      }
       model.selected = "page";
       return;
     }
@@ -208,21 +311,28 @@
   tabindex="0"
   role="application"
   aria-label="Page design canvas"
-  onkeydown={onKeyDown}
-  onpointermove={onPointerMove}
-  onpointerup={onPointerUp}
-  onpointercancel={() => { pending = null; drag = null; }}
-  onpointerleave={() => (hoverPath = null)}
+  onkeydown={isPreview ? undefined : onKeyDown}
+  onpointermove={isPreview ? undefined : onPointerMove}
+  onpointerup={isPreview ? undefined : onPointerUp}
+  onpointercancel={isPreview ? undefined : () => { pending = null; drag = null; }}
+  onpointerleave={isPreview ? undefined : () => (hoverPath = null)}
 >
   <div class="mx-auto my-4 min-h-[calc(100%-2rem)] px-2 transition-[max-width]" style:max-width={width ? `${width}px` : "100%"}>
     <div
-      class="relative rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6"
+      class={cn(
+        "relative transition-all duration-200",
+        isPreview && model.viewport === "phone"
+          ? "rounded-[2.5rem] border-[10px] border-slate-800 bg-white p-6 shadow-2xl ring-1 ring-slate-900/10 dark:border-slate-700 dark:bg-slate-900"
+          : isPreview && model.viewport === "tablet"
+          ? "rounded-[2rem] border-[12px] border-slate-800 bg-white p-6 shadow-2xl ring-1 ring-slate-900/10 dark:border-slate-700 dark:bg-slate-900"
+          : "rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6"
+      )}
       bind:this={surface}
-      onpointerdowncapture={onPointerDown}
-      onclickcapture={swallow}
-      ondblclickcapture={swallow}
-      onsubmitcapture={swallow}
-      onkeydowncapture={(e) => {
+      onpointerdowncapture={isPreview ? undefined : onPointerDown}
+      onclickcapture={isPreview ? undefined : swallow}
+      ondblclickcapture={isPreview ? undefined : onDoubleClick}
+      onsubmitcapture={isPreview ? undefined : swallow}
+      onkeydowncapture={isPreview ? undefined : (e) => {
         if (e.key === "Enter" || e.key === " ") swallow(e);
       }}
       role="presentation"
@@ -240,27 +350,151 @@
     </div>
   </div>
 
-  <!-- overlay -->
-  <div class="pointer-events-none absolute inset-0" aria-hidden="true">
-    {#if hoverRect && hoverPath !== model.selected}
-      <div class="absolute rounded border border-dashed border-indigo-400" style:left="{hoverRect.left}px" style:top="{hoverRect.top}px" style:width="{hoverRect.width}px" style:height="{hoverRect.height}px"></div>
-    {/if}
-    {#if selectedRect}
-      <div class="absolute rounded border-2 border-indigo-600" style:left="{selectedRect.left - 1}px" style:top="{selectedRect.top - 1}px" style:width="{selectedRect.width + 2}px" style:height="{selectedRect.height + 2}px">
-        <span class="absolute -top-5 left-0 rounded bg-indigo-600 px-1.5 py-0.5 font-mono text-[10px] text-white whitespace-nowrap">{model.selected?.split("/").at(-1)}</span>
+  {#if !isPreview}
+    <!-- overlay -->
+    <div class="pointer-events-none absolute inset-0" aria-hidden="true">
+      {#if hoverRect && hoverPath !== model.selected}
+        <div class="absolute rounded border border-dashed border-indigo-400" style:left="{hoverRect.left}px" style:top="{hoverRect.top}px" style:width="{hoverRect.width}px" style:height="{hoverRect.height}px"></div>
+      {/if}
+      {#if selectedRect}
+        <div class="absolute rounded border-2 border-indigo-600 shadow-xs" style:left="{selectedRect.left - 1}px" style:top="{selectedRect.top - 1}px" style:width="{selectedRect.width + 2}px" style:height="{selectedRect.height + 2}px">
+          <!-- Element Tag Pill on Top-Left -->
+          <span class="absolute -top-6 left-0 rounded-t bg-indigo-600 px-2 py-0.5 font-mono text-[10px] font-semibold text-white whitespace-nowrap shadow-xs">
+            {#if model.selected === "header:title"}
+              h1.bos-page-title
+            {:else if model.selected === "header:instruction"}
+              p.bos-hint
+            {:else if model.selected === "header"}
+              header.bos-page-header
+            {:else if model.selected === "page"}
+              page.{model.compiled?.page_type ?? "form"}
+            {:else}
+              {model.selected?.split("/").at(-1)}
+            {/if}
+          </span>
+
+          <!-- Floating Action Toolbar on Top-Right -->
+          <div class="pointer-events-auto absolute -top-8 right-0 flex items-center gap-0.5 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-900 p-0.5 shadow-md z-20">
+            {#if model.selected && model.selected !== "page"}
+              {@const pPath = parentOf(model.selected)}
+              {#if pPath && pPath !== "layout"}
+                <button
+                  type="button"
+                  class="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 transition-colors cursor-pointer"
+                  title="Select Parent Container"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    model.selected = pPath;
+                  }}
+                  aria-label="Select Parent"
+                >
+                  <ArrowUpCircle class="size-3.5" />
+                </button>
+                <span class="w-px h-3 bg-slate-200 dark:bg-slate-700 my-auto"></span>
+              {/if}
+            {/if}
+            <button
+              type="button"
+              class="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 transition-colors cursor-pointer"
+              title="Move Up (Alt+Up)"
+              onclick={(e) => {
+                e.stopPropagation();
+                model.nudge(model.selected, -1);
+              }}
+              aria-label="Move Up"
+            >
+              <ArrowUp class="size-3.5" />
+            </button>
+            <button
+              type="button"
+              class="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 transition-colors cursor-pointer"
+              title="Move Down (Alt+Down)"
+              onclick={(e) => {
+                e.stopPropagation();
+                model.nudge(model.selected, 1);
+              }}
+              aria-label="Move Down"
+            >
+              <ArrowDown class="size-3.5" />
+            </button>
+            <span class="w-px h-3 bg-slate-200 dark:bg-slate-700 my-auto"></span>
+            <button
+              type="button"
+              class="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 transition-colors cursor-pointer"
+              title="Edit text in place (or double-click element)"
+              onclick={(e) => {
+                e.stopPropagation();
+                startInlineEdit(model.selected);
+              }}
+              aria-label="Edit text"
+            >
+              <Edit3 class="size-3.5" />
+            </button>
+            <button
+              type="button"
+              class="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 transition-colors cursor-pointer"
+              title="Duplicate element"
+              onclick={(e) => {
+                e.stopPropagation();
+                model.duplicate(model.selected);
+              }}
+              aria-label="Duplicate element"
+            >
+              <Copy class="size-3.5" />
+            </button>
+            <span class="w-px h-3 bg-slate-200 dark:bg-slate-700 my-auto"></span>
+            <button
+              type="button"
+              class="p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-950 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer"
+              title="Remove from layout (Delete)"
+              onclick={(e) => {
+                e.stopPropagation();
+                model.remove(model.selected);
+              }}
+              aria-label="Remove element"
+            >
+              <Trash2 class="size-3.5" />
+            </button>
+          </div>
+        </div>
+      {/if}
+
+      <!-- Inline Text Edit Overlay -->
+      {#if inlineEdit}
+        <div
+          class="pointer-events-auto absolute z-30 flex items-center rounded-md border-2 border-indigo-600 bg-white p-0.5 shadow-xl ring-2 ring-indigo-400/40 dark:bg-slate-900"
+          style:left="{inlineEdit.left}px"
+          style:top="{inlineEdit.top}px"
+          style:min-width="{inlineEdit.width}px"
+          style:min-height="{inlineEdit.height}px"
+        >
+          <input
+            class="size-full rounded px-2 py-1 text-sm font-semibold bg-transparent text-slate-900 dark:text-slate-100 outline-none"
+            value={inlineEdit.text}
+            use:focusInput
+            onkeydown={(e) => {
+              if (e.key === "Enter") {
+                commitInlineEdit(e.currentTarget.value);
+              } else if (e.key === "Escape") {
+                inlineEdit = null;
+              }
+            }}
+            onblur={(e) => commitInlineEdit(e.currentTarget.value)}
+          />
+        </div>
+      {/if}
+      {#if dropRect}
+        {#if dropRect.inside}
+          <div class="absolute rounded bg-indigo-500/10 ring-2 ring-indigo-500" style:left="{dropRect.left}px" style:top="{dropRect.top}px" style:width="{dropRect.width}px" style:height="{dropRect.height}px"></div>
+        {:else}
+          <div class="absolute rounded bg-indigo-600" style:left="{dropRect.left}px" style:top="{dropRect.top}px" style:width="{dropRect.width}px" style:height="{dropRect.height}px"></div>
+        {/if}
+      {/if}
+    </div>
+    {#if drag}
+      <div class="pointer-events-none fixed z-50 rounded-md bg-indigo-600 px-2 py-1 text-xs font-medium text-white shadow-lg" style:left="{drag.x + 12}px" style:top="{drag.y + 12}px">
+        {drag.item ? drag.item.label : drag.path?.split("/").at(-1)}
       </div>
     {/if}
-    {#if dropRect}
-      {#if dropRect.inside}
-        <div class="absolute rounded bg-indigo-500/10 ring-2 ring-indigo-500" style:left="{dropRect.left}px" style:top="{dropRect.top}px" style:width="{dropRect.width}px" style:height="{dropRect.height}px"></div>
-      {:else}
-        <div class="absolute rounded bg-indigo-600" style:left="{dropRect.left}px" style:top="{dropRect.top}px" style:width="{dropRect.width}px" style:height="{dropRect.height}px"></div>
-      {/if}
-    {/if}
-  </div>
-  {#if drag}
-    <div class="pointer-events-none fixed z-50 rounded-md bg-indigo-600 px-2 py-1 text-xs font-medium text-white shadow-lg" style:left="{drag.x + 12}px" style:top="{drag.y + 12}px">
-      {drag.item ? drag.item.label : drag.path?.split("/").at(-1)}
-    </div>
   {/if}
 </div>

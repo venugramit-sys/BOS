@@ -199,6 +199,27 @@ fn page_level_properties_are_edited_in_place() {
 }
 
 #[test]
+fn box_spacing_margin_and_padding_edits_lower_successfully() {
+    let r = apply_edits(
+        SRC,
+        "CustomerCard",
+        &[
+            set("area:Content/group:General/field:name", "padding", "\"16px\"", Some("style")),
+            set("area:Content/group:General/field:name", "margin", "\"8px 16px\"", Some("style")),
+            set("page", "margin", "\"12px\"", Some("style")),
+            set("page", "padding", "\"24px\"", Some("style")),
+        ],
+    )
+    .unwrap();
+    assert!(r.source.contains("padding = \"16px\";"), "{}", r.source);
+    assert!(r.source.contains("margin = \"8px 16px\";"), "{}", r.source);
+    let m = lower(&r.source);
+    let page_style = m.pages[0].style.as_ref().expect("page style");
+    assert_eq!(page_style.margin.as_deref(), Some("12px"));
+    assert_eq!(page_style.padding.as_deref(), Some("24px"));
+}
+
+#[test]
 fn customization_prints_parses_and_round_trips() {
     let changes = CustomizationChanges {
         page: PageChange { caption: Some("Client \"VIP\"".into()), style: None },

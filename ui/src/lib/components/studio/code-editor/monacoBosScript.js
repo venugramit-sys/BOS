@@ -950,6 +950,79 @@ const HOVER_DOCS = {
     models: {
         title: "Typed ORM Registry: `models`",
         body: "Strongly-typed repository access for all registered BOS tables.\n\n```ts\nconst cust = models.Customer.findById(rec.customer_id);\nconst openOrders = models.SalesHeader.findMany({ status: \"Draft\" });\n```"
+    },
+    // Page & PageExtension Keywords
+    pageType: {
+        title: "Page Property: `pageType = Archetype`",
+        body: "Archetype layout style for the page.\nSupported: `Card`, `List`, `Document`, `StandardDialog`, `Workspace`, `Worksheet`, `RoleCenter`."
+    },
+    sourceTable: {
+        title: "Page Property: `sourceTable = TableName`",
+        body: "Binds the page directly to a underlying database table entity.\nCan also be specified concisely in the header: `page CustomerCard for Customer { ... }`."
+    },
+    layout: {
+        title: "Page Section: `layout { ... }`",
+        body: "Defines the visual hierarchy of areas, groups, repeater grids, and data fields."
+    },
+    area: {
+        title: "Page Container: `area(AreaName) { ... }`",
+        body: "Top-level layout region.\nCommon areas: `Content` (main form/body), `FactBoxes` (right sidebar insights), `Processing` (actions ribbon)."
+    },
+    group: {
+        title: "Page Container: `group(GroupName) { ... }`",
+        body: "Collapsible card section or card panel grouping related fields together."
+    },
+    repeater: {
+        title: "Page Container: `repeater(RepeaterName) { ... }`",
+        body: "Data grid table rendering multiple records (such as subform document lines or list items)."
+    },
+    part: {
+        title: "Page Part: `part(PartName, TargetPage) { ... }`",
+        body: "Embeds another page (e.g. subform lines or factbox) with parent-child link synchronization.\n\n```bos\npart(Lines, SalesLinesSubform) {\n    subFormLink = [document_id == this.id];\n}\n```"
+    },
+    subFormLink: {
+        title: "Part Property: `subFormLink = [...] `",
+        body: "Array of expressions that filter and bind embedded part records to the active parent header record.\nExample: `subFormLink = [customer_id == this.id];`."
+    },
+    actions: {
+        title: "Page Section: `actions { ... }`",
+        body: "Declares actionable toolbar commands, dialog buttons, and state machine transition triggers."
+    },
+    action: {
+        title: "Page Action: `action(ActionName) { ... }`",
+        body: "Defines an actionable button or command with a caption, icon, and trigger onAction() handler."
+    },
+    onAction: {
+        title: "Action Trigger: `trigger onAction() { ... }`",
+        body: "Transactional client/server routine executed when the user clicks the action button."
+    },
+    addFirst: {
+        title: "Extension Directive: `addFirst(TargetContainer) { ... }`",
+        body: "Places new controls or groups at the very start of the specified target container."
+    },
+    addLast: {
+        title: "Extension Directive: `addLast(TargetContainer) { ... }`",
+        body: "Appends new controls or groups to the end of the specified target container."
+    },
+    addAfter: {
+        title: "Extension Directive: `addAfter(TargetControl) { ... }`",
+        body: "Inserts new controls immediately following the specified sibling control."
+    },
+    addBefore: {
+        title: "Extension Directive: `addBefore(TargetControl) { ... }`",
+        body: "Inserts new controls immediately preceding the specified sibling control."
+    },
+    modify: {
+        title: "Extension Directive: `modify(TargetControl) { ... }`",
+        body: "Non-invasively changes properties (such as `caption`, `visible`, `editable`, `importance`) of an existing base control."
+    },
+    drillDown: {
+        title: "Field Property: `drillDown = true`",
+        body: "Enables interactive drill-down navigation clicking on calculated FlowFields or ledger balances."
+    },
+    promoted: {
+        title: "Action/Field Property: `promoted = true`",
+        body: "Highlights the item prominently in the ribbon toolbar or summary card header."
     }
 };
 

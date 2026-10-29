@@ -11,6 +11,7 @@
 
   const AREAS = ["Processing", "Navigation", "Reporting", "Creation"];
   const AREA_CAPTION = { Processing: "Actions", Navigation: "Related", Reporting: "Reports", Creation: "New document" };
+  const AREA_ICON = { Processing: "play", Navigation: "link-2", Reporting: "file-text", Creation: "plus-circle" };
 
   const byName = $derived(new Map(actions.map((a) => [a.name.toLowerCase(), a])));
   const targetOf = (a) => (a.target ? (byName.get(a.target.toLowerCase()) ?? a) : a);
@@ -28,7 +29,7 @@
         if (!g) groups.push((g = { caption, items: [] }));
         g.items.push(a);
       }
-      return { area, label: AREA_CAPTION[area], sections: groups };
+      return { area, label: AREA_CAPTION[area], icon: AREA_ICON[area], sections: groups };
     }).filter((m) => m.sections.length)
   );
 
@@ -42,7 +43,7 @@
         caption: "Save",
         icon: "save",
         run: () => p.save(),
-        enabled: () => p.dirty && !p.saving
+        enabled: () => (p.isNew ? !p.saving : p.dirty && !p.saving)
       },
       p.dirty && hasRecord && { name: "__discard", caption: "Discard", icon: "undo-2", run: () => p.reload() },
       p.meta.delete_allowed && hasRecord && { name: "__delete", caption: "Delete", icon: "trash-2", run: () => p.deleteCurrent() },
@@ -60,7 +61,7 @@
 <div class="bos-actionbar" role="toolbar" aria-label="Page actions">
   {#if showSystem}
     {#each system as a (a.name)}
-      <button type="button" class="bos-action" disabled={!enabled(a)} onclick={() => run(a)}>
+      <button type="button" class="bos-action" data-bos-action={a.name.replace('__', '')} disabled={!enabled(a)} onclick={() => run(a)}>
         {#if a.name === "__save" && p.saving}<Spinner size="xs" />{:else}<Icon name={a.icon} class="size-4" />{/if}
         <span class={a.name === "__refresh" ? "sr-only" : "bos-action-label"}>{a.caption}</span>
       </button>
@@ -68,10 +69,31 @@
     {#if promoted.length || menus.length}<span class="bos-action-sep" aria-hidden="true"></span>{/if}
   {/if}
   {#each promoted as a (a.name)}
+    {@const actionTarget = targetOf(a).name}
     <button
       type="button"
       class={"bos-action bos-promoted " + (a.primary ? "bos-action-primary" : "")}
-      {...p.design ? { "data-bos-node": "action:" + targetOf(a).name, "data-bos-kind": "action" } : {}}
+      data-bos-action={actionTarget}
+      {...p.design ? {
+        "data-bos-node": "action:" + actionTarget,
+        "data-bos-kind": "action",
+        draggable: true,
+        ondragstart: (e) => {
+          e.dataTransfer?.setData("text/plain", actionTarget);
+        },
+        ondragover: (e) => {
+          e.preventDefault();
+        },
+        ondrop: (e) => {
+          e.preventDefault();
+          const source = e.dataTransfer?.getData("text/plain");
+          if (source && source !== actionTarget) {
+            window.dispatchEvent(new CustomEvent("bos:reorder-action", {
+              detail: { source, target: actionTarget }
+            }));
+          }
+        }
+      } : {}}
       disabled={!p.design && !enabled(a)}
       title={a.tooltip ?? a.shortcut ?? undefined}
       onclick={() => run(a)}
@@ -84,6 +106,20 @@
     <ActionMenu class="bos-more" label="More" sections={[{ items: promoted }]} onrun={run} {enabled} />
   {/if}
   {#each menus as m (m.area)}
-    <ActionMenu label={m.label} sections={m.sections} onrun={run} {enabled} />
+    <ActionMenu label={m.label} icon={m.icon} sections={m.sections} onrun={run} {enabled} />
   {/each}
+  {#if p.design}
+    <button
+      type="button"
+      data-bos-action-trigger="true"
+      class="bos-action bos-action-designer-add inline-flex items-center gap-1 rounded border border-dashed border-indigo-400 bg-indigo-50/60 px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300"
+      title="Add new action or menu group to page"
+      onclick={() => {
+        if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("bos:open-action-builder"));
+      }}
+    >
+      <Icon name="plus" class="size-3.5" />
+      <span>Action</span>
+    </button>
+  {/if}
 </div>

@@ -16,6 +16,28 @@ pub enum ParserError {
 }
 
 impl ParserError {
+    pub fn format_with_source(&self, source: &str, file_name: &str) -> String {
+        match self {
+            ParserError::UnexpectedToken { expected, found, line, col } => {
+                let lines: Vec<&str> = source.lines().collect();
+                let line_idx = if *line > 0 { line - 1 } else { 0 };
+                let mut out = format!("error: expected {}, found {:?}\n  --> {}:{}:{}\n", expected, found, file_name, line, col);
+                if line_idx < lines.len() {
+                    let source_line = lines[line_idx];
+                    out.push_str(&format!("{:>5} | {}\n", line, source_line));
+                    let indent = " ".repeat(col.saturating_sub(1));
+                    out.push_str(&format!("      | {}^ expected {}\n", indent, expected));
+                }
+                out
+            }
+            ParserError::UnexpectedEof => {
+                format!("error: unexpected end of file\n  --> {}:EOF\n", file_name)
+            }
+        }
+    }
+}
+
+impl ParserError {
     pub fn line(&self) -> usize {
         match self {
             Self::UnexpectedToken { line, .. } => *line,
@@ -290,59 +312,62 @@ impl Parser {
                         span: key_span,
                     });
                 }
-                TokenKind::Ident(s)
+                _ if self.peek_ident().is_some() => {
+                    let Some(s) = self.peek_ident() else {
+                        continue;
+                    };
                     if s == "fieldgroup"
                         && self.peek_second_kind() != Some(&TokenKind::Colon)
-                        && self.peek_second_kind() != Some(&TokenKind::Assign) =>
-                {
-                    field_groups.push(self.parse_field_group()?);
-                }
-                TokenKind::Ident(s) if s == "fieldgroups" && self.peek_second_kind() == Some(&TokenKind::OpenBrace) => {
-                    self.advance();
-                    self.expect(TokenKind::OpenBrace)?;
-                    while self.peek_kind() != &TokenKind::CloseBrace && self.peek_kind() != &TokenKind::Eof {
-                        if let TokenKind::Ident(inner) = self.peek_kind() {
-                            if inner == "fieldgroup" {
-                                field_groups.push(self.parse_field_group()?);
-                                continue;
-                            }
-                        }
-                        self.advance();
-                    }
-                    self.expect(TokenKind::CloseBrace)?;
-                    if self.peek_kind() == &TokenKind::Semicolon {
-                        self.advance();
-                    }
-                }
-                TokenKind::Ident(s) if (s.starts_with("on") || s.starts_with("before") || s.starts_with("after")) && self.peek_second_kind() == Some(&TokenKind::OpenParen) => {
-                    // Trigger
-                    triggers.push(self.parse_trigger()?);
-                }
-                TokenKind::Ident(s) => {
-                    let is_table_prop = matches!(
-                        s.as_str(),
-                        "tableType"
-                            | "table_type"
-                            | "extensible"
-                            | "dataPerCompany"
-                            | "data_per_company"
-                            | "auditTrail"
-                            | "audit_trail"
-                            | "ledger"
-                    );
-                    if self.peek_second_kind() == Some(&TokenKind::Assign)
-                        || (is_table_prop && self.peek_second_kind() == Some(&TokenKind::Colon))
+                        && self.peek_second_kind() != Some(&TokenKind::Assign)
                     {
-                        properties.push(self.parse_property()?);
-                    } else if self.peek_second_kind() == Some(&TokenKind::Colon) {
-                        fields.push(self.parse_field()?);
+                        field_groups.push(self.parse_field_group()?);
+                    } else if s == "fieldgroups" && self.peek_second_kind() == Some(&TokenKind::OpenBrace) {
+                        self.advance();
+                        self.expect(TokenKind::OpenBrace)?;
+                        while self.peek_kind() != &TokenKind::CloseBrace && self.peek_kind() != &TokenKind::Eof {
+                            if let Some(inner) = self.peek_ident() {
+                                if inner == "fieldgroup" {
+                                    field_groups.push(self.parse_field_group()?);
+                                    continue;
+                                }
+                            }
+                            self.advance();
+                        }
+                        self.expect(TokenKind::CloseBrace)?;
+                        if self.peek_kind() == &TokenKind::Semicolon {
+                            self.advance();
+                        }
+                    } else if (s.starts_with("on") || s.starts_with("before") || s.starts_with("after"))
+                        && self.peek_second_kind() == Some(&TokenKind::OpenParen)
+                    {
+                        // Trigger
+                        triggers.push(self.parse_trigger()?);
                     } else {
-                        return Err(ParserError::UnexpectedToken {
-                            expected: "= for property or : for field".to_string(),
-                            found: self.peek_kind().clone(),
-                            line: self.peek().span.line,
-                            col: self.peek().span.column,
-                        });
+                        let is_table_prop = matches!(
+                            s.as_str(),
+                            "tableType"
+                                | "table_type"
+                                | "extensible"
+                                | "dataPerCompany"
+                                | "data_per_company"
+                                | "auditTrail"
+                                | "audit_trail"
+                                | "ledger"
+                        );
+                        if self.peek_second_kind() == Some(&TokenKind::Assign)
+                            || (is_table_prop && self.peek_second_kind() == Some(&TokenKind::Colon))
+                        {
+                            properties.push(self.parse_property()?);
+                        } else if self.peek_second_kind() == Some(&TokenKind::Colon) {
+                            fields.push(self.parse_field()?);
+                        } else {
+                            return Err(ParserError::UnexpectedToken {
+                                expected: "= for property or : for field".to_string(),
+                                found: self.peek_kind().clone(),
+                                line: self.peek().span.line,
+                                col: self.peek().span.column,
+                            });
+                        }
                     }
                 }
                 _ => {
@@ -405,11 +430,15 @@ impl Parser {
                         span: key_span,
                     });
                 }
-                TokenKind::Ident(s) if s.starts_with("on") => {
-                    triggers.push(self.parse_trigger()?);
-                }
-                TokenKind::Ident(_) => {
-                    fields.push(self.parse_field()?);
+                _ if self.peek_ident().is_some() => {
+                    let Some(s) = self.peek_ident() else {
+                        continue;
+                    };
+                    if s.starts_with("on") && self.peek_second_kind() == Some(&TokenKind::OpenParen) {
+                        triggers.push(self.parse_trigger()?);
+                    } else {
+                        fields.push(self.parse_field()?);
+                    }
                 }
                 _ => {
                     return Err(ParserError::UnexpectedToken {
@@ -456,25 +485,46 @@ impl Parser {
             if let TokenKind::Ident(s) = self.peek_kind().clone() {
                 if s == "validate" {
                     self.advance();
-                    let (field_name, val_span) = self.expect_ident()?;
-                    self.expect(TokenKind::OpenParen)?;
-                    let (param_name, _) = self.expect_ident()?;
-                    if self.peek_kind() == &TokenKind::Colon {
+                    let (field_name, val_span, param_name, old_param_name) = if self.peek_kind() == &TokenKind::OpenParen {
                         self.advance();
-                        self.parse_type_annotation_str()?;
-                    }
-                    let old_param_name = if self.peek_kind() == &TokenKind::Comma {
-                        self.advance();
-                        let (old_p, _) = self.expect_ident()?;
+                        let (f_name, f_span) = self.expect_ident()?;
+                        let (p_name, o_name) = if self.peek_kind() == &TokenKind::Comma {
+                            self.advance();
+                            let (p, _) = self.expect_ident()?;
+                            let o = if self.peek_kind() == &TokenKind::Comma {
+                                self.advance();
+                                Some(self.expect_ident()?.0)
+                            } else {
+                                None
+                            };
+                            (p, o)
+                        } else {
+                            ("rec".to_string(), None)
+                        };
+                        self.expect(TokenKind::CloseParen)?;
+                        (f_name, f_span, p_name, o_name)
+                    } else {
+                        let (f_name, f_span) = self.expect_ident()?;
+                        self.expect(TokenKind::OpenParen)?;
+                        let (param, _) = self.expect_ident()?;
                         if self.peek_kind() == &TokenKind::Colon {
                             self.advance();
                             self.parse_type_annotation_str()?;
                         }
-                        Some(old_p)
-                    } else {
-                        None
+                        let old_param = if self.peek_kind() == &TokenKind::Comma {
+                            self.advance();
+                            let (old_p, _) = self.expect_ident()?;
+                            if self.peek_kind() == &TokenKind::Colon {
+                                self.advance();
+                                self.parse_type_annotation_str()?;
+                            }
+                            Some(old_p)
+                        } else {
+                            None
+                        };
+                        self.expect(TokenKind::CloseParen)?;
+                        (f_name, f_span, param, old_param)
                     };
-                    self.expect(TokenKind::CloseParen)?;
                     let body = self.parse_block()?;
                     field_validations.push(FieldValidationDef {
                         field_name,
@@ -541,25 +591,46 @@ impl Parser {
             if let TokenKind::Ident(s) = self.peek_kind().clone() {
                 if s == "validate" {
                     self.advance();
-                    let (field_name, val_span) = self.expect_ident()?;
-                    self.expect(TokenKind::OpenParen)?;
-                    let (param_name, _) = self.expect_ident()?;
-                    if self.peek_kind() == &TokenKind::Colon {
+                    let (field_name, val_span, param_name, old_param_name) = if self.peek_kind() == &TokenKind::OpenParen {
                         self.advance();
-                        self.parse_type_annotation_str()?;
-                    }
-                    let old_param_name = if self.peek_kind() == &TokenKind::Comma {
-                        self.advance();
-                        let (old_p, _) = self.expect_ident()?;
+                        let (f_name, f_span) = self.expect_ident()?;
+                        let (p_name, o_name) = if self.peek_kind() == &TokenKind::Comma {
+                            self.advance();
+                            let (p, _) = self.expect_ident()?;
+                            let o = if self.peek_kind() == &TokenKind::Comma {
+                                self.advance();
+                                Some(self.expect_ident()?.0)
+                            } else {
+                                None
+                            };
+                            (p, o)
+                        } else {
+                            ("rec".to_string(), None)
+                        };
+                        self.expect(TokenKind::CloseParen)?;
+                        (f_name, f_span, p_name, o_name)
+                    } else {
+                        let (f_name, f_span) = self.expect_ident()?;
+                        self.expect(TokenKind::OpenParen)?;
+                        let (param, _) = self.expect_ident()?;
                         if self.peek_kind() == &TokenKind::Colon {
                             self.advance();
                             self.parse_type_annotation_str()?;
                         }
-                        Some(old_p)
-                    } else {
-                        None
+                        let old_param = if self.peek_kind() == &TokenKind::Comma {
+                            self.advance();
+                            let (old_p, _) = self.expect_ident()?;
+                            if self.peek_kind() == &TokenKind::Colon {
+                                self.advance();
+                                self.parse_type_annotation_str()?;
+                            }
+                            Some(old_p)
+                        } else {
+                            None
+                        };
+                        self.expect(TokenKind::CloseParen)?;
+                        (f_name, f_span, param, old_param)
                     };
-                    self.expect(TokenKind::CloseParen)?;
                     let body = self.parse_block()?;
                     field_validations.push(FieldValidationDef {
                         field_name,
@@ -1121,11 +1192,39 @@ impl Parser {
                 TokenKind::Transition => transitions.push(self.parse_transition()?),
                 TokenKind::Ident(s) if s == "states" => {
                     self.advance();
-                    self.expect(TokenKind::OpenBrace)?;
-                    while self.peek_kind() != &TokenKind::CloseBrace {
-                        states.push(self.parse_state()?);
+                    if self.peek_kind() == &TokenKind::Colon || self.peek_kind() == &TokenKind::Assign {
+                        self.advance();
+                        self.expect(TokenKind::OpenBracket)?;
+                        while self.peek_kind() != &TokenKind::CloseBracket && self.peek_kind() != &TokenKind::Eof {
+                            let st_span = self.peek().span.clone();
+                            let st_name = match self.peek_kind().clone() {
+                                TokenKind::StringLit(lit) => {
+                                    self.advance();
+                                    lit
+                                }
+                                _ => self.expect_ident()?.0,
+                            };
+                            states.push(StateDef {
+                                name: st_name,
+                                properties: Vec::new(),
+                                timeout: None,
+                                span: st_span,
+                            });
+                            if self.peek_kind() == &TokenKind::Comma {
+                                self.advance();
+                            }
+                        }
+                        self.expect(TokenKind::CloseBracket)?;
+                        if self.peek_kind() == &TokenKind::Semicolon {
+                            self.advance();
+                        }
+                    } else {
+                        self.expect(TokenKind::OpenBrace)?;
+                        while self.peek_kind() != &TokenKind::CloseBrace {
+                            states.push(self.parse_state()?);
+                        }
+                        self.expect(TokenKind::CloseBrace)?;
                     }
-                    self.expect(TokenKind::CloseBrace)?;
                 }
                 _ => {
                     self.advance();
@@ -1154,9 +1253,20 @@ impl Parser {
             _ => self.expect_ident()?.0,
         };
 
-        self.expect(TokenKind::OpenBrace)?;
         let mut properties = Vec::new();
         let mut timeout = None;
+
+        if self.peek_kind() == &TokenKind::Semicolon {
+            self.advance();
+            return Ok(StateDef {
+                name,
+                properties,
+                timeout,
+                span: start_span,
+            });
+        }
+
+        self.expect(TokenKind::OpenBrace)?;
 
         while self.peek_kind() != &TokenKind::CloseBrace && self.peek_kind() != &TokenKind::Eof {
             if self.peek_kind() == &TokenKind::Timeout {
@@ -1178,7 +1288,9 @@ impl Parser {
                             TokenKind::Ident(s) => Some(s),
                             _ => None,
                         };
-                        self.expect(TokenKind::Semicolon)?;
+                        if self.peek_kind() == &TokenKind::Comma || self.peek_kind() == &TokenKind::Semicolon {
+                            self.advance();
+                        }
                     } else if let TokenKind::Ident(s) = self.peek_kind().clone() {
                         if s == "action" {
                             self.advance();
@@ -1187,7 +1299,9 @@ impl Parser {
                                 TokenKind::Ident(act) => Some(act),
                                 _ => None,
                             };
-                            self.expect(TokenKind::Semicolon)?;
+                            if self.peek_kind() == &TokenKind::Comma || self.peek_kind() == &TokenKind::Semicolon {
+                            self.advance();
+                        }
                         } else {
                             self.advance();
                         }
@@ -1317,7 +1431,9 @@ impl Parser {
                                     self.advance();
                                     self.expect(TokenKind::Assign)?;
                                     condition = self.parse_expr()?;
-                                    self.expect(TokenKind::Semicolon)?;
+                                    if self.peek_kind() == &TokenKind::Comma || self.peek_kind() == &TokenKind::Semicolon {
+                            self.advance();
+                        }
                                 } else if prop == "roles" {
                                     self.advance();
                                     self.expect(TokenKind::Assign)?;
@@ -1331,7 +1447,9 @@ impl Parser {
                                         }
                                     }
                                     self.expect(TokenKind::CloseBracket)?;
-                                    self.expect(TokenKind::Semicolon)?;
+                                    if self.peek_kind() == &TokenKind::Comma || self.peek_kind() == &TokenKind::Semicolon {
+                            self.advance();
+                        }
                                 } else {
                                     self.advance();
                                 }
@@ -1991,7 +2109,68 @@ impl Parser {
                             }
                         }
                         let mut row_filter = None;
-                        if self.peek_kind() == &TokenKind::Where {
+                        let mut exclude_fields = Vec::new();
+
+                        if self.peek_kind() == &TokenKind::OpenBrace {
+                            self.advance();
+                            while self.peek_kind() != &TokenKind::CloseBrace && self.peek_kind() != &TokenKind::Eof {
+                                if let TokenKind::Ident(ref p) = self.peek_kind().clone() {
+                                    if p == "exclude" || p == "excludeFields" {
+                                        self.advance();
+                                        if self.peek_kind() == &TokenKind::Colon || self.peek_kind() == &TokenKind::Assign {
+                                            self.advance();
+                                        }
+                                        self.expect(TokenKind::OpenBracket)?;
+                                        while self.peek_kind() != &TokenKind::CloseBracket && self.peek_kind() != &TokenKind::Eof {
+                                            let (f_name, _) = self.expect_ident()?;
+                                            exclude_fields.push(f_name);
+                                            if self.peek_kind() == &TokenKind::Comma || self.peek_kind() == &TokenKind::Semicolon {
+                                                self.advance();
+                                            }
+                                        }
+                                        self.expect(TokenKind::CloseBracket)?;
+                                        if self.peek_kind() == &TokenKind::Semicolon {
+                                            self.advance();
+                                        }
+                                    } else if p == "where" {
+                                        self.advance();
+                                        let has_inner = if self.peek_kind() == &TokenKind::OpenBrace {
+                                            self.advance();
+                                            true
+                                        } else {
+                                            false
+                                        };
+                                        row_filter = Some(self.parse_expr()?);
+                                        if has_inner {
+                                            self.expect(TokenKind::CloseBrace)?;
+                                        }
+                                        if self.peek_kind() == &TokenKind::Semicolon {
+                                            self.advance();
+                                        }
+                                    } else {
+                                        self.advance();
+                                    }
+                                } else if self.peek_kind() == &TokenKind::Where {
+                                    self.advance();
+                                    let has_inner = if self.peek_kind() == &TokenKind::OpenBrace {
+                                        self.advance();
+                                        true
+                                    } else {
+                                        false
+                                    };
+                                    row_filter = Some(self.parse_expr()?);
+                                    if has_inner {
+                                        self.expect(TokenKind::CloseBrace)?;
+                                    }
+                                    if self.peek_kind() == &TokenKind::Semicolon {
+                                        self.advance();
+                                    }
+                                } else {
+                                    self.advance();
+                                }
+                            }
+                            self.expect(TokenKind::CloseBrace)?;
+                        } else if self.peek_kind() == &TokenKind::Where {
                             self.advance();
                             let has_brace = if self.peek_kind() == &TokenKind::OpenBrace {
                                 self.advance();
@@ -2004,11 +2183,14 @@ impl Parser {
                                 self.expect(TokenKind::CloseBrace)?;
                             }
                         }
-                        self.expect(TokenKind::Semicolon)?;
+                        if self.peek_kind() == &TokenKind::Comma || self.peek_kind() == &TokenKind::Semicolon {
+                            self.advance();
+                        }
                         permissions.push(TablePermissionDef {
                             table_name,
                             actions,
                             row_filter,
+                            exclude_fields,
                             span: perm_span,
                         });
                     }
@@ -2057,6 +2239,7 @@ impl Parser {
                         table_name,
                         actions,
                         row_filter: None,
+                        exclude_fields: Vec::new(),
                         span: perm_span,
                     });
                 } else if self.peek_second_kind() == Some(&TokenKind::Assign)
@@ -2210,7 +2393,16 @@ impl Parser {
                 }
                 TokenKind::Where => {
                     self.advance();
+                    let has_brace = if self.peek_kind() == &TokenKind::OpenBrace {
+                        self.advance();
+                        true
+                    } else {
+                        false
+                    };
                     where_filter = Some(self.parse_expr()?);
+                    if has_brace {
+                        self.expect(TokenKind::CloseBrace)?;
+                    }
                     if self.peek_kind() == &TokenKind::Semicolon {
                         self.advance();
                     }
@@ -2464,7 +2656,9 @@ impl Parser {
                         self.advance();
                         self.expect(TokenKind::OpenParen)?;
                         let (col_name, col_span) = self.expect_ident()?;
-                        self.expect(TokenKind::Semicolon)?;
+                        if self.peek_kind() == &TokenKind::Comma || self.peek_kind() == &TokenKind::Semicolon {
+                            self.advance();
+                        }
                         let (src_field, _) = self.expect_ident()?;
                         let mut aggregation = None;
                         if self.peek_kind() == &TokenKind::Semicolon {
@@ -2698,7 +2892,9 @@ impl Parser {
                         properties.push(self.parse_property()?);
                     } else if self.peek_second_kind() == Some(&TokenKind::Semicolon) {
                         let (_, sp) = self.expect_ident()?;
-                        self.expect(TokenKind::Semicolon)?;
+                        if self.peek_kind() == &TokenKind::Comma || self.peek_kind() == &TokenKind::Semicolon {
+                            self.advance();
+                        }
                         properties.push(Property {
                             name: s,
                             value: Expr::BoolLit(true),
@@ -2950,6 +3146,9 @@ impl Parser {
                 | "image"
                 | "spacer"
                 | "divider"
+                | "action"
+                | "button"
+                | "cta"
                 | "wrap"
                 | "replace"
                 | "addAfter"
@@ -3086,7 +3285,9 @@ impl Parser {
                             ))
                     {
                         let (_, sp) = self.expect_ident()?;
-                        self.expect(TokenKind::Semicolon)?;
+                        if self.peek_kind() == &TokenKind::Comma || self.peek_kind() == &TokenKind::Semicolon {
+                            self.advance();
+                        }
                         properties.push(Property {
                             name: s,
                             value: Expr::BoolLit(true),
@@ -3230,7 +3431,9 @@ impl Parser {
                         properties.push(self.parse_property()?);
                     } else if self.peek_second_kind() == Some(&TokenKind::Semicolon) {
                         let (_, sp) = self.expect_ident()?;
-                        self.expect(TokenKind::Semicolon)?;
+                        if self.peek_kind() == &TokenKind::Comma || self.peek_kind() == &TokenKind::Semicolon {
+                            self.advance();
+                        }
                         properties.push(Property {
                             name: s,
                             value: Expr::BoolLit(true),

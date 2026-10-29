@@ -1,0 +1,14 @@
+{
+  "package_id": "test.procurement",
+  "name": "Procurement & Vendor Operations",
+  "version": "1.0.0",
+  "publisher": "BOS Architecture Test Suite",
+  "description": "Comprehensive test package verifying all BOS meta-objects, schema synchronization, AMDP FlowFields, state machine lifecycles, and page components.",
+  "dependencies": [
+    "bos.core"
+  ],
+  "optional_features": [
+    "auto_approve_under_1000",
+    "vendor_discount_audit"
+  ]
+}

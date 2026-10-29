@@ -1,0 +1,253 @@
+// ============================================================================
+// BOS Core Mega-Package: Feature 5 - RBAC Permissions & Navigation Menus
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// 1. PERMISSION SETS (Enterprise RBAC)
+// ----------------------------------------------------------------------------
+
+permissionset CoreAdmin {
+    caption = "Core Platform Super Administrator";
+
+    permissions = {
+        CoreSetup = RIMD;
+        Tenant = RIMD;
+        Company = RIMD;
+        Currency = RIMD;
+        CountryRegion = RIMD;
+        User = RIMD;
+        Role = RIMD;
+        UserRole = RIMD;
+        UserGroup = RIMD;
+        UserGroupMember = RIMD;
+        UserPersonalization = RIMD;
+        UserSecuritySetting = RIMD;
+        UserSession = RIMD;
+        SecurityAuditLog = R;
+        AuthSetup = RIMD;
+        AuthConfiguration = RIMD;
+        ApiKey = RIMD;
+        ExternalAuthProvider = RIMD;
+        ServiceAccount = RIMD;
+    };
+
+    execute = [
+        CoreManager,
+        UserManager,
+        AuthManager,
+        IntegrationManager
+    ];
+}
+
+permissionset SecurityAdmin {
+    caption = "Security and Compliance Administrator";
+
+    permissions = {
+        User = RIMD;
+        Role = RIMD;
+        UserRole = RIMD;
+        UserGroup = RIMD;
+        UserGroupMember = RIMD;
+        UserSecuritySetting = RIMD;
+        UserSession = RIMD;
+        SecurityAuditLog = R;
+        AuthSetup = RIMD;
+        AuthConfiguration = RIMD;
+        ApiKey = RIMD;
+        ExternalAuthProvider = RIMD;
+    };
+
+    execute = [
+        UserManager,
+        AuthManager,
+        IntegrationManager
+    ];
+}
+
+permissionset CoreUser {
+    caption = "Standard Core Business User";
+
+    permissions = {
+        CoreSetup = R;
+        Company = R;
+        Currency = R;
+        CountryRegion = R;
+        UserPersonalization = RIM;
+    };
+
+    execute = [
+        CoreManager
+    ];
+}
+
+// ----------------------------------------------------------------------------
+// 2. ROLE-CENTER NAVIGATION MENUS
+// ----------------------------------------------------------------------------
+
+menu CorePlatformMenu {
+    caption = "Platform Administration";
+    role = "SUPER";
+
+    group(EnvironmentNavGroup) {
+        caption = "Environment & Setup";
+        item(CoreSetupItem) {
+            caption = "Core Platform Setup";
+            page = "CoreSetupCard";
+        }
+        item(TenantsItem) {
+            caption = "Tenants";
+            page = "TenantList";
+        }
+        item(CompaniesItem) {
+            caption = "Companies";
+            page = "CompanyList";
+        }
+    }
+
+    group(IdentityNavGroup) {
+        caption = "Identity & Security";
+        item(UsersItem) {
+            caption = "Users";
+            page = "UserList";
+        }
+        item(RolesItem) {
+            caption = "Security Roles";
+            page = "RoleList";
+        }
+        item(UserGroupsItem) {
+            caption = "User Groups";
+            page = "UserGroupList";
+        }
+        item(AuthSetupItem) {
+            caption = "Security & Password Setup";
+            page = "AuthSetupCard";
+        }
+        item(SessionsItem) {
+            caption = "Active Sessions";
+            page = "SessionList";
+        }
+        item(AuditTrailItem) {
+            caption = "Security Audit Trail";
+            page = "SecurityAuditLogList";
+        }
+    }
+
+    group(IntegrationNavGroup) {
+        caption = "Integrations & APIs";
+        item(ApiKeysItem) {
+            caption = "API Keys";
+            page = "ApiKeyList";
+        }
+        item(AuthProvidersItem) {
+            caption = "External Auth Providers";
+            page = "ExternalAuthProviderList";
+        }
+        item(ServiceAccountsItem) {
+            caption = "Service Accounts";
+            page = "ServiceAccountList";
+        }
+    }
+
+    group(LocalizationNavGroup) {
+        caption = "Regional & Localization";
+        item(CurrenciesItem) {
+            caption = "Currencies";
+            page = "CurrencyList";
+        }
+        item(CountriesItem) {
+            caption = "Countries & Regions";
+            page = "CountryRegionList";
+        }
+        item(PersonalizationsItem) {
+            caption = "User Personalizations";
+            page = "UserPersonalizationList";
+        }
+    }
+}
+
+menu SuperAdminMenu {
+    caption = "Enterprise Administration";
+    role = "SUPER";
+
+    group(AdminOperations) {
+        caption = "Platform Operations";
+        item(AdminCoreSetup) {
+            caption = "System Setup";
+            page = "CoreSetupCard";
+        }
+        item(AdminTenants) {
+            caption = "Tenants";
+            page = "TenantList";
+        }
+        item(AdminCompanies) {
+            caption = "Companies";
+            page = "CompanyList";
+        }
+        item(AdminUsers) {
+            caption = "User Accounts";
+            page = "UserList";
+        }
+        item(AdminRoles) {
+            caption = "Roles & Access Control";
+            page = "RoleList";
+        }
+        item(AdminUserGroups) {
+            caption = "User Groups";
+            page = "UserGroupList";
+        }
+        item(AdminAuthSetup) {
+            caption = "Authentication Policies";
+            page = "AuthSetupCard";
+        }
+        item(AdminAuditLogs) {
+            caption = "Security Audit Log";
+            page = "SecurityAuditLogList";
+        }
+        item(AdminApiKeys) {
+            caption = "API Keys";
+            page = "ApiKeyList";
+        }
+    }
+}
+
+menu SystemAdminMenu {
+    caption = "System Administration";
+    role = "ADMIN";
+
+    group(SysAdminManagement) {
+        caption = "User & Access Management";
+        item(SysUsers) {
+            caption = "Users";
+            page = "UserList";
+        }
+        item(SysRoles) {
+            caption = "Roles";
+            page = "RoleList";
+        }
+        item(SysUserGroups) {
+            caption = "User Groups";
+            page = "UserGroupList";
+        }
+        item(SysSessions) {
+            caption = "Active Sessions";
+            page = "SessionList";
+        }
+        item(SysAudit) {
+            caption = "Audit Trail";
+            page = "SecurityAuditLogList";
+        }
+    }
+}
+
+menu BusinessUserMenu {
+    caption = "Workspace";
+    role = "User";
+
+    group(UserPreferences) {
+        caption = "My Workspace";
+        item(MyPersonalization) {
+            caption = "Personalization";
+            page = "UserPersonalizationCard";
+        }
+    }
+}

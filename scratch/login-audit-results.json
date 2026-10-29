@@ -1,0 +1,97 @@
+[
+  {
+    "name": "Initial Route & URL",
+    "passed": true,
+    "details": "Landed on: http://localhost:3000/"
+  },
+  {
+    "name": "Form Elements Present",
+    "passed": true,
+    "details": "User input: true, Pass input: true, Button: true, RememberMe: false"
+  },
+  {
+    "name": "Autofocus Check",
+    "passed": true,
+    "details": "Initial activeElement: INPUT#bos-f-LoginPage-1"
+  },
+  {
+    "name": "Initial Username Value",
+    "passed": true,
+    "details": "Prefilled value: \"admin\""
+  },
+  {
+    "name": "Empty Fields Submission",
+    "passed": true,
+    "details": "Response / Toast: \"Sign In  Enter your enterprise credentials to access your workspace.  Something went wrong  Please e\""
+  },
+  {
+    "name": "Empty Password Submission",
+    "passed": true,
+    "details": "Toast: \"Something went wrong  Please enter your password.\""
+  },
+  {
+    "name": "Empty User ID Submission",
+    "passed": true,
+    "details": "Toast: \"Something went wrong  Please enter your User ID.\""
+  },
+  {
+    "name": "Non-Existent User",
+    "passed": true,
+    "details": "Toast: \"Something went wrong  Invalid User ID or Password.\""
+  },
+  {
+    "name": "Invalid Password",
+    "passed": true,
+    "details": "Toast: \"Something went wrong  Invalid User ID or Password.\""
+  },
+  {
+    "name": "Password Visibility Toggle",
+    "passed": false,
+    "details": "Type changed from password to password"
+  },
+  {
+    "name": "Tab Order Navigation",
+    "passed": true,
+    "details": "Tab 1: INPUT#bos-f-LoginPage-2 -> Tab 2: BUTTON#"
+  },
+  {
+    "name": "Enter Key Submission & Valid Login",
+    "passed": false,
+    "details": "URL after Enter submission: http://localhost:3000/"
+  },
+  {
+    "name": "Storage Inspection",
+    "passed": true,
+    "details": "LocalStorage keys: []"
+  },
+  {
+    "name": "Session Persistence on Page Refresh",
+    "passed": false,
+    "details": "URL after reload: http://localhost:3000/"
+  },
+  {
+    "name": "Logout Trigger Found",
+    "passed": false,
+    "details": "Could not find user profile or logout button in shell"
+  },
+  {
+    "name": "Responsive Layout Desktop_1920",
+    "passed": true,
+    "details": "Rendered cleanly at 1920x1080"
+  },
+  {
+    "name": "Responsive Layout Laptop_1366",
+    "passed": true,
+    "details": "Rendered cleanly at 1366x768"
+  },
+  {
+    "name": "Responsive Layout Tablet_768",
+    "passed": true,
+    "details": "Rendered cleanly at 768x1024"
+  },
+  {
+    "name": "Responsive Layout Mobile_375",
+    "passed": true,
+    "details": "Rendered cleanly at 375x812"
+  }
+]

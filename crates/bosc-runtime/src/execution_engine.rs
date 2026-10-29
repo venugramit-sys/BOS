@@ -18,6 +18,8 @@ pub struct ExecutionResult {
     pub logs: Vec<String>,
     #[serde(default)]
     pub messages: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub notifications: Vec<crate::Notification>,
     /// Interpreter steps consumed by the method script (0 for action and pushdown methods).
     #[serde(default)]
     pub fuel_used: u64,
@@ -202,7 +204,7 @@ impl ExecutionEngine {
         data: &mut serde_json::Value,
         x_rec: Option<&serde_json::Value>,
         max_fuel: Option<u64>,
-    ) -> Result<(Vec<String>, u64, Option<serde_json::Value>), RuntimeError> {
+    ) -> Result<(Vec<String>, u64, Option<serde_json::Value>, Vec<crate::Notification>), RuntimeError> {
         Self::run_script_with_bytecode(scope, table, name, script, None, data, x_rec, max_fuel).await
     }
 
@@ -216,7 +218,7 @@ impl ExecutionEngine {
         data: &mut serde_json::Value,
         x_rec: Option<&serde_json::Value>,
         max_fuel: Option<u64>,
-    ) -> Result<(Vec<String>, u64, Option<serde_json::Value>), RuntimeError> {
+    ) -> Result<(Vec<String>, u64, Option<serde_json::Value>, Vec<crate::Notification>), RuntimeError> {
         let run = QuickJsEngine::run_script(
             scope,
             ScriptCall {
@@ -232,7 +234,7 @@ impl ExecutionEngine {
         )
         .await?;
         *data = run.data;
-        Ok((run.logs, run.fuel_used, run.return_value))
+        Ok((run.logs, run.fuel_used, run.return_value, run.notifications))
     }
 
     /// Execute a codeunit procedure inside an existing unit of work. Every statement, trigger,
@@ -247,7 +249,7 @@ impl ExecutionEngine {
         // 1. Hot Execution Path: Check in-memory verified AOT bytecode cache (ZERO SQL roundtrips)
         if let Some(ref bc) = scope.services.bytecode_cache {
             if let Some(artifact) = bc.get(codeunit_name) {
-                let (q_logs, used, returned) = Self::run_script_with_bytecode(
+                let (q_logs, used, returned, q_notifs) = Self::run_script_with_bytecode(
                     scope,
                     codeunit_name,
                     method_name,
@@ -277,6 +279,7 @@ impl ExecutionEngine {
                     mutated_data: params,
                     logs: q_logs,
                     messages,
+                    notifications: q_notifs,
                     fuel_used: used,
                     fuel_limit: DEFAULT_MAX_FUEL,
                 });
@@ -360,14 +363,16 @@ impl ExecutionEngine {
                     proc_name
                 )],
                 messages: vec![],
+                notifications: vec![],
                 fuel_used: 0,
                 fuel_limit,
             });
         }
 
         let mut logs = Vec::new();
+        let mut script_notifs = Vec::new();
         let fuel_used = if let Some(ref script) = method.script {
-            let (q_logs, used, returned) = Self::run_script(
+            let (q_logs, used, returned, q_notifs) = Self::run_script(
                 scope,
                 codeunit_name,
                 method_name,
@@ -378,6 +383,7 @@ impl ExecutionEngine {
             )
             .await?;
             logs.extend(q_logs);
+            script_notifs = q_notifs;
             if let Some(value) = returned {
                 params = value;
             }
@@ -414,6 +420,7 @@ impl ExecutionEngine {
             mutated_data: params,
             logs,
             messages,
+            notifications: script_notifs,
             fuel_used,
             fuel_limit,
         })
@@ -477,7 +484,7 @@ impl ExecutionEngine {
                         Some(fuel_limit),
                     )
                     .await
-                    .map(|(logs, _, _)| logs)
+                    .map(|(logs, _, _, _)| logs)
                 } else {
                     let mut logs = Vec::new();
                     let mut fuel = fuel_limit;
@@ -567,7 +574,7 @@ impl ExecutionEngine {
                 .filter(|t| trigger_matches(&t.name, event))
             {
                 if let Some(ref script) = trg.script {
-                    let (logs, _, _) =
+                    let (logs, _, _, _) =
                         Self::run_script(scope, clean_table, &trg.name, script, data, x_rec, None)
                             .await?;
                     all_logs.extend(logs);
@@ -613,7 +620,7 @@ impl ExecutionEngine {
                 .filter(|m| m.trigger_event.as_ref() == Some(event))
             {
                 if let Some(ref script) = m.script {
-                    let (logs, _, _) = Self::run_script(
+                    let (logs, _, _, _) = Self::run_script(
                         scope,
                         clean_table,
                         &m.name,
@@ -670,7 +677,7 @@ impl ExecutionEngine {
                 .await;
 
                 match aot_res {
-                    Ok((logs, _, _)) => {
+                    Ok((logs, _, _, _)) => {
                         all_logs.extend(logs);
                         return Ok(all_logs);
                     }
@@ -765,8 +772,47 @@ impl ExecutionEngine {
                             .and_then(|v| v.as_str())
                             .or_else(|| fv.get("body").and_then(|v| v.as_str()));
                         if let Some(body) = body {
-                            let full_script = format!("{}\n{}", companion_prelude, body);
-                            let (logs, _, _) = Self::run_script(
+                            let p_name = fv
+                                .get("param_name")
+                                .and_then(|v| v.as_str())
+                                .filter(|s| !s.is_empty())
+                                .unwrap_or("val");
+                            let old_p = fv
+                                .get("old_param_name")
+                                .and_then(|v| v.as_str())
+                                .filter(|s| !s.is_empty())
+                                .unwrap_or("oldVal");
+
+                            let mut alias_decls = String::new();
+                            if p_name != "val" {
+                                alias_decls.push_str("let val = __colVal;\n");
+                            }
+                            if p_name != "value" {
+                                alias_decls.push_str("let value = __colVal;\n");
+                            }
+                            if old_p != "oldVal" && p_name != "oldVal" {
+                                alias_decls.push_str("let oldVal = __oldVal;\n");
+                            }
+                            if old_p != "oldValue" && p_name != "oldValue" {
+                                alias_decls.push_str("let oldValue = __oldVal;\n");
+                            }
+
+                            let full_script = format!(
+                                r#"{companion_prelude}
+const __colKey = Object.keys(rec || {{}}).find(k => k.toLowerCase() === "{col}".toLowerCase() || k.replace(/_/g, "").toLowerCase() === "{col}".replace(/_/g, "").toLowerCase());
+const __colVal = (__colKey && rec) ? rec[__colKey] : undefined;
+const __oldKey = Object.keys(xRec || {{}}).find(k => k.toLowerCase() === "{col}".toLowerCase() || k.replace(/_/g, "").toLowerCase() === "{col}".replace(/_/g, "").toLowerCase());
+const __oldVal = (__oldKey && xRec) ? xRec[__oldKey] : undefined;
+let {p_name} = __colVal;
+let {old_p} = __oldVal;
+{alias_decls}
+{body}
+if (__colKey && rec && typeof {p_name} !== "undefined") {{
+    rec[__colKey] = {p_name};
+}}
+"#
+                            );
+                            let (logs, _, _, _) = Self::run_script(
                                 scope,
                                 clean_table,
                                 &format!("validate_{}", col),
@@ -792,7 +838,7 @@ impl ExecutionEngine {
                     }
                     if let Some(script) = trg_val.get("script").and_then(|v| v.as_str()) {
                         let full_script = format!("{}\n{}", companion_prelude, script);
-                        let (logs, _, _) = Self::run_script(
+                        let (logs, _, _, _) = Self::run_script(
                             scope,
                             clean_table,
                             trg_name,
@@ -1416,7 +1462,7 @@ mod tests {
 
         // Verify passwordHash computed
         let hash = data.get("passwordHash").and_then(|v| v.as_str()).unwrap();
-        assert!(hash.starts_with("$sha256$"));
+        assert!(hash.starts_with("$2b$") || hash.starts_with("$sha256$"));
 
         // Verify verification works
         assert!(crate::verify_password("SuperSecret123!", hash));

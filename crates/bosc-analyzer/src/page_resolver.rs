@@ -260,6 +260,10 @@ impl<'a> Ctx<'a> {
         self.push(PageDiagnosticSeverity::Error, code, path, message, hint);
     }
 
+    fn warning(&mut self, code: &str, path: Option<&str>, message: String, hint: Option<String>) {
+        self.push(PageDiagnosticSeverity::Warning, code, path, message, hint);
+    }
+
     /// Error when the catalog is complete, warning when the object may live in another package.
     fn reference(&mut self, code: &str, path: Option<&str>, message: String, hint: Option<String>) {
         let sev = if self.catalog.is_closed() { PageDiagnosticSeverity::Error } else { PageDiagnosticSeverity::Warning };
@@ -922,7 +926,19 @@ fn resolve_actions(ctx: &mut Ctx<'_>, page: &PageIR) -> Vec<ResolvedActionIR> {
             promoted_only: a.promoted_only,
             promoted_category: a.promoted_category.clone(),
             is_default: a.is_default,
-            in_footer_bar: a.in_footer_bar || (ctx.page_type.is_dialog() && a.area.is_none()),
+            in_footer_bar: {
+                let is_dialog = ctx.page_type.is_dialog();
+                let promoted = a.in_footer_bar || (is_dialog && (a.area.is_none() || a.primary));
+                if is_dialog && !promoted && a.visible {
+                    ctx.warning(
+                        "BOS3015",
+                        Some(&path),
+                        format!("Action '{}' is inside an area on dialog page '{}' and will not be displayed; add 'inFooterBar = true' or declare outside an area", a.name, page.name),
+                        Some("Dialog pages only display actions configured for the footer bar.".to_string()),
+                    );
+                }
+                promoted
+            },
             ellipsis: a.ellipsis,
             shortcut: a.shortcut.clone(),
             confirm: a.confirm.clone(),
@@ -946,7 +962,7 @@ fn resolve_actions(ctx: &mut Ctx<'_>, page: &PageIR) -> Vec<ResolvedActionIR> {
 // ----------------------------------------------------
 
 /// Control properties a super user may change through the customization layer.
-const CUSTOMIZABLE_PROPS: &[&str] = &["caption", "label", "visible", "importance", "tooltip", "toolTip", "colSpan", "hideBelow"];
+const CUSTOMIZABLE_PROPS: &[&str] = &["caption", "label", "visible", "importance", "tooltip", "toolTip", "colSpan", "hideBelow", "labelPosition"];
 
 /// Removes everything a customization layer may not do and reports each removal as BOS3009.
 pub fn enforce_customization_whitelist(ext: &PageExtensionIR) -> (PageExtensionIR, Vec<PageDiagnosticIR>) {

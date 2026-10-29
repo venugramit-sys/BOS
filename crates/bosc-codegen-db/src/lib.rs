@@ -29,6 +29,11 @@ impl PostgresGenerator {
 
     /// Formats column DDL supporting PostgreSQL generated stored formula columns
     pub fn format_column_ddl(col: &ColumnIR) -> String {
+        Self::format_column_ddl_opt(col, true)
+    }
+
+    /// Formats column DDL with option to omit inline UNIQUE (required for partitioned tables)
+    pub fn format_column_ddl_opt(col: &ColumnIR, include_inline_unique: bool) -> String {
         let mut line = format!("    \"{}\" {}", col.sql_name, col.sql_type);
         if let Some(form) = &col.formula {
             line.push_str(&format!(" GENERATED ALWAYS AS ({}) STORED", form));
@@ -39,7 +44,7 @@ impl PostgresGenerator {
             if let Some(def) = &col.default_val {
                 line.push_str(&format!(" DEFAULT {}", def));
             }
-            if col.is_unique {
+            if col.is_unique && include_inline_unique {
                 line.push_str(" UNIQUE");
             }
         }
@@ -151,6 +156,23 @@ DROP TABLE IF EXISTS "_bos_meta_relations" CASCADE;
 DROP TABLE IF EXISTS "_bos_meta_state_machines" CASCADE;
 "#);
 
+        // 5. Physical Object Mapping Registry (ADR 0003 Multi-Strategy Provisioning)
+        sql.push_str(r#"-- 5. Physical Object Mapping Registry
+CREATE TABLE IF NOT EXISTS "_bos_object_map" (
+    "map_version" INT NOT NULL DEFAULT 1,
+    "logical_name" TEXT NOT NULL,
+    "tenant_id" UUID,
+    "company_id" UUID,
+    "layout" VARCHAR(50) NOT NULL DEFAULT 'shared_rls',
+    "physical_schema" TEXT NOT NULL DEFAULT 'public',
+    "physical_table" TEXT NOT NULL,
+    "object_version" VARCHAR(50) NOT NULL DEFAULT '1.0.0',
+    PRIMARY KEY ("logical_name", "physical_table")
+);
+CREATE INDEX IF NOT EXISTS "idx_bos_object_map_lookup" ON "_bos_object_map" ("logical_name", "tenant_id", "company_id");
+
+"#);
+
         // 7. Multi-Tenant Registry
         sql.push_str(r#"-- 7. Multi-Tenant Registry
 CREATE TABLE IF NOT EXISTS "_bos_tenants" (
@@ -168,13 +190,26 @@ CREATE TABLE IF NOT EXISTS "_bos_tenants" (
         sql.push_str(r#"-- 8. Company Isolation Registry
 CREATE TABLE IF NOT EXISTS "_bos_companies" (
     "company_id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    "tenant_id" UUID NOT NULL REFERENCES "_bos_tenants"("tenant_id") ON DELETE CASCADE,
+    "tenant_id" UUID REFERENCES "_bos_tenants"("tenant_id") ON DELETE CASCADE,
     "code" VARCHAR(50) NOT NULL,
     "name" VARCHAR(255) NOT NULL,
     "is_active" BOOLEAN NOT NULL DEFAULT true,
-    "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT "uq_bos_tenant_company" UNIQUE ("tenant_id", "code")
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Schema Evolution Migration for _bos_companies (allow company-only provisioning without tenant)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = '_bos_companies' AND column_name = 'tenant_id' AND is_nullable = 'NO'
+    ) THEN
+        ALTER TABLE "_bos_companies" ALTER COLUMN "tenant_id" DROP NOT NULL;
+    END IF;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS "uq_bos_tenant_company" ON "_bos_companies" ("tenant_id", "code") WHERE "tenant_id" IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS "uq_bos_company_code_global" ON "_bos_companies" ("code") WHERE "tenant_id" IS NULL;
 
 "#);
 
@@ -476,7 +511,7 @@ SET "kernel_version" = EXCLUDED."kernel_version",
                     table: table.name.clone(),
                     kind: "get_by_id".to_string(),
                     sql: format!(
-                        r#"SELECT * FROM "{}" WHERE "{}" = $1 AND "_tenant_id" = $2 AND "_company_id" = $3 LIMIT 1;"#,
+                        r#"SELECT * FROM "{}" WHERE "{}" = $1 AND "_tenant_id" IS NOT DISTINCT FROM $2 AND "_company_id" IS NOT DISTINCT FROM $3 LIMIT 1;"#,
                         tbl_name, primary_key_col
                     ),
                     param_names: vec![primary_key_col.to_string(), "_tenant_id".to_string(), "_company_id".to_string()],
@@ -487,7 +522,7 @@ SET "kernel_version" = EXCLUDED."kernel_version",
                     table: table.name.clone(),
                     kind: "get_by_id".to_string(),
                     sql: format!(
-                        r#"SELECT * FROM "{}" WHERE "{}" = $1 AND "_tenant_id" = $2 LIMIT 1;"#,
+                        r#"SELECT * FROM "{}" WHERE "{}" = $1 AND "_tenant_id" IS NOT DISTINCT FROM $2 LIMIT 1;"#,
                         tbl_name, primary_key_col
                     ),
                     param_names: vec![primary_key_col.to_string(), "_tenant_id".to_string()],
@@ -500,20 +535,30 @@ SET "kernel_version" = EXCLUDED."kernel_version",
                 table: table.name.clone(),
                 kind: "exists".to_string(),
                 sql: format!(
-                    r#"SELECT EXISTS(SELECT 1 FROM "{}" WHERE "{}" = $1 AND "_tenant_id" = $2);"#,
+                    r#"SELECT EXISTS(SELECT 1 FROM "{}" WHERE "{}" = $1 AND "_tenant_id" IS NOT DISTINCT FROM $2);"#,
                     tbl_name, primary_key_col
                 ),
                 param_names: vec![primary_key_col.to_string(), "_tenant_id".to_string()],
             });
 
-            // 3. Insert (for all writable physical columns)
+            // 3. Insert (for all writable physical columns + required system columns)
+            let mut all_insert_cols = vec!["\"_id\"".to_string(), "\"_tenant_id\"".to_string()];
+            let mut all_insert_params = vec!["_id".to_string(), "_tenant_id".to_string()];
+            if table.data_per_company {
+                all_insert_cols.push("\"_company_id\"".to_string());
+                all_insert_params.push("_company_id".to_string());
+            }
+
             let writable_cols: Vec<&ColumnIR> = table.columns.iter()
                 .filter(|c| c.formula.is_none())
                 .collect();
             
-            let col_names_sql: Vec<String> = writable_cols.iter().map(|c| format!("\"{}\"", c.sql_name)).collect();
-            let param_placeholders: Vec<String> = (1..=writable_cols.len()).map(|i| format!("${}", i)).collect();
-            let param_names: Vec<String> = writable_cols.iter().map(|c| c.sql_name.clone()).collect();
+            for c in &writable_cols {
+                all_insert_cols.push(format!("\"{}\"", c.sql_name));
+                all_insert_params.push(c.sql_name.clone());
+            }
+
+            let param_placeholders: Vec<String> = (1..=all_insert_cols.len()).map(|i| format!("${}", i)).collect();
 
             if !writable_cols.is_empty() {
                 queries.push(AotPreparedStatementIR {
@@ -523,10 +568,10 @@ SET "kernel_version" = EXCLUDED."kernel_version",
                     sql: format!(
                         r#"INSERT INTO "{}" ({}) VALUES ({}) RETURNING *;"#,
                         tbl_name,
-                        col_names_sql.join(", "),
+                        all_insert_cols.join(", "),
                         param_placeholders.join(", ")
                     ),
-                    param_names,
+                    param_names: all_insert_params,
                 });
             }
 
@@ -564,7 +609,7 @@ SET "kernel_version" = EXCLUDED."kernel_version",
                     table: table.name.clone(),
                     kind: "update_optimistic".to_string(),
                     sql: format!(
-                        r#"UPDATE "{}" SET {} WHERE "{}" = ${} AND "_system_version" = ${} AND "_tenant_id" = ${} RETURNING *;"#,
+                        r#"UPDATE "{}" SET {} WHERE "{}" = ${} AND "_system_version" = ${} AND "_tenant_id" IS NOT DISTINCT FROM ${} RETURNING *;"#,
                         tbl_name,
                         set_clauses.join(", "),
                         primary_key_col,
@@ -582,7 +627,7 @@ SET "kernel_version" = EXCLUDED."kernel_version",
                 table: table.name.clone(),
                 kind: "delete".to_string(),
                 sql: format!(
-                    r#"DELETE FROM "{}" WHERE "{}" = $1 AND "_system_version" = $2 AND "_tenant_id" = $3 RETURNING *;"#,
+                    r#"DELETE FROM "{}" WHERE "{}" = $1 AND "_system_version" = $2 AND "_tenant_id" IS NOT DISTINCT FROM $3 RETURNING *;"#,
                     tbl_name, primary_key_col
                 ),
                 param_names: vec![primary_key_col.to_string(), "_system_version".to_string(), "_tenant_id".to_string()],
@@ -595,7 +640,7 @@ SET "kernel_version" = EXCLUDED."kernel_version",
                     table: table.name.clone(),
                     kind: "sift_sum".to_string(),
                     sql: format!(
-                        r#"SELECT ({}) AS "{}" FROM "{}" WHERE "_tenant_id" = $1;"#,
+                        r#"SELECT ({}) AS "{}" FROM "{}" WHERE "_tenant_id" IS NOT DISTINCT FROM $1;"#,
                         ff.sql_subquery, ff.name, tbl_name
                     ),
                     param_names: vec!["_tenant_id".to_string()],
@@ -631,9 +676,9 @@ SET "kernel_version" = EXCLUDED."kernel_version",
                 table.sql_table_name
             ));
             ddl.push_str("    \"_id\" UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n");
-            ddl.push_str("    \"_tenant_id\" UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',\n");
+            ddl.push_str("    \"_tenant_id\" UUID NOT NULL,\n");
             if table.data_per_company {
-                ddl.push_str("    \"_company_id\" UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',\n");
+                ddl.push_str("    \"_company_id\" UUID NOT NULL,\n");
             }
             ddl.push_str("    \"_created_at\" TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n");
             ddl.push_str("    \"_created_by\" UUID,\n");
@@ -670,8 +715,14 @@ SET "kernel_version" = EXCLUDED."kernel_version",
                 ddl.push_str("    \"_system_version\" BIGINT NOT NULL DEFAULT 1,\n");
 
                 for col in &table.columns {
-                    ddl.push_str(&Self::format_column_ddl(col));
+                    ddl.push_str(&Self::format_column_ddl_opt(col, false));
                     ddl.push_str(",\n");
+                }
+
+                for col in &table.columns {
+                    if col.is_unique {
+                        ddl.push_str(&format!("    CONSTRAINT \"uq_{}_{}\" UNIQUE (\"_tenant_id\", \"{}\"),\n", table.sql_table_name, col.sql_name, col.sql_name));
+                    }
                 }
 
                 ddl.push_str("    PRIMARY KEY (\"_tenant_id\", \"_id\")\n");
@@ -891,19 +942,29 @@ SET "kernel_version" = EXCLUDED."kernel_version",
             ));
         }
 
-        // Row-Level Security
+        // Row-Level Security: Multi-tenant and Company-Only isolation
         if self.strategy == StorageStrategyIR::SharedRLS || self.strategy == StorageStrategyIR::Partitioned {
             ddl.push_str(&format!("ALTER TABLE \"{}\" ENABLE ROW LEVEL SECURITY;\n", table.sql_table_name));
+            ddl.push_str(&format!("ALTER TABLE \"{}\" FORCE ROW LEVEL SECURITY;\n", table.sql_table_name));
             ddl.push_str(&format!("DROP POLICY IF EXISTS \"tenant_isolation_{}\" ON \"{}\";\n", table.sql_table_name, table.sql_table_name));
+            ddl.push_str(&format!("DROP POLICY IF EXISTS \"bos_isolation_{}\" ON \"{}\";\n", table.sql_table_name, table.sql_table_name));
+            ddl.push_str(&format!("DROP POLICY IF EXISTS \"bos_base_{}\" ON \"{}\";\n", table.sql_table_name, table.sql_table_name));
+
+            // Base permissive policy allowing operations subjected to restrictive isolation
+            ddl.push_str(&format!(
+                "CREATE POLICY \"bos_base_{}\" ON \"{}\"\n    FOR ALL\n    USING (true)\n    WITH CHECK (true);\n",
+                table.sql_table_name, table.sql_table_name
+            ));
+
             if table.data_per_company {
                 ddl.push_str(&format!(
-                    "CREATE POLICY \"tenant_isolation_{}\" ON \"{}\"\n    FOR ALL\n    USING (\n        \"_tenant_id\" = NULLIF(current_setting('bos.current_tenant_id', true), '')::uuid\n        AND (\n            \"_company_id\" = COALESCE(NULLIF(current_setting('bos.current_company_id', true), ''), NULLIF(current_setting('bos.company_id', true), ''))::uuid\n            OR COALESCE(NULLIF(current_setting('bos.current_company_id', true), ''), NULLIF(current_setting('bos.company_id', true), '')) IS NULL\n            OR \"_company_id\" = '00000000-0000-0000-0000-000000000000'::uuid\n        )\n    );\n",
-                    table.sql_table_name, table.sql_table_name
+                    "CREATE POLICY \"bos_isolation_{tbl}\" ON \"{tbl}\"\n    AS RESTRICTIVE\n    FOR ALL\n    USING (\n        (\n            (NULLIF(current_setting('bos.current_tenant_id', true), '') IS NOT NULL AND \"_tenant_id\" = NULLIF(current_setting('bos.current_tenant_id', true), '')::uuid)\n            OR\n            (NULLIF(current_setting('bos.current_tenant_id', true), '') IS NULL AND \"_tenant_id\" IS NULL)\n        )\n        AND (\n            (COALESCE(NULLIF(current_setting('bos.current_company_id', true), ''), NULLIF(current_setting('bos.company_id', true), '')) IS NOT NULL AND (\"_company_id\" = COALESCE(NULLIF(current_setting('bos.current_company_id', true), ''), NULLIF(current_setting('bos.company_id', true), ''))::uuid OR \"_company_id\" IS NULL))\n            OR\n            (COALESCE(NULLIF(current_setting('bos.current_company_id', true), ''), NULLIF(current_setting('bos.company_id', true), '')) IS NULL AND (NULLIF(current_setting('bos.current_tenant_id', true), '') IS NOT NULL OR \"_company_id\" IS NULL))\n        )\n        AND (\n            NULLIF(current_setting('bos.current_tenant_id', true), '') IS NOT NULL\n            OR COALESCE(NULLIF(current_setting('bos.current_company_id', true), ''), NULLIF(current_setting('bos.company_id', true), '')) IS NOT NULL\n            OR (\"_tenant_id\" IS NULL AND \"_company_id\" IS NULL)\n        )\n    )\n    WITH CHECK (\n        (\n            (NULLIF(current_setting('bos.current_tenant_id', true), '') IS NOT NULL AND \"_tenant_id\" = NULLIF(current_setting('bos.current_tenant_id', true), '')::uuid)\n            OR\n            (NULLIF(current_setting('bos.current_tenant_id', true), '') IS NULL AND \"_tenant_id\" IS NULL)\n        )\n        AND (\n            (COALESCE(NULLIF(current_setting('bos.current_company_id', true), ''), NULLIF(current_setting('bos.company_id', true), '')) IS NOT NULL AND (\"_company_id\" = COALESCE(NULLIF(current_setting('bos.current_company_id', true), ''), NULLIF(current_setting('bos.company_id', true), ''))::uuid OR \"_company_id\" IS NULL))\n            OR\n            (COALESCE(NULLIF(current_setting('bos.current_company_id', true), ''), NULLIF(current_setting('bos.company_id', true), '')) IS NULL AND (NULLIF(current_setting('bos.current_tenant_id', true), '') IS NOT NULL OR \"_company_id\" IS NULL))\n        )\n        AND (\n            NULLIF(current_setting('bos.current_tenant_id', true), '') IS NOT NULL\n            OR COALESCE(NULLIF(current_setting('bos.current_company_id', true), ''), NULLIF(current_setting('bos.company_id', true), '')) IS NOT NULL\n            OR (\"_tenant_id\" IS NULL AND \"_company_id\" IS NULL)\n        )\n    );\n",
+                    tbl = table.sql_table_name
                 ));
             } else {
                 ddl.push_str(&format!(
-                    "CREATE POLICY \"tenant_isolation_{}\" ON \"{}\"\n    FOR ALL\n    USING (\n        \"_tenant_id\" = NULLIF(current_setting('bos.current_tenant_id', true), '')::uuid\n    );\n",
-                    table.sql_table_name, table.sql_table_name
+                    "CREATE POLICY \"bos_isolation_{tbl}\" ON \"{tbl}\"\n    AS RESTRICTIVE\n    FOR ALL\n    USING (\n        (\n            (NULLIF(current_setting('bos.current_tenant_id', true), '') IS NOT NULL AND \"_tenant_id\" = NULLIF(current_setting('bos.current_tenant_id', true), '')::uuid)\n            OR\n            (NULLIF(current_setting('bos.current_tenant_id', true), '') IS NULL AND \"_tenant_id\" IS NULL)\n        )\n        AND (\n            NULLIF(current_setting('bos.current_tenant_id', true), '') IS NOT NULL\n            OR COALESCE(NULLIF(current_setting('bos.current_company_id', true), ''), NULLIF(current_setting('bos.company_id', true), '')) IS NOT NULL\n            OR \"_tenant_id\" IS NULL\n        )\n    )\n    WITH CHECK (\n        (\n            (NULLIF(current_setting('bos.current_tenant_id', true), '') IS NOT NULL AND \"_tenant_id\" = NULLIF(current_setting('bos.current_tenant_id', true), '')::uuid)\n            OR\n            (NULLIF(current_setting('bos.current_tenant_id', true), '') IS NULL AND \"_tenant_id\" IS NULL)\n        )\n        AND (\n            NULLIF(current_setting('bos.current_tenant_id', true), '') IS NOT NULL\n            OR COALESCE(NULLIF(current_setting('bos.current_company_id', true), ''), NULLIF(current_setting('bos.company_id', true), '')) IS NOT NULL\n            OR \"_tenant_id\" IS NULL\n        )\n    );\n",
+                    tbl = table.sql_table_name
                 ));
             }
         }
@@ -915,7 +976,7 @@ SET "kernel_version" = EXCLUDED."kernel_version",
 CREATE TABLE IF NOT EXISTS "{table_name}_history" (
     "_history_id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     "_record_id" UUID NOT NULL,
-    "_tenant_id" UUID NOT NULL,
+    "_tenant_id" UUID,
     "_system_version" BIGINT NOT NULL,
     "_operation" VARCHAR(16) NOT NULL,
     "_valid_from" TIMESTAMPTZ NOT NULL,
@@ -1681,6 +1742,7 @@ mod tests {
                     can_modify: false,
                     can_delete: false,
                     row_filter: Some("\"general_ledger\".\"fiscal_year\" = 2026".to_string()),
+                    exclude_fields: vec![],
                 }
             ],
             execute: vec![],
@@ -1716,6 +1778,46 @@ mod tests {
         assert!(t_ddl.contains("CREATE TRIGGER \"trg_temporal_contract\""));
         assert!(t_ddl.contains("current_setting('bos.current_company_id', true)"));
     }
+
+    #[test]
+    fn test_company_only_rls_and_object_map() {
+        let generator = PostgresGenerator::new();
+
+        // 1. Kernel DDL includes _bos_object_map and nullable tenant_id on _bos_companies
+        let kernel_ddl = generator.generate_system_kernel_ddl();
+        assert!(kernel_ddl.contains("CREATE TABLE IF NOT EXISTS \"_bos_object_map\""));
+        assert!(kernel_ddl.contains("idx_bos_object_map_lookup"));
+        assert!(kernel_ddl.contains("uq_bos_company_code_global"));
+        assert!(kernel_ddl.contains("ALTER TABLE \"_bos_companies\" ALTER COLUMN \"tenant_id\" DROP NOT NULL"));
+
+        // 2. Table with data_per_company generates RESTRICTIVE policy and FORCE ROW LEVEL SECURITY
+        let mut order_tbl = plain_table("OrderHeader", "order_header", vec![text_column("order_no")]);
+        order_tbl.data_per_company = true;
+        let ddl = generator.generate_table_structure(&order_tbl);
+        assert!(ddl.contains("ALTER TABLE \"order_header\" FORCE ROW LEVEL SECURITY;"));
+        assert!(ddl.contains("CREATE POLICY \"bos_base_order_header\" ON \"order_header\""));
+        assert!(ddl.contains("CREATE POLICY \"bos_isolation_order_header\" ON \"order_header\""));
+        assert!(ddl.contains("AS RESTRICTIVE"));
+        assert!(ddl.contains("NULLIF(current_setting('bos.current_tenant_id', true), '') IS NULL AND \"_tenant_id\" IS NULL"));
+
+        // 3. AOT prepared statements use IS NOT DISTINCT FROM
+        let aot = generator.generate_aot_prepared_queries(&[order_tbl]);
+        let get_by_id = aot.iter().find(|q| q.kind == "get_by_id").expect("get_by_id exists");
+        assert!(get_by_id.sql.contains("\"_tenant_id\" IS NOT DISTINCT FROM $2"));
+        assert!(get_by_id.sql.contains("\"_company_id\" IS NOT DISTINCT FROM $3"));
+    }
+
+
+    #[test]
+    fn test_immutable_ledger_trigger_generation() {
+        let generator = PostgresGenerator::new();
+        let mut ledger_tbl = plain_table("CustLedgerEntry", "cust_ledger_entry", vec![text_column("entry_no")]);
+        ledger_tbl.table_type = TableTypeIR::Ledger;
+
+        let ddl = generator.generate_table_structure(&ledger_tbl);
+        assert!(ddl.contains("CREATE OR REPLACE FUNCTION \"guard_immutable_cust_ledger_entry\"()"));
+        assert!(ddl.contains("CANNOT % IMMUTABLE LEDGER TABLE:"));
+        assert!(ddl.contains("CREATE TRIGGER \"trg_immutable_cust_ledger_entry\""));
+        assert!(ddl.contains("BEFORE UPDATE OR DELETE ON \"cust_ledger_entry\""));
+    }
 }
-
-

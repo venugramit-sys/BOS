@@ -31,16 +31,21 @@
   import { listRecords } from "./api.js";
   import { formatValue, toLocalDateTimeInput, fromLocalDateTimeInput } from "./format.js";
   import { resolveEmphasis } from "./style.js";
+  import { User, Lock, Mail, Phone, Globe } from "lucide-svelte";
+  import Icon from "./Icon.svelte";
 
   let { p, c, row = null, compact = false, readonly = false, id = "", label = "" } = $props();
 
   const f = $derived(c.field);
   const value = $derived(p.valueOf(f, row));
   const editable = $derived(!readonly && p.editable(c, row));
-  const error = $derived(row ? "" : (p.fieldErrors[f.key] ?? ""));
+  const isDesignControl = $derived(p.design && f && f.editable !== false && !readonly);
+  const error = $derived(row ? "" : (p.fieldErrors[f.key] ?? p.fieldErrors[f.source] ?? p.fieldErrors[c.name] ?? ""));
   const emphasis = $derived(resolveEmphasis(c.style, p.styleResult(c, row)));
   const text = $derived(formatValue(f, value));
   const inputClass = "bos-native-input";
+
+  const customIcon = $derived(c.style?.icon || c.properties?.icon || null);
 
   // Value at focus time: a blur only validates when the user changed something.
   let focusValue;
@@ -150,7 +155,7 @@
   }
 </script>
 
-{#if !editable}
+{#if !editable && !isDesignControl}
   {#if f.control === "image" && safeImage(value)}
     <img src={safeImage(value)} alt={label || c.caption || c.name} class={compact ? "h-8 w-8 rounded object-cover" : "max-h-40 rounded-md border border-[var(--bos-color-border)] object-contain"} />
   {:else if f.control === "checkbox" || f.control === "switch"}
@@ -163,29 +168,29 @@
     <span class={["bos-value", compact ? "bos-value-compact" : "bos-value-box", f.control === "number" ? "bos-num" : "", emphasis].join(" ")} {id}>{text || (compact ? "" : " ")}</span>
   {/if}
 {:else}
-  <div class={"min-w-0 " + emphasis} onfocusin={onFocusIn} onfocusout={onFocusOut}>
+  <div class={"min-w-0 " + emphasis} data-bos-field={f.key || c.name} onfocusin={onFocusIn} onfocusout={onFocusOut}>
     {#if f.control === "textArea"}
-      <Textarea {id} bind:value={() => value ?? "", (v) => write(v)} rows={compact ? 1 : 3} maxlength={f.max_length} required={f.required} error={error} placeholder={f.placeholder ?? ""} />
+      <Textarea {id} name={f.key || c.name} bind:value={() => value ?? "", (v) => write(v)} rows={compact ? 1 : 3} maxlength={f.max_length} required={f.required} error={error} placeholder={f.placeholder ?? (isDesignControl ? (f.caption || c.caption || label || "") : "")} readonly={isDesignControl} />
     {:else if f.control === "number"}
-      <Input {id} type="number" bind:value={() => value ?? "", (v) => write(v === "" ? null : v)} decimals={f.decimals?.[1] ?? 2} evalMath errorMessage={error} required={f.required} placeholder={f.placeholder ?? ""} size={compact ? "sm" : null} />
+      <Input {id} name={f.key || c.name} type="number" bind:value={() => value ?? "", (v) => write(v === "" ? null : v)} decimals={f.decimals?.[1] ?? 2} evalMath errorMessage={error} required={f.required} placeholder={f.placeholder ?? (isDesignControl ? (f.caption || c.caption || label || "") : "")} size={compact ? "sm" : null} readonly={isDesignControl} />
     {:else if f.control === "checkbox"}
-      <Checkbox {id} checked={value === true || value === "true"} onCheckedChange={(v) => commit(Boolean(v))} />
+      <Checkbox {id} checked={value === true || value === "true"} onCheckedChange={(v) => commit(Boolean(v))} disabled={isDesignControl} />
     {:else if f.control === "switch"}
-      <Switch {id} checked={value === true || value === "true"} onCheckedChange={(v) => commit(Boolean(v))} />
+      <Switch {id} checked={value === true || value === "true"} onCheckedChange={(v) => commit(Boolean(v))} disabled={isDesignControl} />
     {:else if f.control === "date"}
       <DatePicker value={value ?? ""} workDate={themeStore.workDate} errorMessage={error} required={f.required} density={compact ? "sm" : null} onChange={(v) => commit(v || null)} />
     {:else if f.control === "dateTime"}
-      <input {id} type="datetime-local" class={inputClass} value={toLocalDateTimeInput(value)} onchange={(e) => commit(fromLocalDateTimeInput(e.currentTarget.value))} required={f.required} />
+      <input {id} name={f.key || c.name} type="datetime-local" class={inputClass} value={toLocalDateTimeInput(value)} onchange={(e) => commit(fromLocalDateTimeInput(e.currentTarget.value))} required={f.required} />
     {:else if f.control === "time"}
-      <input {id} type="time" class={inputClass} value={value ?? ""} onchange={(e) => commit(e.currentTarget.value || null)} required={f.required} />
+      <input {id} name={f.key || c.name} type="time" class={inputClass} value={value ?? ""} onchange={(e) => commit(e.currentTarget.value || null)} required={f.required} />
     {:else if f.control === "select"}
-      <Select {id} value={value ?? ""} options={selectOptions} error={error} required={f.required} searchable={selectOptions.length > 8} onValueChange={(v) => commit(v === "" ? null : v)} />
+      <Select {id} name={f.key || c.name} value={value ?? ""} options={selectOptions} error={error} required={f.required} searchable={selectOptions.length > 8} onValueChange={(v) => commit(v === "" ? null : v)} />
     {:else if f.control === "lookup" && lk}
-      <Combobox value={value ?? null} valueKey={lk.sql_field} labelKey={lookupLabelKey} columns={lookupColumns} fetchItems={fetchLookup} errorMessage={error} required={f.required} density={compact ? "sm" : null} showFactBox={!compact} onSelect={(item) => commit(item?.[lk.sql_field] ?? null)} onClear={() => commit(null)} />
+      <Combobox name={f.key || c.name} value={value ?? null} valueKey={lk.sql_field} labelKey={lookupLabelKey} columns={lookupColumns} fetchItems={fetchLookup} errorMessage={error} required={f.required} density={compact ? "sm" : null} showFactBox={!compact} onSelect={(item) => commit(item?.[lk.sql_field] ?? null)} onClear={() => commit(null)} />
     {:else if f.control === "color"}
       <div class="flex items-center gap-2">
         <input type="color" class="h-8 w-10 cursor-pointer rounded border border-[var(--bos-color-border)] bg-transparent" value={/^#[0-9a-f]{6}$/i.test(value ?? "") ? value : "#000000"} oninput={(e) => write(e.currentTarget.value)} onchange={(e) => commit(e.currentTarget.value)} aria-label={label || c.caption} />
-        <input {id} class={inputClass + " font-mono"} value={value ?? ""} maxlength="7" oninput={(e) => write(e.currentTarget.value)} />
+        <input {id} name={f.key || c.name} class={inputClass + " font-mono"} value={value ?? ""} maxlength="7" oninput={(e) => write(e.currentTarget.value)} />
       </div>
     {:else if f.control === "json"}
       <div onfocusout={commitJson}>
@@ -203,14 +208,30 @@
       </div>
       {#if imageError}<p class="mt-1 text-xs text-[var(--bos-color-unfavorable)]">{imageError}</p>{/if}
     {:else}
+      {#snippet inputPrefix()}
+        {#if customIcon}
+          <Icon
+            name={customIcon}
+            class="shrink-0"
+            size={c.style?.iconSize}
+            color={c.style?.iconColor}
+            background={c.style?.iconBackground}
+            radius={c.style?.iconRadius}
+          />
+        {/if}
+      {/snippet}
       <Input
         {id}
-        type={f.control === "email" ? "email" : f.control === "phone" ? "tel" : f.control === "url" ? "url" : f.control === "masked" ? "password" : "text"}
+        name={f.key || c.name}
+        type={f.control === "email" ? "email" : f.control === "phone" ? "tel" : f.control === "url" ? "url" : (f.control === "masked" || f.control === "password" || f.key === "password_hash" || f.key === "password" || f.source === "passwordHash") ? "password" : "text"}
+        autocomplete={(f.key || c.name) === "username" ? "username" : ((f.control === "masked" || (f.key || c.name) === "password") ? "current-password" : undefined)}
+        prefixSnippet={customIcon ? inputPrefix : null}
         bind:value={() => value ?? "", (v) => write(v)}
         maxlength={f.max_length}
         errorMessage={error}
         required={f.required}
-        placeholder={f.placeholder ?? ""}
+        placeholder={f.placeholder ?? (isDesignControl ? (f.caption || c.caption || label || "") : "")}
+        readonly={isDesignControl}
         size={compact ? "sm" : null}
       />
     {/if}

@@ -60,14 +60,88 @@ export function styleVars(style) {
   if (bg) parts.push(`--bos-bg:${bg}`);
   if (fg) parts.push(`--bos-fg:${fg}`);
   if (border) parts.push(`--bos-border-color:${border}`);
-  if (Number.isInteger(style.borderWidth) && style.borderWidth >= 0 && style.borderWidth <= 4) {
+  if (Number.isInteger(style.borderWidth) && style.borderWidth >= 0 && style.borderWidth <= 8) {
     parts.push(`--bos-border-width:${style.borderWidth}px`);
   } else if (border) {
     parts.push("--bos-border-width:1px");
   }
   if (RADIUS[style.radius]) parts.push(`--bos-radius:${RADIUS[style.radius]}`);
+  else if (style.radius && typeof style.radius === "string") parts.push(`--bos-radius:${style.radius}`);
   if (SHADOW[style.shadow]) parts.push(`--bos-shadow:${SHADOW[style.shadow]}`);
   if (DENSITY[style.density]) parts.push(`--bos-pad:${DENSITY[style.density]}`);
+
+  // Hybrid Token + Numeric Units for Box Model, Typography & Layout
+  if (style.fontSize) {
+    const s = String(style.fontSize).trim();
+    parts.push(`--bos-font-size:${s.match(/^\d+$/) ? `${s}px` : s}`);
+  }
+  if (style.fontWeight) parts.push(`--bos-font-weight:${style.fontWeight}`);
+  if (style.lineHeight) parts.push(`--bos-line-height:${style.lineHeight}`);
+  if (style.letterSpacing) parts.push(`--bos-letter-spacing:${style.letterSpacing}`);
+  if (style.textAlign) parts.push(`--bos-text-align:${style.textAlign}`);
+  if (style.textTransform) parts.push(`--bos-text-transform:${style.textTransform}`);
+  if (style.textDecoration) parts.push(`--bos-text-decoration:${style.textDecoration}`);
+
+  if (style.borderStyle) parts.push(`--bos-border-style:${style.borderStyle}`);
+  if (style.padding) {
+    const p = String(style.padding).trim();
+    parts.push(`--bos-pad:${p.match(/^\d+$/) ? `${p}px` : p}`);
+  }
+  if (style.margin) {
+    const m = String(style.margin).trim();
+    parts.push(`--bos-margin:${m.match(/^\d+$/) ? `${m}px` : m}`);
+  }
+  if (style.gap) {
+    const g = String(style.gap).trim();
+    parts.push(`--bos-gap:${g.match(/^\d+$/) ? `${g}px` : g}`);
+  }
+
+  // Dimensions & Sizing
+  if (style.width) {
+    const w = String(style.width).trim();
+    parts.push(`--bos-w:${w.match(/^\d+$/) ? `${w}px` : w}`);
+  }
+  if (style.maxWidth) {
+    const mw = String(style.maxWidth).trim();
+    parts.push(`--bos-max-w:${mw.match(/^\d+$/) ? `${mw}px` : mw}`);
+  }
+  if (style.minWidth) {
+    const minw = String(style.minWidth).trim();
+    parts.push(`--bos-min-w:${minw.match(/^\d+$/) ? `${minw}px` : minw}`);
+  }
+  if (style.height) {
+    const h = String(style.height).trim();
+    parts.push(`--bos-h:${h.match(/^\d+$/) ? `${h}px` : h}`);
+  }
+  if (style.minHeight) {
+    const minh = String(style.minHeight).trim();
+    parts.push(`--bos-min-h:${minh.match(/^\d+$/) ? `${minh}px` : minh}`);
+  }
+  if (style.maxHeight) {
+    const maxh = String(style.maxHeight).trim();
+    parts.push(`--bos-max-h:${maxh.match(/^\d+$/) ? `${maxh}px` : maxh}`);
+  }
+  if (style.opacity) parts.push(`--bos-opacity:${style.opacity}`);
+  if (style.overflow) parts.push(`--bos-overflow:${style.overflow}`);
+  if (style.display) parts.push(`--bos-display:${style.display}`);
+  if (style.justifyContent) parts.push(`--bos-justify:${style.justifyContent}`);
+  if (style.alignItems) parts.push(`--bos-align:${style.alignItems}`);
+  if (style.flexDirection) parts.push(`--bos-flex-dir:${style.flexDirection}`);
+  if (style.flexWrap) parts.push(`--bos-flex-wrap:${style.flexWrap}`);
+
+  // Icon Customization (size, color, background, shape/radius)
+  if (style.iconSize) {
+    const isz = String(style.iconSize).trim();
+    const map = { xs: "0.875rem", sm: "1rem", md: "1.25rem", lg: "1.5rem", xl: "2rem", "2xl": "2.5rem" };
+    parts.push(`--bos-icon-size:${map[isz] ?? (isz.match(/^\d+$/) ? `${isz}px` : isz)}`);
+  }
+  const iconCol = colorValue(style.iconColor);
+  if (iconCol) parts.push(`--bos-icon-color:${iconCol}`);
+  const iconBg = colorValue(style.iconBackground ?? style.iconBg);
+  if (iconBg) parts.push(`--bos-icon-bg:${iconBg}`);
+  if (style.iconRadius) {
+    parts.push(`--bos-icon-radius:${RADIUS[style.iconRadius] ?? style.iconRadius}`);
+  }
   return parts.join(";");
 }
 

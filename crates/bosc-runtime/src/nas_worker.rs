@@ -41,11 +41,37 @@ impl NasWorkerDaemon {
 
             let poll_duration = Duration::from_millis(config.poll_interval_ms.max(100));
 
+            let mut pg_listener: Option<sqlx::postgres::PgListener> = None;
+            let mut reconnect_countdown: u32 = 0;
+
             loop {
                 // Check shutdown signal
                 if *shutdown_rx.borrow() {
                     info!("NAS background worker received graceful shutdown signal");
                     break;
+                }
+
+                // If listener is not active, attempt reconnection periodically
+                if pg_listener.is_none() {
+                    if reconnect_countdown == 0 {
+                        let pool = engine.pool().await;
+                        match sqlx::postgres::PgListener::connect_with(&pool).await {
+                            Ok(mut l) => {
+                                if let Err(e) = l.listen("bos_event_outbox_channel").await {
+                                    warn!("NAS worker failed to register LISTEN on bos_event_outbox_channel: {}", e);
+                                } else {
+                                    info!("⚡ NAS worker registered LISTEN on bos_event_outbox_channel (zero-latency event wakeups enabled)");
+                                    pg_listener = Some(l);
+                                }
+                            }
+                            Err(e) => {
+                                warn!("NAS worker could not establish PG listener connection: {}", e);
+                            }
+                        }
+                        reconnect_countdown = 10;
+                    } else {
+                        reconnect_countdown = reconnect_countdown.saturating_sub(1);
+                    }
                 }
 
                 if config.process_outbox {
@@ -70,6 +96,11 @@ impl NasWorkerDaemon {
                             }
                         }
                         Err(err) => {
+                            let err_msg = err.to_string();
+                            if err_msg.contains("does not exist") {
+                                let db_name = pool.connect_options().get_database().unwrap_or("default").to_string();
+                                crate::event_engine::EventRegistry::invalidate_cache(&db_name);
+                            }
                             warn!("NAS worker encountered outbox processing error: {}", err);
                         }
                     }
@@ -96,6 +127,29 @@ impl NasWorkerDaemon {
                 }
 
                 tokio::select! {
+                    notif = async {
+                        if let Some(ref mut l) = pg_listener {
+                            match l.recv().await {
+                                Ok(n) => Some(n),
+                                Err(err) => {
+                                    warn!("NAS worker PG listener connection dropped: {}. Falling back to polling.", err);
+                                    None
+                                }
+                            }
+                        } else {
+                            std::future::pending::<Option<sqlx::postgres::PgNotification>>().await
+                        }
+                    } => {
+                        match notif {
+                            Some(n) => {
+                                debug!("NAS worker woke up immediately on outbox notification: channel={}, payload={}", n.channel(), n.payload());
+                            }
+                            None => {
+                                pg_listener = None;
+                                tokio::time::sleep(poll_duration).await;
+                            }
+                        }
+                    }
                     _ = tokio::time::sleep(poll_duration) => {}
                     _ = shutdown_rx.changed() => {
                         if *shutdown_rx.borrow() {

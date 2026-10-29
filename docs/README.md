@@ -1,77 +1,102 @@
-# BOS (Business Operating System) Documentation Suite
+# BOS (Business Operating System) Documentation Hub
 
-Welcome to the official, code-verified technical documentation suite for **BOS (Business Operating System)**. 
+Welcome to the **BOS (Business Operating System)** Documentation Hub. BOS is a next-generation, high-performance, metadata-driven ERP+ runtime and development platform engineered in 100% safe Rust and Svelte 5.
 
-This documentation is generated through exhaustive, direct analysis of the production codebase (`crates/`, `ui/`, and `examples/`), reflecting the exact state of the compiler, runtime engine, database layer, REST API server, and developer studio.
-
----
-
-## 📑 Documentation Index
-
-| File | Title | Description |
-| :--- | :--- | :--- |
-| [**`00_architecture_overview.md`**](00_architecture_overview.md) | **System Architecture & Engine Overview** | High-level system architecture, multi-tier hybrid execution pipeline, crate dependency graph, and end-to-end lifecycle. |
-| [**`01_bos_script_language_reference.md`**](01_bos_script_language_reference.md) | **BOS-Script Language Reference** | DSL syntax, lexical tokens, grammar, type system, TypeScript OxC type stripping, and AST lowering. |
-| [**`02_meta_objects_specification.md`**](02_meta_objects_specification.md) | **Exhaustive Meta-Objects Specification** | Deep-dive into all 18 first-class meta-objects (`table`, `tablelogic`, `tableextension`, `codeunit`, `statemachine`, `page`, `query`, etc.). |
-| [**`03_compiler_and_ir_architecture.md`**](03_compiler_and_ir_architecture.md) | **Compiler Pipeline & IR Architecture** | `bosc-syntax`, `bosc-analyzer`, `bosc-ir`, semantic validation passes, diagnostics, and intermediate representation. |
-| [**`04_database_engine_and_storage_strategies.md`**](04_database_engine_and_storage_strategies.md) | **Database Engine & Storage Strategies** | PostgreSQL DDL code generation, system kernel catalogs, GIN-indexed metadata, and 4 multi-tenant storage models. |
-| [**`05_schema_sync_and_declarative_migrations.md`**](05_schema_sync_and_declarative_migrations.md) | **Schema Sync & Migration Planner** | Live database schema inspection, diff planning, safe vs. destructive risk analysis, and atomic transactional application. |
-| [**`06_quickjs_sandbox_and_execution_runtime.md`**](06_quickjs_sandbox_and_execution_runtime.md) | **QuickJS Sandboxed Execution Engine** | Sandboxed QuickJS VM, fuel metering, memory/stack quotas, `models.*` proxies, exact 128-bit monetary math, and `Rec`/`xRec`. |
-| [**`07_events_wasm_and_companion_sidecars.md`**](07_events_wasm_and_companion_sidecars.md) | **Events, Wasm Plugins & Sidecars** | Decoupled event registry, transactional outbox processor, `wasmi 2.0` WebAssembly engine, and HTTP IPC sidecars. |
-| [**`08_backend_api_server_reference.md`**](08_backend_api_server_reference.md) | **Backend HTTP & Query API Reference** | Axum 0.8 REST endpoints, session middleware, optimistic concurrency control (`_system_version`), locking, and `/api/query`. |
-| [**`09_bosc_cli_reference.md`**](09_bosc_cli_reference.md) | **BOS Compiler CLI (`bosc`) Manual** | Complete command reference for `build`, `run`, `deploy`, `test-live`, `detect-db`, `node` (init/check/run), `provision`, and `package`. |
-| [**`10_modular_packaging_system.md`**](10_modular_packaging_system.md) | **Modular Packages & Distribution** | `.bospkg` package bundles, manifest format, dependency resolution, SHA-256 checksums, and package installation. |
-| [**`11_svelte5_ui_studio_and_component_library.md`**](11_svelte5_ui_studio_and_component_library.md) | **Svelte 5 UI Studio & Component Library** | Modern Svelte 5 runes (`$state`, `$derived`, `$props`), `bos-ui` enterprise component suite, and interactive visual designers. |
-| [**`12_enterprise_use_cases_and_reference_implementations.md`**](12_enterprise_use_cases_and_reference_implementations.md) | **Enterprise Use Cases & Walkthroughs** | End-to-end production use cases: Security & RBAC (`bos.auth`), Dispatch Validator, and transactional business workflows. |
-| [**`13_server_node_and_nas_architecture.md`**](13_server_node_and_nas_architecture.md) | **Server Node & NAS Architecture** | 3-tier enterprise ERP server nodes (NAV NST/NAS equivalent), declarative configuration profiles (`bos-node.toml`), and headless batch processing daemons. |
-| [**`14_distribution_and_packaging_guide.md`**](14_distribution_and_packaging_guide.md) | **Distribution & Packaging Guide** | Standalone zero-dependency distribution bundles, cross-platform packaging automation scripts (`build-distribution.ps1`, `build-distribution.sh`), and 1-click launchers. |
-| [**`15_unified_notification_system.md`**](15_unified_notification_system.md) | **Unified Notification System Specification** | Full-stack notification protocol across Rust Axum & Svelte 5: floating toasts, modal alerts, in-field validation errors, SSE streams, and Notification Center drawer. |
-| [**`16_aot_bytecode_and_static_node_architecture.md`**](16_aot_bytecode_and_static_node_architecture.md) | **Ahead-of-Time Bytecode & Static Node Architecture** | AOT QuickJS bytecode envelopes (`.qbc`, `BCBOS`), CRC32 verification, in-memory caches, AOT prepared SQL statements, self-healing vault, and static serving. |
-| [**`17_page_compiler_and_designer.md`**](17_page_compiler_and_designer.md) | **Pages v2: Page Compiler, Customization Layer & Designer** | Page IR v2, NAV-style auto-fill from table fields, client expression language, extension directives, super-user customization layer, BOS30xx diagnostics, the Svelte 5 page compilation pipeline, the `@bos/page-kit` browser runtime, the WYSIWYG designer and the page verification suite. |
+This directory serves as the unified single source of truth for both architectural planning specifications and user manuals for operational production deployments.
 
 ---
 
-## 🏗️ Repository Crate Organization
+## 🏛️ Documentation Structure
 
-```mermaid
-graph TD
-    CLI["bosc-cli (Binary CLI & Tooling)"]
-    RUNTIME["bosc-runtime (Axum Server, QuickJS, Wasm, DB Engine)"]
-    CODEGEN["bosc-codegen-db (PostgreSQL DDL & Pushdown)"]
-    ANALYZER["bosc-analyzer (Semantic Analyzer, TS Stripper)"]
-    IR["bosc-ir (Intermediate Representation)"]
-    SYNTAX["bosc-syntax (Lexer, Parser, AST)"]
-    UI["ui (Svelte 5 Enterprise Studio & Component Kit)"]
+The documentation is organized into two distinct sections:
 
-    CLI --> RUNTIME
-    CLI --> CODEGEN
-    CLI --> ANALYZER
-    CLI --> SYNTAX
-    CLI --> IR
-
-    RUNTIME --> CODEGEN
-    RUNTIME --> ANALYZER
-    RUNTIME --> SYNTAX
-    RUNTIME --> IR
-
-    CODEGEN --> IR
-    ANALYZER --> SYNTAX
-    ANALYZER --> IR
-    SYNTAX --> IR
-
-    UI -.-> |HTTP / REST / SSE| RUNTIME
+```
+docs/
+├── README.md                      # This portal document
+├── CODEMAP.md                     # Codebase index and symbols map
+├── agents_full_reference.md       # Agent team operations and governance charter
+│
+├── planning/                      # 📐 Engineering Specifications & Architecture Blueprints
+│   ├── README.md                  # Planning catalog and technical index
+│   ├── 00_system_architecture_blueprint.md
+│   ├── 01_meta_objects_and_dsl_specification.md
+│   ├── 02_database_engine_and_storage_models.md
+│   ├── 03_runtime_sandbox_and_execution_engine.md
+│   ├── 04_ui_architecture_and_page_compiler.md
+│   ├── 05_modular_packaging_and_security.md
+│   ├── 06_roadmap_and_release_milestones.md
+│   └── adr/                       # Architectural Decision Records (ADR 0001 - 0009)
+│
+└── production/                    # 📚 Production User Manual Library & Operations Guides
+    ├── README.md                  # Master manual index, learning pathways & search guide
+    ├── 01_getting_started/        # Fast onboarding, prerequisites, and first workspace
+    │   ├── 01_quickstart_guide.md
+    │   ├── 02_installation_and_system_requirements.md
+    │   └── 03_first_workspace_and_project_setup.md
+    ├── 02_end_user_manuals/       # Day-to-day business user and operator guides
+    │   ├── 01_navigating_the_ui_studio.md
+    │   ├── 02_working_with_data_records_and_lists.md
+    │   ├── 03_document_editing_and_form_pages.md
+    │   ├── 04_document_workflows_and_approval_states.md
+    │   └── 05_notifications_and_audit_trails.md
+    ├── 03_administrator_and_devops_manuals/  # System administration, DevOps & Cloud ops
+    │   ├── 01_database_provisioning_and_clustering.md
+    │   ├── 02_server_node_and_nas_management.md
+    │   ├── 03_user_security_and_rbac.md
+    │   ├── 04_backup_recovery_and_health_monitoring.md
+    │   └── 05_cloud_deployment_and_docker_operations.md
+    ├── 04_developer_manuals/      # Package authoring, DSL scripting, and CLI guide
+    │   ├── 01_bosc_cli_complete_guide.md
+    │   ├── 02_meta_objects_authoring_guide.md
+    │   ├── 03_business_logic_and_quickjs_scripting.md
+    │   ├── 04_building_and_distributing_packages.md
+    │   └── 05_page_kit_and_custom_ui_development.md
+    ├── 05_integration_and_api_manuals/      # Integration, REST APIs, WebAssembly & Events
+    │   ├── 01_rest_api_reference_and_authentication.md
+    │   ├── 02_event_driven_architecture_and_webhooks.md
+    │   └── 03_wasm_plugins_and_companion_sidecars.md
+    └── 06_troubleshooting_and_faqs/         # Diagnostics, error codes, and practical answers
+        ├── 01_error_codes_and_diagnostic_guide.md
+        └── 02_frequently_asked_questions.md
 ```
 
 ---
 
-## ⚡ Key Architectural Facts Directly Verified in Code
+## 🧭 Which Section Should You Read?
 
-1. **Pure Rust Systems Core**: All compiler crates and backend runtime engines are written in 100% safe, idiomatic Rust (2024 edition) with zero mocks in production execution paths.
-2. **First-Class Meta-Object Architecture**: 18 declarative meta-objects are supported across compiler AST, IR, and runtime catalog.
-3. **Decoupled Data and Logic**: Data schemas live cleanly in `table` definitions, while all business validations, lifecycle triggers, and procedures reside in companion `tablelogic` and `codeunit` files.
-4. **Hybrid 3-Tier Execution Pipeline**:
-   - High-throughput database-level pushdown via generated PostgreSQL views and PL/pgSQL procedures.
-   - High-speed sandboxed QuickJS execution for complex enterprise business logic (8 MB RAM cap, 100,000 instruction fuel quota, exact 128-bit monetary math).
-   - In-process WebAssembly execution (`wasmi 2.0`) for CPU-bound computations and extensions.
-   - Loopback HTTP IPC companion microservices for legacy or external system integration.
-5. **Modern Svelte 5 Reactive Frontend**: The Developer Studio and Component Showcase are authored completely in modern Svelte 5 utilizing runes (`$state`, `$derived`, `$props`, `$effect`) over Monaco editor, Lucide icons, and Tailwind CSS.
+### 1. I am a New User or Business Operator
+Start with the **[Production User Manuals](production/README.md)**:
+- **[5-Minute Quickstart Guide](production/01_getting_started/01_quickstart_guide.md)**: Spin up your first BOS instance in minutes.
+- **[Navigating UI Studio](production/02_end_user_manuals/01_navigating_the_ui_studio.md)**: Learn the modern interface, keyboard shortcuts, and views.
+- **[Document Workflows & Approvals](production/02_end_user_manuals/04_document_workflows_and_approval_states.md)**: How to submit, review, and post transactions.
+
+### 2. I am a System Administrator or DevOps Engineer
+Jump directly into the **[Admin & DevOps Section](production/03_administrator_and_devops_manuals/01_database_provisioning_and_clustering.md)**:
+- **[Database Provisioning & Multi-Tenancy](production/03_administrator_and_devops_manuals/01_database_provisioning_and_clustering.md)**: PostgreSQL initialization and tenant partitioning models.
+- **[Server Node & NAS Configuration](production/03_administrator_and_devops_manuals/02_server_node_and_nas_management.md)**: Configuring `bos-node.toml` and background daemon workers.
+- **[Security & RBAC Management](production/03_administrator_and_devops_manuals/03_user_security_and_rbac.md)**: Managing tenants, users, roles, and cryptographic auditing.
+- **[Cloud Deployment & Docker](production/03_administrator_and_devops_manuals/05_cloud_deployment_and_docker_operations.md)**: Hardened production deployment and Indian data sovereignty compliance.
+
+### 3. I am a Developer or Package Creator
+Consult the **[Developer Manuals](production/04_developer_manuals/01_bosc_cli_complete_guide.md)**:
+- **[bosc CLI Guide](production/04_developer_manuals/01_bosc_cli_complete_guide.md)**: Command reference for `build`, `run`, `deploy`, and `package`.
+- **[Meta-Objects Authoring](production/04_developer_manuals/02_meta_objects_authoring_guide.md)**: Declarative schemas for Tables, Pages, Codeunits, and Workflows.
+- **[Business Logic in QuickJS](production/04_developer_manuals/03_business_logic_and_quickjs_scripting.md)**: Writing TypeScript business logic with exact 128-bit monetary math.
+- **[Packaging System](production/04_developer_manuals/04_building_and_distributing_packages.md)**: Building and signing `.bospkg` packages.
+
+### 4. I am an Architect or Core Engine Contributor
+Explore the **[Planning & Architecture Specifications](planning/README.md)**:
+- **[System Architecture Blueprint](planning/00_system_architecture_blueprint.md)**: Hybrid 3-tier execution engine, compiler AST/IR lowering.
+- **[Architectural Decision Records (ADRs)](planning/adr/README.md)**: Detailed historical decisions on UUIDv7, uniform RLS, and hashing chains.
+
+---
+
+## ⚡ Key Architectural Facts
+
+1. **Systems Core in 100% Rust**: Zero mocks, zero unhandled errors, memory-safe, thread-safe asynchronous execution with Axum and SQLx.
+2. **Metadata-Driven Paradigm**: Applications are expressed as declarative meta-objects (`table`, `page`, `codeunit`, `statemachine`, etc.) compiled into database structures and bytecode envelopes.
+3. **Hybrid 3-Tier Execution Runtime**:
+   - Database layer pushdown (PostgreSQL views, PL/pgSQL, SIFT flowfields).
+   - Sandboxed QuickJS VM (exact BigInt decimal math, memory quotas, fuel metering).
+   - In-process WebAssembly (`wasmi 2.0`) and HTTP loopback IPC sidecars.
+4. **Reactive Svelte 5 Frontend**: Modern Svelte 5 runes (`$state`, `$derived`, `$props`), responsive design, Lucide icons, Monaco editor, and `@bos/page-kit`.

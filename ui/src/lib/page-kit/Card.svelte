@@ -13,7 +13,16 @@
   <div class={boxClass(p, c, "bos-cell bos-card")} style={boxStyle(c, { ...outer, md: 12 })} {...nodeAttrs(p, c, isHidden(p, c, visible))}>
     {#if c.caption}
       <h4 class="bos-subgroup-title">
-        {#if c.style?.icon}<Icon name={c.style.icon} class="size-4" />{/if}
+        {#if c.style?.icon}
+          <Icon
+            name={c.style.icon}
+            class="shrink-0"
+            size={c.style.iconSize}
+            color={c.style.iconColor}
+            background={c.style.iconBackground}
+            radius={c.style.iconRadius}
+          />
+        {/if}
         {c.caption}
       </h4>
     {/if}

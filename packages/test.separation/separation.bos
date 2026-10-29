@@ -1,0 +1,57 @@
+table TenantMaster {
+    caption = "Tenant Level Shared Master";
+    tableType = Normal;
+    dataPerCompany = false;
+
+    code: String(30) {
+        notNull = true;
+    };
+    name: String(100);
+
+    primaryKey(code);
+}
+
+table CompanyTransaction {
+    caption = "Company Specific Transactions";
+    tableType = Normal;
+    dataPerCompany = true;
+
+    entryNo: Integer {
+        notNull = true;
+    };
+    documentNo: String(30) {
+        notNull = true;
+    };
+    amount: Decimal;
+
+    primaryKey(entryNo);
+}
+
+page TenantMasterList for TenantMaster {
+    caption = "Tenant Master List";
+    pageType = List;
+
+    layout {
+        area(Content) {
+            repeater(Table) {
+                field(code);
+                field(name);
+            }
+        }
+    }
+}
+
+page CompanyTransactionList for CompanyTransaction {
+    caption = "Company Transaction List";
+    pageType = List;
+
+    layout {
+        area(Content) {
+            repeater(Table) {
+                field(entryNo);
+                field(documentNo);
+                field(amount);
+            }
+        }
+    }
+}

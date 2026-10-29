@@ -1,0 +1,414 @@
+// ============================================================================
+// BOS Core Mega-Package: Feature 7 - Enterprise Analytical Dimensions Engine
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// 1. EXTENSIBLE ENUMERATIONS (Dimensions)
+// ----------------------------------------------------------------------------
+
+enum DimensionValueType {
+    extensible = true;
+    Standard;
+    Heading;
+    Total;
+    BeginTotal;
+    EndTotal;
+}
+
+// ----------------------------------------------------------------------------
+// 2. DATA TABLES (Dimensions & Dimension Sets)
+// ----------------------------------------------------------------------------
+
+table Dimension {
+    caption = "Analytical Dimension";
+
+    code: String(20) {
+        caption = "Dimension Code";
+    };
+    name: String(50) {
+        caption = "Dimension Name";
+    };
+    description: String(100) {
+        caption = "Description";
+    };
+    isBlocked: Boolean {
+        caption = "Blocked";
+        default = false;
+    };
+
+    primaryKey(code);
+}
+
+table DimensionValue {
+    caption = "Dimension Value Node";
+
+    id: UUID {
+        caption = "Value Identifier";
+    };
+    dimensionCode: String(20) {
+        caption = "Dimension Code";
+    };
+    code: String(20) {
+        caption = "Value Code";
+    };
+    name: String(50) {
+        caption = "Value Name";
+    };
+    valueType: Enum(DimensionValueType) {
+        default = "Standard";
+    };
+    indentation: Integer {
+        caption = "Indentation Level";
+        default = 0;
+    };
+    isBlocked: Boolean {
+        caption = "Blocked";
+        default = false;
+    };
+
+    primaryKey(id);
+}
+
+table DimensionSet {
+    caption = "Dimension Set Combination";
+
+    id: UUID {
+        caption = "Dimension Set ID";
+    };
+    setHash: String(64) {
+        caption = "Normalized SHA-256 Hash";
+    };
+    description: String(255) {
+        caption = "Readable Combination Summary";
+    };
+    entryCount: Integer {
+        caption = "Total Dimension Pairs";
+        default = 0;
+    };
+
+    primaryKey(id);
+}
+
+table DimensionSetEntry {
+    caption = "Dimension Set Combination Line";
+
+    id: UUID {
+        caption = "Entry Identifier";
+    };
+    dimensionSetId: UUID {
+        caption = "Dimension Set ID";
+    };
+    dimensionCode: String(20) {
+        caption = "Dimension Code";
+    };
+    dimensionValueCode: String(20) {
+        caption = "Dimension Value Code";
+    };
+
+    primaryKey(id);
+}
+
+table DimensionSetup {
+    caption = "Dimension Global Configuration";
+
+    primaryKeyCode: String(20) {
+        caption = "Primary Key Code";
+        default = "PRIMARY";
+    };
+    globalDimension1Code: String(20) {
+        caption = "Global Dimension 1 (e.g. Department)";
+        default = "DEPARTMENT";
+    };
+    globalDimension2Code: String(20) {
+        caption = "Global Dimension 2 (e.g. Project)";
+        default = "PROJECT";
+    };
+    enforceMandatoryDimensionsOnPosting: Boolean {
+        caption = "Enforce Mandatory Dimensions on Posting";
+        default = false;
+    };
+
+    primaryKey(primaryKeyCode);
+}
+
+// ----------------------------------------------------------------------------
+// 3. TABLE LOGIC COMPANIONS (Dimensions)
+// ----------------------------------------------------------------------------
+
+tablelogic DimensionLogic for Dimension {
+    onInsert(rec, ctx) {
+        if (!rec.code || String(rec.code).trim().length === 0) {
+            throw new Error("Validation Failed: Dimension 'code' is mandatory.");
+        }
+        rec.code = String(rec.code).toUpperCase().trim();
+        if (!rec.name || String(rec.name).trim().length === 0) {
+            rec.name = rec.code;
+        }
+    }
+
+    onDelete(rec, ctx) {
+        const values = DimensionValue.findMany({ where: { dimensionCode: rec.code } });
+        if (values && values.length > 0) {
+            throw new Error(`Cannot delete Dimension '${rec.code}' because Dimension Values exist for it.`);
+        }
+    }
+}
+
+tablelogic DimensionValueLogic for DimensionValue {
+    onInsert(rec, ctx) {
+        if (!rec.dimensionCode || String(rec.dimensionCode).trim().length === 0) {
+            throw new Error("Validation Failed: 'dimensionCode' is required.");
+        }
+        if (!rec.code || String(rec.code).trim().length === 0) {
+            throw new Error("Validation Failed: 'code' is required.");
+        }
+        rec.dimensionCode = String(rec.dimensionCode).toUpperCase().trim();
+        rec.code = String(rec.code).toUpperCase().trim();
+        if (!rec.id) {
+            rec.id = ctx.crypto.uuidv7();
+        }
+    }
+}
+
+tablelogic DimensionSetupLogic for DimensionSetup {
+    onInsert(rec, ctx) {
+        rec.primaryKeyCode = "PRIMARY";
+    }
+
+    onDelete(rec, ctx) {
+        throw new Error("Validation Failed: The 'PRIMARY' DimensionSetup record cannot be deleted.");
+    }
+}
+
+// ----------------------------------------------------------------------------
+// 4. BUSINESS LOGIC SERVICES (DimensionManagement Codeunit)
+// ----------------------------------------------------------------------------
+
+codeunit DimensionManagement {
+    caption = "Analytical Dimension Management Engine";
+
+    InitializeDefaultDimensions() {
+        if (!DimensionSetup.get("PRIMARY")) {
+            DimensionSetup.insert({
+                primaryKeyCode: "PRIMARY",
+                globalDimension1Code: "DEPARTMENT",
+                globalDimension2Code: "PROJECT",
+                enforceMandatoryDimensionsOnPosting: false
+            });
+        }
+
+        if (!Dimension.get("DEPARTMENT")) {
+            Dimension.insert({ code: "DEPARTMENT", name: "Department", description: "Operational Departments", isBlocked: false });
+            DimensionValue.insert({ id: ctx.crypto.uuidv7(), dimensionCode: "DEPARTMENT", code: "SALES", name: "Sales & Marketing", valueType: "Standard", indentation: 0, isBlocked: false });
+            DimensionValue.insert({ id: ctx.crypto.uuidv7(), dimensionCode: "DEPARTMENT", code: "ENG", name: "Engineering & IT", valueType: "Standard", indentation: 0, isBlocked: false });
+            DimensionValue.insert({ id: ctx.crypto.uuidv7(), dimensionCode: "DEPARTMENT", code: "OPS", name: "Operations & Logistics", valueType: "Standard", indentation: 0, isBlocked: false });
+            DimensionValue.insert({ id: ctx.crypto.uuidv7(), dimensionCode: "DEPARTMENT", code: "FIN", name: "Finance & Accounting", valueType: "Standard", indentation: 0, isBlocked: false });
+        }
+
+        if (!Dimension.get("PROJECT")) {
+            Dimension.insert({ code: "PROJECT", name: "Project", description: "Strategic Capital Projects", isBlocked: false });
+            DimensionValue.insert({ id: ctx.crypto.uuidv7(), dimensionCode: "PROJECT", code: "PRJ-001", name: "Enterprise ERP Overhaul", valueType: "Standard", indentation: 0, isBlocked: false });
+            DimensionValue.insert({ id: ctx.crypto.uuidv7(), dimensionCode: "PROJECT", code: "PRJ-002", name: "Cloud Migration", valueType: "Standard", indentation: 0, isBlocked: false });
+        }
+
+        return { success: true, message: "Standard analytical dimensions initialized." };
+    }
+
+    GetOrCreateDimensionSetId(dimensionPairs: any): any {
+        const pairs = (rec && rec.dimensionPairs !== undefined) ? rec.dimensionPairs : dimensionPairs;
+        if (!pairs || !Array.isArray(pairs) || pairs.length === 0) {
+            return null;
+        }
+
+        // Filter, deduplicate, and sort pairs by dimensionCode ascending for canonical hashing
+        const pairMap = {};
+        for (let i = 0; i < pairs.length; i++) {
+            const p = pairs[i];
+            if (p && p.dimensionCode && p.dimensionValueCode) {
+                const code = String(p.dimensionCode).toUpperCase().trim();
+                const val = String(p.dimensionValueCode).toUpperCase().trim();
+                if (code.length > 0 && val.length > 0) {
+                    pairMap[code] = val;
+                }
+            }
+        }
+        const cleanPairs = [];
+        const sortedCodes = Object.keys(pairMap).sort();
+        for (let i = 0; i < sortedCodes.length; i++) {
+            const dCode = sortedCodes[i];
+            const vCode = pairMap[dCode];
+            try {
+                const dim = Dimension.get(dCode);
+                if (dim && dim.isBlocked) {
+                    throw new Error(`Dimension Error: Dimension '${dCode}' is blocked for posting.`);
+                }
+            } catch (e) {
+                if (e.message && e.message.includes("blocked")) throw e;
+            }
+            cleanPairs.push({ code: dCode, val: vCode });
+        }
+        if (cleanPairs.length === 0) return null;
+
+        // Compute canonical hash string
+        let hashSource = "";
+        let readableSummary = "";
+        for (let i = 0; i < cleanPairs.length; i++) {
+            if (i > 0) {
+                hashSource += ";";
+                readableSummary += " / ";
+            }
+            hashSource += cleanPairs[i].code + "=" + cleanPairs[i].val;
+            readableSummary += cleanPairs[i].code + ": " + cleanPairs[i].val;
+        }
+
+        const setHash = ctx.crypto.sha256(hashSource);
+
+        // Check if dimension set already exists
+        const existing = DimensionSet.findMany({ where: { setHash: setHash }, take: 1 });
+        if (existing && existing.length > 0) {
+            return existing[0].id;
+        }
+
+        // Create new DimensionSet with atomic UUIDv7
+        const newSetId = ctx.crypto.uuidv7();
+        DimensionSet.insert({
+            id: newSetId,
+            setHash: setHash,
+            description: readableSummary,
+            entryCount: cleanPairs.length
+        });
+
+        for (let i = 0; i < cleanPairs.length; i++) {
+            DimensionSetEntry.insert({
+                id: ctx.crypto.uuidv7(),
+                dimensionSetId: newSetId,
+                dimensionCode: cleanPairs[i].code,
+                dimensionValueCode: cleanPairs[i].val
+            });
+        }
+
+        return newSetId;
+    }
+
+    GetDimensionSetEntries(dimensionSetId: any): any {
+        const sid = (rec && rec.dimensionSetId !== undefined) ? rec.dimensionSetId : dimensionSetId;
+        if (!sid) return [];
+        return DimensionSetEntry.findMany({ where: { dimensionSetId: sid } });
+    }
+}
+
+// ----------------------------------------------------------------------------
+// 5. USER INTERFACE PAGES (Dimensions)
+// ----------------------------------------------------------------------------
+
+page DimensionList for Dimension {
+    pageType = List;
+    caption = "Analytical Dimensions";
+
+    layout {
+        area(Content) {
+            repeater(DimRepeater) {
+                field(code) {
+                    caption = "Dimension Code";
+                }
+                field(name) {
+                    caption = "Dimension Name";
+                }
+                field(description) {
+                    caption = "Description";
+                }
+                field(isBlocked) {
+                    caption = "Blocked";
+                }
+            }
+        }
+    }
+
+    actions {
+        area(Processing) {
+            action(InitDefaults) {
+                caption = "Initialize Standard Dimensions";
+                icon = "Layers";
+                primary = true;
+                onAction(rec, ctx) {
+                    const res = ctx.call("DimensionManagement", "InitializeDefaultDimensions", {});
+                    ctx.ui.message("Standard dimensions initialized.");
+                }
+            }
+        }
+    }
+}
+
+page DimensionCard for Dimension {
+    pageType = Card;
+    caption = "Dimension Card";
+
+    layout {
+        area(Content) {
+            group(GeneralFastTab) {
+                caption = "Dimension General Details";
+                field(code) {
+                    caption = "Dimension Code";
+                }
+                field(name) {
+                    caption = "Dimension Name";
+                }
+                field(description) {
+                    caption = "Description";
+                }
+                field(isBlocked) {
+                    caption = "Blocked";
+                }
+            }
+        }
+    }
+}
+
+page DimensionValueList for DimensionValue {
+    pageType = List;
+    caption = "Dimension Value Hierarchy";
+
+    layout {
+        area(Content) {
+            repeater(ValRepeater) {
+                field(dimensionCode) {
+                    caption = "Dimension";
+                }
+                field(code) {
+                    caption = "Value Code";
+                }
+                field(name) {
+                    caption = "Value Name";
+                }
+                field(valueType) {
+                    caption = "Type";
+                }
+                field(isBlocked) {
+                    caption = "Blocked";
+                }
+            }
+        }
+    }
+}
+
+page DimensionSetupCard for DimensionSetup {
+    pageType = Card;
+    caption = "Global Dimension Setup";
+
+    layout {
+        area(Content) {
+            group(GlobalDimensionsFastTab) {
+                caption = "Primary Global Dimensions";
+                field(globalDimension1Code) {
+                    caption = "Global Dimension 1";
+                }
+                field(globalDimension2Code) {
+                    caption = "Global Dimension 2";
+                }
+                field(enforceMandatoryDimensionsOnPosting) {
+                    caption = "Enforce Dimensions on Posting";
+                }
+            }
+        }
+    }
+}

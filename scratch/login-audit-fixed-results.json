@@ -1,0 +1,57 @@
+[
+  {
+    "name": "Autocomplete Attributes",
+    "passed": true,
+    "details": "User: username, Pass: current-password"
+  },
+  {
+    "name": "Contextual Error Banner Title",
+    "passed": true,
+    "details": "Banner text: \"Sign In Failed  Please enter your User ID.\""
+  },
+  {
+    "name": "Inline Field Error (User ID)",
+    "passed": true,
+    "details": "Inline: \"Please enter your User ID.\""
+  },
+  {
+    "name": "Inline Field Error (Password)",
+    "passed": true,
+    "details": "Inline: \"Please enter your password.\""
+  },
+  {
+    "name": "CapsLock Warning Indicator",
+    "passed": true,
+    "details": "Badge present: true"
+  },
+  {
+    "name": "Password Visibility Toggle",
+    "passed": true,
+    "details": "Toggled text: text, reverted: password"
+  },
+  {
+    "name": "Enter Key Submission (Native Execution)",
+    "passed": true,
+    "details": "URL: http://localhost:3000/, Logged in: true"
+  },
+  {
+    "name": "Public LoginPage Endpoint",
+    "passed": true,
+    "details": "Status: 200"
+  },
+  {
+    "name": "Public Notification Stream Endpoint",
+    "passed": true,
+    "details": "Status: 200"
+  },
+  {
+    "name": "Session Persistence on Page Refresh",
+    "passed": true,
+    "details": "Session persisted cleanly across reload"
+  },
+  {
+    "name": "Logout Flow & Storage Clearing",
+    "passed": true,
+    "details": "Cleanly cleared session and returned to login"
+  }
+]

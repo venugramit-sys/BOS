@@ -1,0 +1,543 @@
+// ============================================================================
+// BOS Core Mega-Package: Feature 6 - Sequential Number Series Engine
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// 1. EXTENSIBLE ENUMERATIONS (Number Series)
+// ----------------------------------------------------------------------------
+
+enum NoSeriesType {
+    extensible = true;
+    Standard;
+    Financial;
+    Document;
+    Customer;
+    Vendor;
+    Item;
+    AuditTrail;
+}
+
+// ----------------------------------------------------------------------------
+// 2. DATA TABLES (Number Series)
+// ----------------------------------------------------------------------------
+
+table NoSeries {
+    caption = "Number Series Header";
+
+    code: String(20) {
+        caption = "Series Code";
+    };
+    description: String(100) {
+        caption = "Description";
+    };
+    seriesType: Enum(NoSeriesType) {
+        default = "Standard";
+    };
+    defaultNos: Boolean {
+        caption = "Default Numbers";
+        default = true;
+    };
+    manualNos: Boolean {
+        caption = "Manual Numbers Allowed";
+        default = false;
+    };
+    dateOrder: Boolean {
+        caption = "Strict Chronological Date Order";
+        default = true;
+    };
+    isActive: Boolean {
+        caption = "Active";
+        default = true;
+    };
+
+    primaryKey(code);
+}
+
+table NoSeriesLine {
+    caption = "Number Series Line";
+
+    id: UUID {
+        caption = "Line Identifier";
+    };
+    seriesCode: String(20) {
+        caption = "Series Code";
+    };
+    lineNo: Integer {
+        caption = "Line Sequence No";
+        default = 10000;
+    };
+    startingDate: Date {
+        caption = "Starting Date";
+    };
+    startingNo: String(30) {
+        caption = "Starting Number";
+    };
+    endingNo: String(30) {
+        caption = "Ending Number";
+    };
+    warningNo: String(30) {
+        caption = "Warning Number Threshold";
+    };
+    incrementBy: Integer {
+        caption = "Increment Value";
+        default = 1;
+    };
+    lastNoUsed: String(30) {
+        caption = "Last Number Used";
+        default = "";
+    };
+    lastDateUsed: Date {
+        caption = "Last Date Used";
+    };
+    isOpen: Boolean {
+        caption = "Open for Allocation";
+        default = true;
+    };
+
+    primaryKey(id);
+}
+
+table NoSeriesRelationship {
+    caption = "Number Series Relationship";
+
+    id: UUID {
+        caption = "Relationship Identifier";
+    };
+    seriesCode: String(20) {
+        caption = "Parent Series Code";
+    };
+    relatedSeriesCode: String(20) {
+        caption = "Related Subordinate Series Code";
+    };
+    description: String(100) {
+        caption = "Relationship Description";
+    };
+
+    primaryKey(id);
+}
+
+table NoSeriesSetup {
+    caption = "Number Series Configuration Setup";
+
+    primaryKeyCode: String(20) {
+        caption = "Primary Key Code";
+        default = "PRIMARY";
+    };
+    enforceStrictChronology: Boolean {
+        caption = "Enforce Strict Chronology Across All Series";
+        default = true;
+    };
+    preventNumberReuse: Boolean {
+        caption = "Strictly Prevent Re-use of Deleted Document Numbers";
+        default = true;
+    };
+    warningThresholdPercent: Integer {
+        caption = "Default Warning Threshold Percentage";
+        default = 90;
+    };
+    auditSequenceAllocations: Boolean {
+        caption = "Audit Every Sequence Allocation in Tamper-Proof Log";
+        default = true;
+    };
+
+    primaryKey(primaryKeyCode);
+}
+
+// ----------------------------------------------------------------------------
+// 3. TABLE LOGIC COMPANIONS (Number Series)
+// ----------------------------------------------------------------------------
+
+tablelogic NoSeriesLogic for NoSeries {
+    onInsert(rec, ctx) {
+        if (!rec.code || String(rec.code).trim().length === 0) {
+            throw new Error("Validation Failed: NoSeries 'code' is mandatory.");
+        }
+        rec.code = String(rec.code).toUpperCase().trim();
+        if (!/^[A-Z0-9_-]{1,20}$/.test(rec.code)) {
+            throw new Error("Validation Failed: NoSeries code must be uppercase alphanumeric (1-20 chars).");
+        }
+    }
+
+    onModify(rec, xRec, ctx) {
+        if (!rec.code || String(rec.code).trim().length === 0) {
+            throw new Error("Validation Failed: NoSeries 'code' cannot be blank.");
+        }
+    }
+
+    onDelete(rec, ctx) {
+        // Prevent deletion if series lines exist with allocated numbers
+        const lines = NoSeriesLine.findMany({ where: { seriesCode: rec.code } });
+        if (lines && lines.length > 0) {
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].lastNoUsed && String(lines[i].lastNoUsed).trim().length > 0) {
+                    throw new Error(`Cannot delete NoSeries '${rec.code}' because document numbers have already been allocated.`);
+                }
+            }
+            // If lines have no allocated numbers, clean up lines
+            NoSeriesLine.deleteAll({ seriesCode: rec.code });
+        }
+    }
+}
+
+tablelogic NoSeriesLineLogic for NoSeriesLine {
+    onInsert(rec, ctx) {
+        if (!rec.seriesCode || String(rec.seriesCode).trim().length === 0) {
+            throw new Error("Validation Failed: 'seriesCode' is mandatory on NoSeriesLine.");
+        }
+        if (!rec.startingNo || String(rec.startingNo).trim().length === 0) {
+            throw new Error("Validation Failed: 'startingNo' is required.");
+        }
+        if (rec.incrementBy === undefined || rec.incrementBy < 1) {
+            rec.incrementBy = 1;
+        }
+        if (!rec.id) {
+            rec.id = ctx.crypto.uuidv7();
+        }
+    }
+
+    onModify(rec, xRec, ctx) {
+        if (rec.incrementBy === undefined || rec.incrementBy < 1) {
+            throw new Error("Validation Failed: 'incrementBy' must be at least 1.");
+        }
+    }
+}
+
+tablelogic NoSeriesSetupLogic for NoSeriesSetup {
+    onInsert(rec, ctx) {
+        rec.primaryKeyCode = "PRIMARY";
+    }
+
+    onDelete(rec, ctx) {
+        throw new Error("Validation Failed: The 'PRIMARY' NoSeriesSetup row cannot be deleted.");
+    }
+}
+
+// ----------------------------------------------------------------------------
+// 4. BUSINESS LOGIC SERVICES (NoSeriesManagement Codeunit)
+// ----------------------------------------------------------------------------
+
+codeunit NoSeriesManagement {
+    caption = "Sequential Number Series Management Engine";
+
+    InitializeDefaultSeries() {
+        if (!NoSeriesSetup.get("PRIMARY")) {
+            NoSeriesSetup.insert({
+                primaryKeyCode: "PRIMARY",
+                enforceStrictChronology: true,
+                preventNumberReuse: true,
+                warningThresholdPercent: 90,
+                auditSequenceAllocations: true
+            });
+        }
+
+        const standardSeries = [
+            { code: "CUST", desc: "Customer Account Sequences", type: "Customer", start: "C-10001", end: "C-99999" },
+            { code: "VEND", desc: "Vendor Account Sequences", type: "Vendor", start: "V-10001", end: "V-99999" },
+            { code: "ITEM", desc: "Inventory Item Numbers", type: "Item", start: "ITM-10001", end: "ITM-99999" },
+            { code: "SO", desc: "Sales Orders", type: "Document", start: "SO-2026-00001", end: "SO-2026-99999" },
+            { code: "SI_POST", desc: "Posted Sales Invoices", type: "Financial", start: "INV-2026-00001", end: "INV-2026-99999" },
+            { code: "PO", desc: "Purchase Orders", type: "Document", start: "PO-2026-00001", end: "PO-2026-99999" },
+            { code: "PI_POST", desc: "Posted Purchase Invoices", type: "Financial", start: "PINV-2026-00001", end: "PINV-2026-99999" },
+            { code: "GL_JNL", desc: "General Ledger Journal Batches", type: "Financial", start: "GL-2026-00001", end: "GL-2026-99999" }
+        ];
+
+        for (let i = 0; i < standardSeries.length; i++) {
+            const s = standardSeries[i];
+            if (!NoSeries.get(s.code)) {
+                NoSeries.insert({
+                    code: s.code,
+                    description: s.desc,
+                    seriesType: s.type,
+                    defaultNos: true,
+                    manualNos: false,
+                    dateOrder: true,
+                    isActive: true
+                });
+
+                NoSeriesLine.insert({
+                    id: ctx.crypto.uuidv7(),
+                    seriesCode: s.code,
+                    lineNo: 10000,
+                    startingDate: "2026-01-01",
+                    startingNo: s.start,
+                    endingNo: s.end,
+                    warningNo: s.end,
+                    incrementBy: 1,
+                    lastNoUsed: "",
+                    isOpen: true
+                });
+            }
+        }
+
+        return { success: true, message: "Standard enterprise number series initialized successfully." };
+    }
+
+    GetNextNo(seriesCode: String, targetDate: String, updateSeries: Boolean) {
+        const sc = (rec && rec.seriesCode !== undefined) ? rec.seriesCode : seriesCode;
+        const td = (rec && rec.targetDate !== undefined) ? rec.targetDate : (targetDate || new Date().toISOString().slice(0, 10));
+        const shouldUpdate = (rec && rec.updateSeries !== undefined) ? rec.updateSeries : (updateSeries !== false);
+
+        if (!sc || String(sc).trim().length === 0) {
+            throw new Error("Number Series Error: 'seriesCode' must be specified.");
+        }
+        const cleanCode = String(sc).toUpperCase().trim();
+
+        const header = NoSeries.get(cleanCode);
+        if (!header) {
+            throw new Error(`Number Series Error: Series '${cleanCode}' does not exist.`);
+        }
+        if (!header.isActive) {
+            throw new Error(`Number Series Error: Series '${cleanCode}' is currently deactivated.`);
+        }
+
+        // Find candidate lines ordered by startingDate desc
+        const lines = NoSeriesLine.findMany({
+            where: { seriesCode: cleanCode, isOpen: true },
+            orderBy: { startingDate: "desc" }
+        });
+
+        if (!lines || lines.length === 0) {
+            throw new Error(`Number Series Error: No active lines found for series '${cleanCode}'.`);
+        }
+
+        // Pick the line matching the date criteria
+        let activeLine = null;
+        for (let i = 0; i < lines.length; i++) {
+            const lineDate = lines[i].startingDate;
+            if (!lineDate || lineDate <= td) {
+                activeLine = lines[i];
+                break;
+            }
+        }
+        if (!activeLine) {
+            activeLine = lines[lines.length - 1]; // fallback to oldest starting line
+        }
+
+        // ACQUIRE PESSIMISTIC ROW LOCK (SELECT ... FOR UPDATE) via generic Table.lock
+        const lockedLine = NoSeriesLine.lock(activeLine.id);
+        if (!lockedLine) {
+            throw new Error(`Number Series Error: Failed to acquire concurrency lock on series line '${activeLine.id}'.`);
+        }
+
+        // Enforce strict chronological date order if required
+        if (header.dateOrder && lockedLine.lastDateUsed && td < lockedLine.lastDateUsed) {
+            throw new Error(`Number Series Error: Document date (${td}) cannot be earlier than last date used (${lockedLine.lastDateUsed}) for series '${cleanCode}'.`);
+        }
+
+        let nextNo = "";
+        if (!lockedLine.lastNoUsed || String(lockedLine.lastNoUsed).trim().length === 0) {
+            nextNo = lockedLine.startingNo;
+        } else {
+            // Compute next number via prefix/suffix parsing
+            nextNo = ctx.call("NoSeriesManagement", "IncrementStringNumber", {
+                currentNumber: lockedLine.lastNoUsed,
+                incrementBy: lockedLine.incrementBy || 1
+            });
+        }
+
+        // Check boundary limits (numerical suffix comparison to avoid lexicographical string length pitfalls)
+        if (lockedLine.endingNo) {
+            const endMatch = String(lockedLine.endingNo).match(/^(.*?)(\d+)$/);
+            const nextMatch = String(nextNo).match(/^(.*?)(\d+)$/);
+            if (endMatch && nextMatch && endMatch[1] === nextMatch[1]) {
+                const endVal = parseInt(endMatch[2], 10);
+                const nextVal = parseInt(nextMatch[2], 10);
+                if (nextVal > endVal) {
+                    throw new Error(`Number Series Error: Series '${cleanCode}' has exhausted its allocated range. Ending number was '${lockedLine.endingNo}'.`);
+                }
+            } else if (nextNo > lockedLine.endingNo) {
+                throw new Error(`Number Series Error: Series '${cleanCode}' has exhausted its allocated range. Ending number was '${lockedLine.endingNo}'.`);
+            }
+        }
+
+        // Check warning threshold notification
+        if (lockedLine.warningNo && shouldUpdate) {
+            const warnMatch = String(lockedLine.warningNo).match(/^(.*?)(\d+)$/);
+            const nextMatch = String(nextNo).match(/^(.*?)(\d+)$/);
+            if (warnMatch && nextMatch && warnMatch[1] === nextMatch[1]) {
+                const warnVal = parseInt(warnMatch[2], 10);
+                const nextVal = parseInt(nextMatch[2], 10);
+                if (nextVal >= warnVal) {
+                    ctx.ui.message(`Number series '${cleanCode}' is approaching exhaustion (${nextNo} >= ${lockedLine.warningNo}).`, "warning");
+                }
+            }
+        }
+
+        // Persist update if requested
+        if (shouldUpdate) {
+            NoSeriesLine.update(lockedLine.id, {
+                lastNoUsed: nextNo,
+                lastDateUsed: td
+            });
+        }
+
+        return nextNo;
+    }
+
+    IncrementStringNumber(currentNumber: String, incrementBy: Integer) {
+        const str = (rec && rec.currentNumber !== undefined) ? rec.currentNumber : currentNumber;
+        const inc = (rec && rec.incrementBy !== undefined) ? Number(rec.incrementBy) : (Number(incrementBy) || 1);
+
+        if (!str || typeof str !== "string") {
+            throw new Error("IncrementStringNumber: Invalid number string.");
+        }
+
+        // Match trailing digits: e.g. "INV-2026-00042" -> prefix "INV-2026-", digits "00042"
+        const match = str.match(/^(.*?)(\d+)$/);
+        if (!match) {
+            // No trailing digits: append -1
+            return str + "-" + inc;
+        }
+
+        const prefix = match[1];
+        const numPart = match[2];
+        const width = numPart.length;
+        const currentVal = parseInt(numPart, 10);
+        const nextVal = currentVal + inc;
+
+        // Re-pad with leading zeroes if necessary
+        let formattedDigits = String(nextVal);
+        if (formattedDigits.length < width) {
+            formattedDigits = formattedDigits.padStart(width, "0");
+        }
+
+        return prefix + formattedDigits;
+    }
+
+    TestManualAllowed(seriesCode: String) {
+        const sc = (rec && rec.seriesCode !== undefined) ? rec.seriesCode : seriesCode;
+        if (!sc) return false;
+        const header = NoSeries.get(String(sc).toUpperCase().trim());
+        if (!header) return false;
+        if (!header.manualNos) {
+            throw new Error(`Validation Error: Manual numbering is not permitted for series '${header.code}'. You must use automated sequence numbers.`);
+        }
+        return true;
+    }
+}
+
+// ----------------------------------------------------------------------------
+// 5. USER INTERFACE PAGES (Number Series)
+// ----------------------------------------------------------------------------
+
+page NoSeriesList for NoSeries {
+    pageType = List;
+    caption = "Number Series Catalog";
+
+    layout {
+        area(Content) {
+            repeater(SeriesRepeater) {
+                field(code) {
+                    caption = "Series Code";
+                }
+                field(description) {
+                    caption = "Description";
+                }
+                field(seriesType) {
+                    caption = "Classification";
+                }
+                field(defaultNos) {
+                    caption = "Default Sequence";
+                }
+                field(manualNos) {
+                    caption = "Manual Allowed";
+                }
+                field(dateOrder) {
+                    caption = "Strict Chronology";
+                }
+                field(isActive) {
+                    caption = "Active";
+                }
+            }
+        }
+    }
+
+    actions {
+        area(Processing) {
+            action(InitDefaults) {
+                caption = "Initialize Standard Series";
+                icon = "Settings";
+                primary = true;
+                onAction(rec, ctx) {
+                    const res = ctx.call("NoSeriesManagement", "InitializeDefaultSeries", {});
+                    ctx.ui.message("Standard number series initialized.");
+                }
+            }
+        }
+    }
+}
+
+page NoSeriesCard for NoSeries {
+    pageType = Card;
+    caption = "Number Series Specification";
+
+    layout {
+        area(Content) {
+            group(GeneralFastTab) {
+                caption = "General Series Setup";
+                field(code) {
+                    caption = "Series Code";
+                }
+                field(description) {
+                    caption = "Description";
+                }
+                field(seriesType) {
+                    caption = "Category Type";
+                }
+                field(isActive) {
+                    caption = "Active for Allocation";
+                }
+            }
+            group(RestrictionsFastTab) {
+                caption = "Allocation Restrictions & Rules";
+                field(defaultNos) {
+                    caption = "Auto-Assign as Default";
+                }
+                field(manualNos) {
+                    caption = "Allow User Manual Overrides";
+                }
+                field(dateOrder) {
+                    caption = "Enforce Strict Chronology";
+                }
+            }
+        }
+    }
+}
+
+page NoSeriesSetupCard for NoSeriesSetup {
+    pageType = Card;
+    caption = "Number Series Platform Setup";
+
+    layout {
+        area(Content) {
+            group(GeneralPoliciesFastTab) {
+                caption = "Enterprise Numbering Policies";
+                field(enforceStrictChronology) {
+                    caption = "Global Strict Chronology";
+                }
+                field(preventNumberReuse) {
+                    caption = "Block Re-use of Voided Numbers";
+                }
+                field(warningThresholdPercent) {
+                    caption = "Warning Threshold %";
+                }
+                field(auditSequenceAllocations) {
+                    caption = "Audit Sequence Allocations";
+                }
+            }
+        }
+    }
+
+    actions {
+        area(Processing) {
+            action(ApplySetup) {
+                caption = "Save Policies";
+                icon = "Check";
+                primary = true;
+                onAction(rec, ctx) {
+                    ctx.ui.message("Number series global policies saved.");
+                }
+            }
+        }
+    }
+}

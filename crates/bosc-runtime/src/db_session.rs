@@ -64,12 +64,27 @@ impl DbSession {
 
     pub async fn apply_identity(&self, ctx: &SessionContext) -> Result<(), RuntimeError> {
         let mut conn = self.conn().await?;
+        let tenant_s = if ctx.tenant_id.is_nil() {
+            String::new()
+        } else {
+            ctx.tenant_id.to_string()
+        };
+        let company_s = if ctx.company_id.is_nil() {
+            String::new()
+        } else {
+            ctx.company_id.to_string()
+        };
+        let user_s = if ctx.user_id.is_nil() {
+            String::new()
+        } else {
+            ctx.user_id.to_string()
+        };
         let res = sqlx::query(
             "SELECT set_config('bos.current_tenant_id', $1, true), set_config('bos.current_company_id', $2, true), set_config('bos.current_user_id', $3, true)",
         )
-        .bind(ctx.tenant_id.to_string())
-        .bind(ctx.company_id.to_string())
-        .bind(ctx.user_id.to_string())
+        .bind(tenant_s)
+        .bind(company_s)
+        .bind(user_s)
         .execute(&mut *conn)
         .await;
         self.track(res).map(|_| ())

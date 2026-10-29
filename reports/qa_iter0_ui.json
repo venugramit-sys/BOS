@@ -1,0 +1,116 @@
+[
+ {
+  "path": "/",
+  "console": [],
+  "failed": [],
+  "http": [],
+  "loadMs": 7810,
+  "title": "BOS · Workspace",
+  "text": "Sign In\n\nEnter your enterprise credentials to access your workspace.\n\nUser ID\n*\nPassword\n*\nRemember User ID\nSign In",
+  "navCount": 0,
+  "clicks": []
+ },
+ {
+  "path": "/index.html",
+  "console": [],
+  "failed": [],
+  "http": [],
+  "loadMs": 2123,
+  "title": "BOS · Workspace",
+  "text": "Sign In\n\nEnter your enterprise credentials to access your workspace.\n\nUser ID\n*\nPassword\n*\nRemember User ID\nSign In",
+  "navCount": 0,
+  "clicks": []
+ },
+ {
+  "path": "/dev-studio.html",
+  "console": [],
+  "failed": [],
+  "http": [],
+  "loadMs": 2368,
+  "title": "BOS Developer Studio · Superuser Meta-Objects & Monaco IDE",
+  "text": "File\nView\nDatabase\nBuild\nBOS MODULES\n1\n\n31 Meta-Objects registered\n\nAdd Architecture Component...\n+ Module\n+ Feature\n+ Object\nAll\nFeatures\nTables\nPages\nCodeunits\nWorkflows\nEnums\nQueries\nExtensions\nbos.auth\nCORE\n\nBOS Enterprise User Management & Authentication\n\nv1.0.0\n24\nTables\n7\nAuthConfiguration\nAuthConfigurationLogic\nRole\nRoleLogic\nSecurityAuditLog\nSecurityAuditLogLogic\nUser\nUserLogic\nUserRole\nUserRoleLogic\nUserSecuritySetting\nUserSecuritySettingLogic\nUserSession\nUserSessionLogic\nPages\n10\nAuthConfigurationCard\nLoginPage\nRoleCard\nRoleList\nSecurityAuditLogList\nSessionList\nUserCard\nUserList\nUse",
+  "navCount": 90,
+  "clicks": [
+   "0: File",
+   "1: View",
+   "2: Database",
+   "3: Build",
+   "4: Expand or collapse all modules",
+   "5: Refresh catalog",
+   "6: Collapse navigation"
+  ]
+ },
+ {
+  "path": "/api-studio.html",
+  "console": [],
+  "failed": [],
+  "http": [],
+  "loadMs": 1241,
+  "title": "BOS API Testing Studio & Automation Suite",
+  "text": "BOS\nAPI Testing Studio\nv2.0 Automated\nLIVE 3000\n(95ms)\nRun Automated Suite\nENDPOINTS\nRefresh entities\n55 of 55\nCreate Authentication & Login Branding Configuration\nSCHEMA\nPOST\n\n/api/entities/auth_configuration\n\nUpdate Authentication & Login Branding Configuration\nSCHEMA\nPUT\n\n/api/entities/auth_configuration/{id}\n\nCreate Security Role\nSCHEMA\nPOST\n\n/api/entities/role\n\nUpdate Security Role\nSCHEMA\nPUT\n\n/api/entities/role/{id}\n\nCreate Immutable Security Audit Log\nSCHEMA\nPOST\n\n/api/entities/security_audit_log\n\nUpdate Immutable Security Audit Log\nSCHEMA\nPUT\n\n/api/entities/security_audit_log/{id}\n\nCre",
+  "navCount": 57,
+  "clicks": [
+   "0: Refresh entities",
+   "1: Create Authentication & Login Branding C",
+   "2: Update Authentication & Login Branding C",
+   "3: Create Security Role\nSCHEMA\nPOST\n\n/api/e",
+   "4: Update Security Role\nSCHEMA\nPUT\n\n/api/en",
+   "5: Create Immutable Security Audit Log\nSCHE",
+   "6: Update Immutable Security Audit Log\nSCHE",
+   "7: Create User Master\nSCHEMA\nPOST\n\n/api/ent",
+   "8: Update User Master\nSCHEMA\nPUT\n\n/api/enti",
+   "9: Create User Role Assignment\nSCHEMA\nPOST\n",
+   "10: Update User Role Assignment\nSCHEMA\nPUT\n\n",
+   "11: Create User Security Settings & Policies",
+   "12: Update User Security Settings & Policies",
+   "13: Create User Active Sessions\nSCHEMA\nPOST\n",
+   "14: Update User Active Sessions\nSCHEMA\nPUT\n\n",
+   "15: System Health Check\nGET\n\n/api/health",
+   "16: Auto-Detect Local Databases\nGET\n\n/api/de",
+   "17: Kernel Provisioning Status\nGET\n\n/api/met",
+   "18: Provision System Kernel\nPOST\n\n/api/meta/",
+   "19: List Storage Strategies\nGET\n\n/api/system",
+   "20: List Cluster Databases\nGET\n\n/api/databas",
+   "21: Test Connection URL\nPOST\n\n/api/databases",
+   "22: Create Database Catalog\nPOST\n\n/api/datab",
+   "23: Switch Active Database\nPOST\n\n/api/databa",
+   "24: Get Current Active Database\nGET\n\n/api/da"
+  ]
+ },
+ {
+  "path": "/showcase.html",
+  "console": [
+   "pageerror: Cannot read properties of null (reading 'name')\n\n\tin <unknown>\n\tin dropdown-menu-trigger.svelte\n\tin floating-layer.svelte\n\tin menu.svelte\n\tin dropdown-menu.svelte\n\tin UserWidget.svelte\n\tin TopNavBar.svelte\n\tin AppShell.svelte\n\tin ComponentShowcase.svelte\n\tin undefined\n"
+  ],
+  "failed": [],
+  "http": [],
+  "loadMs": 2236,
+  "title": "BOS Component Showcase & Design Guide",
+  "text": "BOS Design Guide & Component Showcase\nInternal Dev Sandbox\n\nDesign testing, edge cases, and component refinement canvas (isolated from live app).\n\nDark Mode\nGo to Live App\nAVAILABLE COMPONENTS\nApp Shell Layout\nMenubar\nInput Field\nCombobox / Lookup\nDate / Time Picker\nDatasheet\nData table\nStudio control kit\nCompiled Pages\nStudio Visual Designers\nTheme & Personalization\nPHASE 1-4 ARCHITECTURE\nFactBox Side Panel\ndocs/28\nFastTab Card View\ndocs/28\nArgon2id & Storno\nv19 PHC\nInput Field Component\n\nSource: $lib/bos-ui/input\n\nZero-Mock Verified\nSize:\nSM\nMD\nLG\nStatus:\nDefault\nError\nWarning\nSuccess\nInfo\nL",
+  "navCount": 11,
+  "clicks": [
+   "0: App Shell Layout",
+   "1: Menubar",
+   "2: Input Field",
+   "3: Combobox / Lookup",
+   "4: Date / Time Picker",
+   "5: Datasheet",
+   "6: Data table",
+   "7: Studio control kit",
+   "8: Compiled Pages",
+   "9: Studio Visual Designers",
+   "10: Theme & Personalization"
+  ]
+ },
+ {
+  "path": "/does-not-exist",
+  "console": [],
+  "failed": [],
+  "http": [],
+  "loadMs": 2243,
+  "title": "BOS · Workspace",
+  "text": "Sign In\n\nEnter your enterprise credentials to access your workspace.\n\nUser ID\n*\nPassword\n*\nRemember User ID\nSign In",
+  "navCount": 0,
+  "clicks": []
+ }
+]

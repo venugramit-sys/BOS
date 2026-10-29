@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 use serde::{Deserialize, Serialize};
 
 use sqlx::{PgPool, Row, postgres::PgPoolOptions};
@@ -98,6 +100,8 @@ pub struct PageTriggerResult {
     pub return_value: Option<serde_json::Value>,
     pub logs: Vec<String>,
     pub fuel_used: u64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notifications: Vec<crate::Notification>,
 }
 
 pub use execution_engine::{ExecScope, ExecutionEngine, ExecutionResult};
@@ -364,15 +368,33 @@ pub fn sanitize_identifier(ident: &str) -> Result<String, RuntimeError> {
 
 const SYSTEM_WRITE_PROTECTED: &[&str] = &[
     "_system_version",
+    "system_version",
+    "systemversion",
     "_id",
+    "id",
     "_tenant_id",
+    "tenant_id",
+    "tenantid",
     "_company_id",
+    "company_id",
+    "companyid",
     "_created_at",
+    "created_at",
+    "createdat",
     "_created_by",
+    "created_by",
+    "createdby",
     "_updated_at",
+    "updated_at",
+    "updatedat",
     "_updated_by",
+    "updated_by",
+    "updatedby",
     "_system_messages",
+    "system_messages",
+    "systemmessages",
     "_messages",
+    "messages",
 ];
 
 /// Quote a resolved physical table name; schema-qualified names arrive already quoted.
@@ -516,120 +538,129 @@ pub fn to_snake_case(s: &str) -> String {
 
 /// Securely hash plain-text password using salted SHA-256 with CSPRNG salt
 
-pub fn hash_password(plain: &str) -> String {
+/// Securely hash plain-text password using standard Blowfish bcrypt (cost: 10, memory: 4 KB)
+pub fn hash_password_bcrypt(plain: &str) -> String {
+    match bcrypt::hash(plain, bcrypt::DEFAULT_COST) {
+        Ok(h) => h,
+        Err(e) => {
+            tracing::warn!("bcrypt hashing fallback to sha256: {:?}", e);
+            hash_password_sha256(plain)
+        }
+    }
+}
+
+pub fn hash_password_sha256(plain: &str) -> String {
     use sha2::{Digest, Sha256};
-
     let salt = Uuid::new_v4().to_string().replace('-', "")[..16].to_string();
-
     let mut hasher = Sha256::new();
-
     hasher.update(salt.as_bytes());
-
     hasher.update(plain.as_bytes());
-
     let hex_hash = format!("{:x}", hasher.finalize());
-
     format!("$sha256${}${}", salt, hex_hash)
 }
 
-/// Securely hash plain-text password using Argon2id-compatible iterated derivation
-pub fn hash_password_argon2(plain: &str) -> String {
-    use sha2::{Digest, Sha256};
-
-    let salt = Uuid::new_v4().to_string().replace('-', "")[..16].to_string();
-    let mut state = {
-        let mut h = Sha256::new();
-        h.update(b"bos-argon2id-v19:");
-        h.update(salt.as_bytes());
-        h.update(b":");
-        h.update(plain.as_bytes());
-        h.finalize()
-    };
-    for round in 0u32..4096 {
-        let mut h = Sha256::new();
-        h.update(state);
-        h.update(salt.as_bytes());
-        h.update(plain.as_bytes());
-        h.update(round.to_le_bytes());
-        state = h.finalize();
-    }
-    let mut hex_hash = String::with_capacity(64);
-    for b in state {
-        hex_hash.push_str(&format!("{:02x}", b));
-    }
-
-    format!("$argon2id$v=19$m=4096,t=3,p=1${}${}", salt, hex_hash)
+pub fn hash_password(plain: &str) -> String {
+    hash_password_bcrypt(plain)
 }
 
-/// Verify plain-text password against stored hash (supporting $sha256$ and $argon2id$)
+/// Securely hash plain-text password using official RFC 9106 Argon2id
+pub fn hash_password_argon2(plain: &str) -> String {
+    use argon2::{
+        password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
+        Argon2,
+    };
+    let salt = SaltString::generate(&mut OsRng);
+    let argon2 = Argon2::default();
+    match argon2.hash_password(plain.as_bytes(), &salt) {
+        Ok(h) => h.to_string(),
+        Err(e) => {
+            tracing::warn!("argon2 hashing error: {:?}, fallback to bcrypt", e);
+            hash_password_bcrypt(plain)
+        }
+    }
+}
 
+/// Verify plain-text password against stored hash (supporting standard Blowfish $2a$/$2b$/$2y$, RFC 9106 $argon2id$, and $sha256$)
 pub fn verify_password(plain: &str, stored_hash: &str) -> bool {
-    use sha2::{Digest, Sha256};
+    // 1. Standard Blowfish bcrypt hash verification ($2a$, $2b$, $2y$)
+    if stored_hash.starts_with("$2a$") || stored_hash.starts_with("$2b$") || stored_hash.starts_with("$2y$") {
+        return bcrypt::verify(plain, stored_hash).unwrap_or(false);
+    }
 
+    // 2. Official RFC 9106 Argon2id hash verification
+    if stored_hash.starts_with("$argon2") {
+        use argon2::{
+            password_hash::{PasswordHash, PasswordVerifier},
+            Argon2,
+        };
+        if let Ok(parsed_hash) = PasswordHash::new(stored_hash) {
+            if Argon2::default().verify_password(plain.as_bytes(), &parsed_hash).is_ok() {
+                return true;
+            }
+        }
+        // Backward-compatible fallback for prior simulated bos-argon2id-v19 hashes
+        if stored_hash.contains("$m=4096,t=3,p=1$") {
+            return verify_legacy_pseudo_argon2(plain, stored_hash);
+        }
+        return false;
+    }
+
+    // 2. Salted SHA-256 verification ($sha256$salt$hash)
     let parts: Vec<&str> = stored_hash.split('$').collect();
-
     match parts.as_slice() {
         ["", "sha256", salt, expected_hex] => {
+            use sha2::{Digest, Sha256};
             let mut hasher = Sha256::new();
-
             hasher.update(salt.as_bytes());
-
             hasher.update(plain.as_bytes());
-
             let hex_hash = format!("{:x}", hasher.finalize());
-
-            hex_hash == *expected_hex
-        }
-
-        ["", "argon2id", _v, _params, salt, expected_hex] => {
-            let mut state = {
-                let mut h = Sha256::new();
-
-                h.update(b"bos-argon2id-v19:");
-
-                h.update(salt.as_bytes());
-
-                h.update(b":");
-
-                h.update(plain.as_bytes());
-
-                h.finalize()
-            };
-
-            for round in 0u32..4096 {
-                let mut h = Sha256::new();
-
-                h.update(state);
-
-                h.update(salt.as_bytes());
-
-                h.update(plain.as_bytes());
-
-                h.update(round.to_le_bytes());
-
-                state = h.finalize();
-            }
-
-            let mut computed_hex = String::with_capacity(64);
-
-            for b in state {
-                computed_hex.push_str(&format!("{:02x}", b));
-            }
-
-            if computed_hex.len() != expected_hex.len() {
+            if hex_hash.len() != expected_hex.len() {
                 return false;
             }
-
             let mut diff = 0u8;
-
-            for (a, b) in computed_hex.bytes().zip(expected_hex.bytes()) {
+            for (a, b) in hex_hash.bytes().zip(expected_hex.bytes()) {
                 diff |= a ^ b;
             }
-
             diff == 0
         }
-
         _ => false,
+    }
+}
+
+fn verify_legacy_pseudo_argon2(plain: &str, stored_hash: &str) -> bool {
+    use sha2::{Digest, Sha256};
+    let parts: Vec<&str> = stored_hash.split('$').collect();
+    if let ["", "argon2id", _v, _params, salt, expected_hex] = parts.as_slice() {
+        let mut state = {
+            let mut h = Sha256::new();
+            h.update(b"bos-argon2id-v19:");
+            h.update(salt.as_bytes());
+            h.update(b":");
+            h.update(plain.as_bytes());
+            h.finalize()
+        };
+        for round in 0u32..4096 {
+            let mut h = Sha256::new();
+            h.update(state);
+            h.update(salt.as_bytes());
+            h.update(plain.as_bytes());
+            h.update(round.to_le_bytes());
+            state = h.finalize();
+        }
+        let mut computed_hex = String::with_capacity(64);
+        for b in state {
+            computed_hex.push_str(&format!("{:02x}", b));
+        }
+        if computed_hex.len() != expected_hex.len() {
+            return false;
+        }
+        let mut diff = 0u8;
+        for (a, b) in computed_hex.bytes().zip(expected_hex.bytes()) {
+            diff |= a ^ b;
+        }
+        diff == 0
+    } else {
+        false
     }
 }
 
@@ -687,6 +718,8 @@ pub struct BosEngine {
     pub bytecode_cache: Arc<BytecodeCache>,
 
     pub prepared_statements: Arc<PreparedStatementRegistry>,
+
+    emergency_sessions: Arc<dashmap::DashMap<String, (tokio::time::Instant, Vec<String>)>>,
 
     /// Compiled page service (Svelte page artifacts); absent until [`BosEngine::start_page_service`].
     pages: Arc<arc_swap::ArcSwapOption<page_artifacts::PageService>>,
@@ -775,6 +808,8 @@ impl BosEngine {
 
             prepared_statements,
 
+            emergency_sessions: Arc::new(dashmap::DashMap::new()),
+
             pages: Arc::new(arc_swap::ArcSwapOption::empty()),
         })
     }
@@ -791,6 +826,28 @@ impl BosEngine {
         let url = self.active_url().await;
 
         DatabaseManager::extract_database_name(&url)
+    }
+
+    /// Register an active emergency Super Admin session with a TTL.
+    pub fn register_emergency_session(&self, token: &str, roles: Vec<String>, ttl: std::time::Duration) {
+        let expires_at = tokio::time::Instant::now() + ttl;
+        self.emergency_sessions.insert(token.to_string(), (expires_at, roles));
+    }
+
+    /// Validate an emergency session token. Returns the assigned roles if still valid.
+    pub fn validate_emergency_session(&self, token: &str) -> Option<Vec<String>> {
+        if let Some(entry) = self.emergency_sessions.get(token) {
+            let (expires_at, roles) = entry.value();
+            if tokio::time::Instant::now() < *expires_at {
+                return Some(roles.clone());
+            }
+        }
+        None
+    }
+
+    /// Clear all active emergency sessions (e.g. when exiting maintenance mode).
+    pub fn clear_emergency_sessions(&self) {
+        self.emergency_sessions.clear();
     }
 
     /// Dynamically switch active database or connect to another URL
@@ -928,6 +985,10 @@ impl BosEngine {
         if let Err(err) = SchemaSync::ensure_support(pool).await {
             tracing::warn!("could not install schema migration support objects: {err}");
         }
+
+        if let Err(err) = EventRegistry::init_table(pool).await {
+            tracing::warn!("could not install event outbox support objects: {err}");
+        }
     }
 
     /// List all databases on the connected PostgreSQL cluster
@@ -985,13 +1046,7 @@ impl BosEngine {
     ) -> Result<Vec<db_manager::TenantInfo>, RuntimeError> {
         let active_db = self.active_db_name().await;
 
-        if database.is_none() || database == Some(active_db.as_str()) {
-            let pool = self.pool().await;
-
-            DatabaseManager::list_tenants(&pool).await
-        } else {
-            let target_db = database.unwrap();
-
+        if let Some(target_db) = database.filter(|d| *d != active_db.as_str()) {
             DatabaseManager::validate_db_name(target_db)?;
 
             let current_url = self.active_url().await;
@@ -1008,6 +1063,10 @@ impl BosEngine {
             target_pool.close().await;
 
             res
+        } else {
+            let pool = self.pool().await;
+
+            DatabaseManager::list_tenants(&pool).await
         }
     }
 
@@ -1029,13 +1088,7 @@ impl BosEngine {
 
         let active_db = self.active_db_name().await;
 
-        if target_db.is_none() || target_db == Some(active_db.as_str()) {
-            let pool = self.pool().await;
-
-            DatabaseManager::create_tenant(&pool, req).await
-        } else {
-            let db_name = target_db.unwrap();
-
+        if let Some(db_name) = target_db.filter(|d| *d != active_db.as_str()) {
             DatabaseManager::validate_db_name(db_name)?;
 
             let current_url = self.active_url().await;
@@ -1052,6 +1105,10 @@ impl BosEngine {
             target_pool.close().await;
 
             res
+        } else {
+            let pool = self.pool().await;
+
+            DatabaseManager::create_tenant(&pool, req).await
         }
     }
 
@@ -1071,13 +1128,7 @@ impl BosEngine {
     ) -> Result<Vec<db_manager::CompanyInfo>, RuntimeError> {
         let active_db = self.active_db_name().await;
 
-        if database.is_none() || database == Some(active_db.as_str()) {
-            let pool = self.pool().await;
-
-            DatabaseManager::list_companies(&pool, tenant_id).await
-        } else {
-            let target_db = database.unwrap();
-
+        if let Some(target_db) = database.filter(|d| *d != active_db.as_str()) {
             DatabaseManager::validate_db_name(target_db)?;
 
             let current_url = self.active_url().await;
@@ -1094,6 +1145,10 @@ impl BosEngine {
             target_pool.close().await;
 
             res
+        } else {
+            let pool = self.pool().await;
+
+            DatabaseManager::list_companies(&pool, tenant_id).await
         }
     }
 
@@ -1115,20 +1170,7 @@ impl BosEngine {
 
         let active_db = self.active_db_name().await;
 
-        if target_db.is_none() || target_db == Some(active_db.as_str()) {
-            let pool = self.pool().await;
-
-            let strat: Option<String> = sqlx::query_scalar(
-                "SELECT storage_strategy FROM \"_bos_sys_info\" WHERE \"id\" = 'core' LIMIT 1",
-            )
-            .fetch_optional(&pool)
-            .await
-            .unwrap_or(None);
-
-            DatabaseManager::create_company(&pool, req, strat.as_deref()).await
-        } else {
-            let db_name = target_db.unwrap();
-
+        if let Some(db_name) = target_db.filter(|d| *d != active_db.as_str()) {
             DatabaseManager::validate_db_name(db_name)?;
 
             let current_url = self.active_url().await;
@@ -1152,7 +1194,53 @@ impl BosEngine {
             target_pool.close().await;
 
             res
+        } else {
+            let pool = self.pool().await;
+
+            let strat: Option<String> = sqlx::query_scalar(
+                "SELECT storage_strategy FROM \"_bos_sys_info\" WHERE \"id\" = 'core' LIMIT 1",
+            )
+            .fetch_optional(&pool)
+            .await
+            .unwrap_or(None);
+
+            DatabaseManager::create_company(&pool, req, strat.as_deref()).await
         }
+    }
+
+    /// Clone an existing company with optional ledger history
+    pub async fn clone_company(
+        &self,
+        req: db_manager::CloneCompanyRequest,
+    ) -> Result<db_manager::CompanyInfo, RuntimeError> {
+        let pool = self.pool().await;
+        let strat: Option<String> = sqlx::query_scalar(
+            "SELECT storage_strategy FROM \"_bos_sys_info\" WHERE \"id\" = 'core' LIMIT 1",
+        )
+        .fetch_optional(&pool)
+        .await
+        .unwrap_or(None);
+
+        DatabaseManager::clone_company(&pool, req, strat.as_deref()).await
+    }
+
+    /// Drop a company and its underlying isolated storage
+    pub async fn drop_company(&self, code: &str) -> Result<(), RuntimeError> {
+        let pool = self.pool().await;
+        let strat: Option<String> = sqlx::query_scalar(
+            "SELECT storage_strategy FROM \"_bos_sys_info\" WHERE \"id\" = 'core' LIMIT 1",
+        )
+        .fetch_optional(&pool)
+        .await
+        .unwrap_or(None);
+
+        DatabaseManager::drop_company(&pool, code, strat.as_deref()).await
+    }
+
+    /// Run the schema drift sentinel report
+    pub async fn check_schema_drift(&self) -> Result<db_manager::SchemaDriftReport, RuntimeError> {
+        let pool = self.pool().await;
+        DatabaseManager::check_schema_drift(&pool).await
     }
 
     /// Provision BOS system kernel on active database
@@ -1238,6 +1326,18 @@ impl BosEngine {
         }
 
         Ok(res)
+    }
+
+    /// Assign or remove a feature tag on a meta-object
+    pub async fn assign_meta_object_feature(
+        &self,
+        name: &str,
+        feature: Option<&str>,
+    ) -> Result<(), RuntimeError> {
+        let pool = self.pool().await;
+        MetaManager::assign_meta_object_feature(&pool, name, feature).await?;
+        self.invalidate_meta_cache(name).await;
+        Ok(())
     }
 
     /// Resolve a page definition with all matching pageextensions and source table metadata
@@ -1445,20 +1545,27 @@ impl BosEngine {
         }
     }
 
-    /// LISTEN loop for `bos_pages_channel`; reconnects to the active database after errors or switches.
+    /// LISTEN loop for `bos_pages_channel` and `bos_meta_channel`; reconnects to the active database after errors or switches.
     async fn listen_for_page_changes(&self) {
         loop {
             let pool = self.pool().await;
             match sqlx::postgres::PgListener::connect_with(&pool).await {
                 Ok(mut listener) => {
-                    if listener.listen("bos_pages_channel").await.is_ok() {
-                        while let Ok(n) = listener.recv().await {
-                            let Some(service) = self.page_service() else { continue };
-                            let Some((db, instance)) = n.payload().split_once('|') else { continue };
-                            let own = instance == service.instance().to_string();
-                            if !own && service.db_key().as_deref() == Some(db) {
-                                self.refresh_pages().await;
-                            }
+                    let _ = listener.listen("bos_pages_channel").await;
+                    let _ = listener.listen("bos_meta_channel").await;
+                    while let Ok(n) = listener.recv().await {
+                        let Some(service) = self.page_service() else { continue };
+                        let payload = n.payload();
+                        if n.channel() == "bos_meta_channel" || payload.contains("external") || payload.starts_with('*') {
+                            tracing::info!(target: "bos::pages", "Dynamic package/page update detected. Hot-reloading page catalog...");
+                            self.meta_cache.clear();
+                            self.refresh_pages().await;
+                            continue;
+                        }
+                        let Some((db, instance)) = payload.split_once('|') else { continue };
+                        let own = instance == service.instance().to_string();
+                        if !own && (service.db_key().as_deref() == Some(db) || db == "*") {
+                            self.refresh_pages().await;
                         }
                     }
                 }
@@ -1519,6 +1626,7 @@ impl BosEngine {
             return_value: run.return_value,
             logs: run.logs,
             fuel_used: run.fuel_used,
+            notifications: run.notifications,
         })
     }
 
@@ -1528,6 +1636,16 @@ impl BosEngine {
         let pool = self.pool().await;
 
         MetaManager::list_packages(&pool).await
+    }
+
+    /// Register or update a package in the catalog (_bos_meta_packages)
+    pub async fn register_package(
+        &self,
+        req: meta_manager::RegisterPackageRequest,
+    ) -> Result<meta_manager::PackageSummary, RuntimeError> {
+        let pool = self.pool().await;
+
+        MetaManager::register_package(&pool, req).await
     }
 
     /// Install a .bospkg package bundle
@@ -1551,6 +1669,9 @@ impl BosEngine {
         self.meta_cache.clear();
 
         let _ = sqlx::query("SELECT pg_notify('bos_meta_channel', '*');")
+            .execute(&pool)
+            .await;
+        let _ = sqlx::query("SELECT pg_notify('bos_pages_channel', '*|external');")
             .execute(&pool)
             .await;
 
@@ -1754,7 +1875,7 @@ impl BosEngine {
 
                     company_id: None,
 
-                    tenant_id,
+                    tenant_id: Some(tenant_id),
 
                     code: c_code.to_string(),
 
@@ -1768,7 +1889,7 @@ impl BosEngine {
             if req.import_base_packages {
                 let mut pkgs = Vec::new();
 
-                pkgs.push("bos.security".to_string());
+                pkgs.push("bos.core".to_string());
 
                 for p in &req.packages {
                     let pt = p.trim().to_string();
@@ -1866,7 +1987,7 @@ impl BosEngine {
 
                     company_id: None,
 
-                    tenant_id,
+                    tenant_id: Some(tenant_id),
 
                     code: c_code.to_string(),
 
@@ -1880,7 +2001,7 @@ impl BosEngine {
             if req.import_base_packages {
                 let mut pkgs = Vec::new();
 
-                pkgs.push("bos.security".to_string());
+                pkgs.push("bos.core".to_string());
 
                 for p in &req.packages {
                     let pt = p.trim().to_string();
@@ -2361,8 +2482,78 @@ impl BosEngine {
         }
 
         // If no explicit permission found and user is not admin, deny
-
         Ok(false)
+    }
+
+    /// Return the list of excluded (masked/redacted) fields for a given entity and security context
+    pub async fn get_excluded_fields(
+        &self,
+        ctx: &SessionContext,
+        entity: &str,
+    ) -> Result<Vec<String>, RuntimeError> {
+        // Super/Admin roles have full access without field exclusions
+        if ctx.roles.iter().any(|r| {
+            r.eq_ignore_ascii_case("Admin")
+                || r.eq_ignore_ascii_case("Administrator")
+                || r.eq_ignore_ascii_case("Super")
+                || r.eq_ignore_ascii_case("Super_Admin")
+                || r.eq_ignore_ascii_case("System")
+                || r.eq_ignore_ascii_case("SystemWorker")
+        }) {
+            return Ok(Vec::new());
+        }
+
+        let psets = self.list_meta_objects(Some("permissionset")).await?;
+        let mut parsed_sets = Vec::new();
+        for ps_summary in psets {
+            if let Some(details) = self.get_meta_object(&ps_summary.object_name).await? {
+                if let Ok(ps_ir) = serde_json::from_value::<bosc_ir::PermissionSetIR>(details.definition) {
+                    parsed_sets.push(ps_ir);
+                }
+            }
+        }
+
+        let role_matched: Vec<&bosc_ir::PermissionSetIR> = parsed_sets
+            .iter()
+            .filter(|ps| ctx.roles.iter().any(|r| r.eq_ignore_ascii_case(&ps.name)))
+            .collect();
+
+        let active_sets: Vec<&bosc_ir::PermissionSetIR> = if !role_matched.is_empty() {
+            role_matched
+        } else {
+            parsed_sets.iter().collect()
+        };
+
+        let mut excluded = Vec::new();
+        for ps in active_sets {
+            for perm in &ps.permissions {
+                if perm.table_name.eq_ignore_ascii_case(entity) || perm.sql_table_name.eq_ignore_ascii_case(entity) {
+                    for f in &perm.exclude_fields {
+                        let f_lower = f.to_lowercase();
+                        if !excluded.contains(&f_lower) {
+                            excluded.push(f_lower);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(excluded)
+    }
+
+    /// Strip excluded fields from a JSON record row
+    pub fn mask_excluded_fields(record: &mut serde_json::Value, excluded_fields: &[String]) {
+        if excluded_fields.is_empty() {
+            return;
+        }
+        if let serde_json::Value::Object(map) = record {
+            for ex in excluded_fields {
+                let ex_clean = ex.to_lowercase().replace('_', "");
+                map.retain(|k, _| {
+                    let k_clean = k.to_lowercase().replace('_', "");
+                    k_clean != ex_clean
+                });
+            }
+        }
     }
 
     /// Execute a BOS View by name with pagination, filter, and sorting
@@ -3108,6 +3299,15 @@ impl BosEngine {
 
         data: serde_json::Value,
     ) -> Result<(Uuid, Vec<serde_json::Value>), RuntimeError> {
+        // C.4: Concurrency-safe Linear Audit Hash Chain Serialization
+        if table.eq_ignore_ascii_case("SecurityAuditLog") || table.eq_ignore_ascii_case("security_audit_log") {
+            let mut conn = scope.db.conn().await?;
+            // Advisory transaction lock 0x424F535F415544 (18654261559981876) locks audit insertion sequentially until COMMIT
+            let _ = sqlx::query("SELECT pg_advisory_xact_lock(18654261559981876)")
+                .execute(&mut *conn)
+                .await;
+        }
+
         let mut payload = data;
 
         let is_draft_insert = payload.get("status").and_then(|v| v.as_str()) == Some("Draft")
@@ -3164,30 +3364,8 @@ impl BosEngine {
             RuntimeError::Internal(format!("Record for '{}' must be a JSON object", table))
         })?;
 
-        // High-Performance Execution: Check AOT Prepared SQL Statement Registry first
-        let executed_prepared = if let Some(stmt) = self.prepared_statements.get_table_kind(table, "insert") {
-            let mut conn = scope.db.conn().await?;
-            let mut q = sqlx::query(&stmt.sql);
-            for p_name in &stmt.param_names {
-                let val = obj.get(p_name).or_else(|| {
-                    obj.iter()
-                        .find(|(k, _)| k.replace('_', "").eq_ignore_ascii_case(&p_name.replace('_', "")))
-                        .map(|(_, v)| v)
-                });
-                match val {
-                    Some(serde_json::Value::String(s)) => { q = q.bind(s.clone()); }
-                    Some(serde_json::Value::Number(n)) if n.is_i64() => { q = q.bind(n.as_i64()); }
-                    Some(serde_json::Value::Number(n)) => { q = q.bind(n.as_f64()); }
-                    Some(serde_json::Value::Bool(b)) => { q = q.bind(*b); }
-                    Some(serde_json::Value::Null) | None => { q = q.bind(Option::<String>::None); }
-                    Some(other) => { q = q.bind(other.to_string()); }
-                }
-            }
-            let res = q.execute(&mut *conn).await;
-            scope.db.track(res).is_ok()
-        } else {
-            false
-        };
+        // High-Performance Dynamic Tuple Insertion (robust against partial payloads, default values & typed nulls)
+        let executed_prepared = false;
 
         if !executed_prepared {
             let (columns, values) = Self::insert_tuple(obj, id, &scope.ctx, data_per_company)?;
@@ -3246,9 +3424,15 @@ impl BosEngine {
 
         let mut columns = vec!["\"_id\"".to_string(), "\"_tenant_id\"".to_string()];
 
+        let tenant_val = if ctx.tenant_id.is_nil() {
+            "NULL".to_string()
+        } else {
+            format!("'{}'::uuid", ctx.tenant_id)
+        };
+
         let mut values = vec![
             format!("'{}'::uuid", id),
-            format!("'{}'::uuid", ctx.tenant_id),
+            tenant_val,
         ];
 
         added.insert("_id".to_string());
@@ -3258,7 +3442,13 @@ impl BosEngine {
         if data_per_company {
             columns.push("\"_company_id\"".to_string());
 
-            values.push(format!("'{}'::uuid", ctx.company_id));
+            let comp_val = if ctx.company_id.is_nil() {
+                "NULL".to_string()
+            } else {
+                format!("'{}'::uuid", ctx.company_id)
+            };
+
+            values.push(comp_val);
 
             added.insert("_company_id".to_string());
         }
@@ -3272,7 +3462,9 @@ impl BosEngine {
 
             if added.contains(&col_name)
                 || col_name == "_system_messages"
+                || col_name == "system_messages"
                 || col_name == "_messages"
+                || col_name == "messages"
             {
                 continue;
             }
@@ -3363,7 +3555,10 @@ impl BosEngine {
             })?;
 
             for k in obj.keys().filter(|k| !k.starts_with('_')) {
-                column_set.insert(to_snake_case(k));
+                let sc = to_snake_case(k);
+                if sc != "system_messages" && sc != "messages" {
+                    column_set.insert(sc);
+                }
             }
         }
 
@@ -3388,17 +3583,28 @@ impl BosEngine {
                 .get("_id")
                 .and_then(|v| v.as_str())
                 .and_then(|s| Uuid::parse_str(s).ok())
-                .unwrap_or_else(Uuid::new_v4);
+                .unwrap_or_else(Uuid::now_v7);
 
             generated_ids.push(id);
 
+            let tenant_token = if scope.ctx.tenant_id.is_nil() {
+                "NULL".to_string()
+            } else {
+                format!("'{}'::uuid", scope.ctx.tenant_id)
+            };
+
             let mut val_tokens = vec![
                 format!("'{}'::uuid", id),
-                format!("'{}'::uuid", scope.ctx.tenant_id),
+                tenant_token,
             ];
 
             if data_per_company {
-                val_tokens.push(format!("'{}'::uuid", scope.ctx.company_id));
+                let comp_token = if scope.ctx.company_id.is_nil() {
+                    "NULL".to_string()
+                } else {
+                    format!("'{}'::uuid", scope.ctx.company_id)
+                };
+                val_tokens.push(comp_token);
             }
 
             let obj = p.as_object();
@@ -3735,7 +3941,17 @@ impl BosEngine {
 
         if let (Some(rec_obj), Some(patch_obj)) = (rec.as_object(), patch.as_object_mut()) {
             for (k, v) in rec_obj {
-                if !k.starts_with('_') && x_rec.as_object().and_then(|x| x.get(k)) != Some(v) {
+                let snake = to_snake_case(k);
+                if SYSTEM_WRITE_PROTECTED.contains(&k.as_str())
+                    || SYSTEM_WRITE_PROTECTED.contains(&snake.as_str())
+                    || k.starts_with('_')
+                {
+                    continue;
+                }
+                let in_x_rec = x_rec
+                    .as_object()
+                    .and_then(|x| x.get(k).or_else(|| x.get(&snake)));
+                if in_x_rec != Some(v) {
                     patch_obj.insert(k.clone(), v.clone());
                 }
             }
@@ -4380,7 +4596,7 @@ impl BosEngine {
     ) -> Result<Uuid, RuntimeError> {
         let pool = self.pool().await;
 
-        let job_id = Uuid::new_v4();
+        let job_id = Uuid::now_v7();
 
         let insert_query = r#"
 
@@ -4944,12 +5160,20 @@ impl BosEngine {
             _ => "to_jsonb(t.*)".to_string(),
         };
 
-        // Multi-tenant isolation WHERE conditions
-
-        let mut where_clauses = vec![format!("t.\"_tenant_id\" = '{}'", ctx.tenant_id)];
+        // Multi-tenant and company isolation WHERE conditions
+        let mut where_clauses = Vec::new();
+        if !ctx.tenant_id.is_nil() {
+            where_clauses.push(format!("t.\"_tenant_id\" = '{}'", ctx.tenant_id));
+        } else {
+            where_clauses.push("t.\"_tenant_id\" IS NULL".to_string());
+        }
 
         if data_per_company {
-            where_clauses.push(format!("t.\"_company_id\" = '{}'", ctx.company_id));
+            if !ctx.company_id.is_nil() {
+                where_clauses.push(format!("t.\"_company_id\" = '{}'", ctx.company_id));
+            } else {
+                where_clauses.push("t.\"_company_id\" IS NULL".to_string());
+            }
         }
 
         // Optional filter (supports JSON object or key:value)
@@ -5165,24 +5389,35 @@ impl BosEngine {
 
         self.apply_isolation_context(&mut tx, ctx).await?;
 
-        // Fast path: AOT Prepared Statement for full record lookup
+        // Fast path: AOT Prepared Statement for full record lookup (only if keyed on _id/id)
         let is_full_record = fields.map(|f| f.is_empty()).unwrap_or(true);
         if is_full_record {
             if let Some(stmt) = self.prepared_statements.get_table_kind(table, "get_by_id") {
-                let sql = format!("SELECT to_jsonb(t.*) FROM ({}) t", stmt.sql.trim_end_matches(';'));
-                let mut q = sqlx::query_scalar::<_, serde_json::Value>(&sql);
-                for p in &stmt.param_names {
-                    if p == "_tenant_id" {
-                        q = q.bind(ctx.tenant_id);
-                    } else if p == "_company_id" {
-                        q = q.bind(ctx.company_id);
-                    } else {
-                        q = q.bind(id.to_string());
+                let first_param = stmt.param_names.first().map(|s| s.as_str());
+                if first_param == Some("_id") {
+                    let sql = format!("SELECT to_jsonb(t.*) FROM ({}) t", stmt.sql.trim_end_matches(';'));
+                    let mut q = sqlx::query_scalar::<_, serde_json::Value>(&sql);
+                    for p in &stmt.param_names {
+                        if p == "_tenant_id" {
+                            if ctx.tenant_id.is_nil() {
+                                q = q.bind(Option::<Uuid>::None);
+                            } else {
+                                q = q.bind(Some(ctx.tenant_id));
+                            }
+                        } else if p == "_company_id" {
+                            if ctx.company_id.is_nil() {
+                                q = q.bind(Option::<Uuid>::None);
+                            } else {
+                                q = q.bind(Some(ctx.company_id));
+                            }
+                        } else {
+                            q = q.bind(id.to_string());
+                        }
                     }
+                    let row = q.fetch_optional(&mut *tx).await?;
+                    tx.commit().await?;
+                    return Ok(row);
                 }
-                let row = q.fetch_optional(&mut *tx).await?;
-                tx.commit().await?;
-                return Ok(row);
             }
         }
 
@@ -5228,39 +5463,40 @@ impl BosEngine {
             projection, physical_table
         );
 
-        let row = sqlx::query_scalar::<_, serde_json::Value>(&query)
+        let mut row = sqlx::query_scalar::<_, serde_json::Value>(&query)
             .bind(id)
             .fetch_optional(&mut *tx)
             .await?;
 
         tx.commit().await?;
 
+        if let Some(ref mut record) = row {
+            let excluded = self.get_excluded_fields(ctx, table).await.unwrap_or_default();
+            Self::mask_excluded_fields(record, &excluded);
+        }
+
         Ok(row)
     }
 
-    /// Compute FlowField live via generated subquery
-
+    /// Compute FlowField live via generated subquery with exact decimal arithmetic
     pub async fn calculate_flowfield(
         &self,
-
         table: &str,
-
         record_id: Uuid,
-
         computed_subquery: &str,
-    ) -> Result<f64, RuntimeError> {
+    ) -> Result<rust_decimal::Decimal, RuntimeError> {
         let pool = self.pool().await;
-
+        let safe_table = sanitize_identifier(table)?;
         let query = format!(
-            "SELECT {} as val FROM \"{}\" WHERE \"_id\" = '{}';",
-            computed_subquery, table, record_id
+            "SELECT COALESCE(({}), 0) as val FROM \"{}\" WHERE \"_id\" = $1;",
+            computed_subquery, safe_table
         );
-
-        let row = sqlx::query(&query).fetch_one(&pool).await?;
-
-        let val: Option<f64> = row.try_get("val").unwrap_or(Some(0.0));
-
-        Ok(val.unwrap_or(0.0))
+        let row = sqlx::query(&query)
+            .bind(record_id)
+            .fetch_one(&pool)
+            .await?;
+        let val: Option<rust_decimal::Decimal> = row.try_get("val").ok();
+        Ok(val.unwrap_or(rust_decimal::Decimal::ZERO))
     }
 
     /// Execute the business logic test suite. Everything the tests write is rolled back:
@@ -5291,7 +5527,50 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_company_only_mode_and_uuid_v7() {
+        // 1. UUIDv7 generation
+        let id1 = Uuid::now_v7();
+        let id2 = Uuid::now_v7();
+        assert!(id2 >= id1, "UUIDv7 must be time-ordered");
 
+        // 2. CompanyInfo in company-only mode (tenant_id: None)
+        let company = CompanyInfo {
+            company_id: id1,
+            tenant_id: None,
+            code: "CRONUS".to_string(),
+            name: "Cronus Enterprise".to_string(),
+            is_active: true,
+            created_at: chrono::Utc::now(),
+        };
+        let serialized = serde_json::to_string(&company).expect("serializes");
+        let deserialized: CompanyInfo = serde_json::from_str(&serialized).expect("deserializes");
+        assert_eq!(deserialized.company_id, id1);
+        assert_eq!(deserialized.tenant_id, None);
+        assert_eq!(deserialized.code, "CRONUS");
+
+        // 3. insert_tuple in company-only mode emits NULL for _tenant_id and UUID for _company_id
+        let ctx = SessionContext {
+            tenant_id: Uuid::nil(),
+            company_id: id1,
+            user_id: id2,
+            roles: vec!["admin".to_string()],
+        };
+        let mut obj = serde_json::Map::new();
+        obj.insert("code".to_string(), serde_json::json!("CUST001"));
+        obj.insert("name".to_string(), serde_json::json!("Acme Corp"));
+
+        let (cols, vals) = BosEngine::insert_tuple(&obj, id2, &ctx, true).expect("insert_tuple");
+        assert!(cols.contains(&"\"_tenant_id\"".to_string()));
+        assert!(cols.contains(&"\"_company_id\"".to_string()));
+
+        let tenant_val_idx = cols.iter().position(|c| c == "\"_tenant_id\"").unwrap();
+        assert_eq!(vals[tenant_val_idx], "NULL");
+
+        let comp_val_idx = cols.iter().position(|c| c == "\"_company_id\"").unwrap();
+        assert_eq!(vals[comp_val_idx], format!("'{}'::uuid", id1));
+    }
+
+    #[test]
     fn test_sanitize_identifier() {
         assert!(sanitize_identifier("code").is_ok());
 
@@ -5376,6 +5655,8 @@ mod tests {
 
             prepared_statements: Arc::new(PreparedStatementRegistry::new()),
 
+            emergency_sessions: Arc::new(dashmap::DashMap::new()),
+
             pages: Arc::new(arc_swap::ArcSwapOption::empty()),
         };
 
@@ -5391,7 +5672,7 @@ mod tests {
 
         let sample = meta_manager::MetaObjectDetails {
             summary: meta_manager::MetaObjectSummary {
-                object_id: Uuid::new_v4(),
+                object_id: Uuid::now_v7(),
 
                 object_type: "table".to_string(),
 
@@ -5408,6 +5689,8 @@ mod tests {
                 status: "active".to_string(),
 
                 created_at: chrono::Utc::now(),
+                feature: None,
+                definition: None,
             },
 
             fields: vec![],

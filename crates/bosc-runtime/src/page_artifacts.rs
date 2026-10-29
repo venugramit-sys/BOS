@@ -715,7 +715,7 @@ impl PageService {
     /// Compiles every page whose artifact is missing: role centers first, then lists, then the rest.
     pub async fn warm(&self) -> Vec<(String, String)> {
         let Some(state) = self.state.load_full() else { return Vec::new() };
-        let mut todo: Vec<Arc<PageEntry>> =
+        let mut pending_entries: Vec<Arc<PageEntry>> =
             state.entries.values().filter(|e| !self.db_dir(&state.db_key).join(&e.file).is_file()).cloned().collect();
         let rank = |t: PageType| match t {
             PageType::RoleCenter => 0,
@@ -723,10 +723,10 @@ impl PageService {
             PageType::Card | PageType::Document => 2,
             _ => 3,
         };
-        todo.sort_by(|a, b| (rank(a.compiled.page_type), &a.name).cmp(&(rank(b.compiled.page_type), &b.name)));
+        pending_entries.sort_by(|a, b| (rank(a.compiled.page_type), &a.name).cmp(&(rank(b.compiled.page_type), &b.name)));
         let mut failures = Vec::new();
         let workers = self.compiler.as_ref().map(|c| c.workers()).unwrap_or(1).max(1);
-        for chunk in todo.chunks(workers) {
+        for chunk in pending_entries.chunks(workers) {
             let results = futures_util::future::join_all(chunk.iter().map(|e| self.ensure(&state.db_key, e))).await;
             for (entry, r) in chunk.iter().zip(results) {
                 if let Err(e) = r {

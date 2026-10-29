@@ -64,6 +64,21 @@ class ShellState {
     })()
   );
 
+  token = $state(
+    (() => {
+      if (typeof window === "undefined") return "";
+      try {
+        const cached = JSON.parse(localStorage.getItem("bos_session") || "null");
+        if (cached?.token) return cached.token;
+        const direct = localStorage.getItem("bos_auth_token");
+        if (direct) return direct;
+      } catch {
+        return "";
+      }
+      return "";
+    })()
+  );
+
   currentUser = $state(
     (() => {
       if (typeof window === "undefined") return null;
@@ -119,6 +134,30 @@ class ShellState {
     return this.openTabs.find((t) => t.id === this.activeTabId) || null;
   }
 
+  // Active company display name: always resolves to real human-friendly company name
+  get companyDisplayName() {
+    if (!this.activeCompany) return "Main Company";
+    const found = this.companies?.find(
+      (c) => c.code === this.activeCompany || c.name === this.activeCompany
+    );
+    if (found?.name) {
+      return this.formatCompanyName(found.name);
+    }
+    return this.formatCompanyName(this.activeCompany);
+  }
+
+  formatCompanyName(raw) {
+    if (!raw) return "Main Company";
+    let cleaned = String(raw).trim().replace(/^Company\s+/i, "");
+    if (/^[A-Z0-9_]+$/.test(cleaned) && (cleaned.includes("_") || cleaned === cleaned.toUpperCase())) {
+      return cleaned
+        .split("_")
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(" ");
+    }
+    return cleaned;
+  }
+
   addNotification({ title, message, time = "Just now" }) {
     this.notifications = [
       {
@@ -141,8 +180,28 @@ class ShellState {
     }
   }
 
+  getAuthHeaders() {
+    let tok = this.token;
+    if (!tok && typeof window !== "undefined") {
+      try {
+        const cached = JSON.parse(localStorage.getItem("bos_session") || "null");
+        tok = cached?.token || localStorage.getItem("bos_auth_token") || "";
+        if (tok) this.token = tok;
+      } catch {}
+    }
+    const headers = {
+      "Content-Type": "application/json"
+    };
+    if (tok) {
+      headers["Authorization"] = `Bearer ${tok}`;
+      headers["x-session-token"] = tok;
+    }
+    return headers;
+  }
+
   // Real Backend Synchronization Routine
   async refreshSystem() {
+    const headers = this.getAuthHeaders();
     try {
       const startTime = performance.now();
       const healthRes = await fetch("/api/health");
@@ -166,7 +225,7 @@ class ShellState {
 
     // Fetch current database
     try {
-      const dbRes = await fetch("/api/databases/current");
+      const dbRes = await fetch("/api/databases/current", { headers });
       if (dbRes.status === 401) {
         this.signOut();
         return;
@@ -183,13 +242,18 @@ class ShellState {
 
     // Fetch real companies
     try {
-      const compRes = await fetch("/api/companies");
+      const compRes = await fetch("/api/companies", { headers });
       if (compRes.ok) {
         const compData = await compRes.json();
         if (Array.isArray(compData)) {
           this.companies = compData;
-          if (compData.length > 0 && !this.activeCompany) {
-            this.activeCompany = compData[0].name || compData[0].code;
+          if (compData.length > 0) {
+            const current = compData.find((c) => c.code === this.activeCompany || c.name === this.activeCompany);
+            if (current) {
+              this.activeCompany = current.name || current.code;
+            } else if (!this.activeCompany || this.activeCompany === "MAIN_COMPANY" || this.activeCompany.startsWith("Company ")) {
+              this.activeCompany = compData[0].name || compData[0].code;
+            }
           }
         }
       }
@@ -199,12 +263,26 @@ class ShellState {
       }
     }
 
-    // Fetch real registered meta-objects
+    // Fetch real registered meta-objects with full definitions for menu meta-objects
     try {
-      const metaRes = await fetch("/api/meta/objects");
+      const metaRes = await fetch("/api/meta/objects", { headers });
       if (metaRes.ok) {
         const metaData = await metaRes.json();
-        this.metaObjects = Array.isArray(metaData) ? metaData : [];
+        const list = Array.isArray(metaData) ? metaData : [];
+        await Promise.all(
+          list
+            .filter((o) => o.object_type === "menu")
+            .map(async (menuObj) => {
+              try {
+                const detailRes = await fetch(`/api/meta/objects/${menuObj.object_name}`, { headers });
+                if (detailRes.ok) {
+                  const detail = await detailRes.json();
+                  menuObj.definition = detail.definition || detail;
+                }
+              } catch {}
+            })
+        );
+        this.metaObjects = list;
       }
     } catch {
       this.metaObjects = [];
@@ -212,7 +290,7 @@ class ShellState {
 
     // Fetch available databases
     try {
-      const dbsRes = await fetch("/api/databases");
+      const dbsRes = await fetch("/api/databases", { headers });
       if (dbsRes.ok) {
         const dbsData = await dbsRes.json();
         if (Array.isArray(dbsData)) {
@@ -402,6 +480,7 @@ class ShellState {
 
   signIn(session) {
     if (!session?.token || !session?.user?.id) return;
+    this.token = session.token;
     this.currentUser = sessionUser(session.user);
     this.isEmergencySession = Boolean(
       session.emergency_fallback || session.user?.is_emergency || session.maintenance_mode
@@ -409,6 +488,7 @@ class ShellState {
     this.maintenanceMode = Boolean(session.maintenance_mode);
     this.emergencyWarning = session.warning || session.auth_error || "";
     if (typeof window !== "undefined") {
+      localStorage.setItem("bos_auth_token", session.token);
       localStorage.setItem(
         "bos_session",
         JSON.stringify({
@@ -425,6 +505,7 @@ class ShellState {
   }
 
   signOut() {
+    this.token = "";
     this.currentUser = null;
     this.isEmergencySession = false;
     this.maintenanceMode = false;
@@ -432,6 +513,7 @@ class ShellState {
     this.openTabs = [];
     this.activeTabId = "";
     if (typeof window !== "undefined") {
+      localStorage.removeItem("bos_auth_token");
       localStorage.removeItem("bos_session");
       localStorage.removeItem("bos_user_profile");
     }
@@ -442,18 +524,46 @@ class ShellState {
   }
 
   // User Profile Management
-  updateUser(patch) {
+  async updateUser(patch) {
     if (!this.currentUser) return;
     this.currentUser = { ...this.currentUser, ...patch };
+
+    let token = "";
     if (typeof window !== "undefined") {
       try {
         const cached = JSON.parse(localStorage.getItem("bos_session") || "null");
         if (cached?.token) {
+          token = cached.token;
           cached.user = { ...cached.user, ...patch };
           localStorage.setItem("bos_session", JSON.stringify(cached));
         }
       } catch {
         // Ignored
+      }
+    }
+
+    if (token) {
+      try {
+        const res = await fetch("/api/auth/profile", {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+            "x-session-token": token,
+          },
+          body: JSON.stringify(patch),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message || err.error || "Failed to persist profile to server");
+        }
+        const data = await res.json();
+        if (data.user) {
+          this.currentUser = sessionUser(data.user);
+        }
+      } catch (e) {
+        console.error("Failed to persist user profile to backend:", e);
+        throw e;
       }
     }
   }
@@ -463,4 +573,5 @@ export const shell = new ShellState();
 // Auto-initialize theme on client
 if (typeof window !== "undefined") {
   shell.initTheme();
+  window.__bos_shell = shell;
 }

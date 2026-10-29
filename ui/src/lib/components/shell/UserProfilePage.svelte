@@ -57,19 +57,30 @@
       .toUpperCase();
   });
 
-  function handleSaveProfile(e) {
+  let isSaving = $state(false);
+  let saveError = $state("");
+
+  async function handleSaveProfile(e) {
     e?.preventDefault();
-    shell.updateUser({
-      name: formName,
-      designation: formDesignation,
-      email: formEmail,
-      department: formDepartment,
-      role: formRole
-    });
-    isSaved = true;
-    setTimeout(() => {
-      isSaved = false;
-    }, 3000);
+    isSaving = true;
+    saveError = "";
+    try {
+      await shell.updateUser({
+        name: formName,
+        designation: formDesignation,
+        email: formEmail,
+        department: formDepartment,
+        role: formRole
+      });
+      isSaved = true;
+      setTimeout(() => {
+        isSaved = false;
+      }, 3000);
+    } catch (err) {
+      saveError = err?.message || "Failed to save profile changes.";
+    } finally {
+      isSaving = false;
+    }
   }
 
   function handleReset() {

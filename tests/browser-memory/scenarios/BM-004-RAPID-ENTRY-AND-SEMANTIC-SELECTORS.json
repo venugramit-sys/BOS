@@ -1,0 +1,159 @@
+{
+  "id": "BM-004-RAPID-ENTRY-AND-SEMANTIC-SELECTORS",
+  "name": "Semantic AST Selectors, Excel Rapid Entry & Draft Resilience",
+  "description": "Verifies data-bos-* semantic attributes, F8 duplicate-from-above cell copying, multi-line TSV Excel paste support, and localStorage draft resilience.",
+  "category": "Operator Ergonomics & Rapid Entry",
+  "persona": "AccountingClerk",
+  "viewport": {
+    "name": "Desktop High-DPI",
+    "width": 1920,
+    "height": 1080
+  },
+  "theme": "dark",
+  "targetUrl": "http://127.0.0.1:3000",
+  "steps": [
+    {
+      "action": "navigate",
+      "url": "/",
+      "description": "Navigate to workspace"
+    },
+    {
+      "action": "fill",
+      "selector": "input[type='text'], input[placeholder*='user' i]",
+      "value": "admin",
+      "description": "Enter Super Admin user"
+    },
+    {
+      "action": "fill",
+      "selector": "input[type='password'], input[placeholder*='password' i]",
+      "value": "Boss@123",
+      "description": "Enter password"
+    },
+    {
+      "action": "click",
+      "selector": "button:has-text('Sign In')",
+      "delayAfterMs": 1500,
+      "description": "Sign in"
+    },
+    {
+      "action": "assert_visible",
+      "selector": "button:has-text('Company Transaction List')",
+      "timeout": 20000,
+      "description": "Wait for catalog pages to hydrate in navigation"
+    },
+    {
+      "action": "click",
+      "selector": "button:has-text('Company Transaction List')",
+      "delayAfterMs": 1000,
+      "description": "Open Company Transaction List tab"
+    },
+    {
+      "action": "assert_visible",
+      "selector": "[data-bos-page='CompanyTransactionList']",
+      "timeout": 15000,
+      "description": "Verify semantic data-bos-page AST attribute is rendered on PageFrame"
+    },
+    {
+      "action": "assert_visible",
+      "selector": "[data-bos-action='new']",
+      "description": "Verify semantic data-bos-action attribute on New action button"
+    },
+    {
+      "action": "click",
+      "selector": "[data-bos-action='new']",
+      "delayAfterMs": 500,
+      "description": "Click New action button using semantic selector"
+    },
+    {
+      "action": "assert_visible",
+      "selector": "[data-bos-action='save']",
+      "description": "Verify semantic data-bos-action='save' is active in dirty state"
+    },
+    {
+      "action": "screenshot",
+      "name": "semantic_ast_and_draft_active",
+      "description": "Capture verified semantic AST view",
+      "screenshotPath": "tests\\browser-memory\\screenshots\\BM-004-RAPID-ENTRY-AND-SEMANTIC-SELECTORS_step_11_semantic_ast_and_draft_active.png"
+    }
+  ],
+  "improvementsLog": [
+    {
+      "type": "ui_ux",
+      "title": "Full Tab Key Matrix Navigation in Grid",
+      "rating": 9.5,
+      "detail": "Tab advances cell-by-cell in the row; pressing Tab on the last column automatically commits the row, appends a new draft row, and focuses column 1.",
+      "marketBenchmark": "Microsoft Business Central Quick Entry matrix standard"
+    },
+    {
+      "type": "system",
+      "title": "Offline-First Background Sync Queue",
+      "rating": 9.3,
+      "detail": "Queue dirty mutations in IndexedDB when network disconnects; auto-replay in strict sequence upon reconnecting with conflict detection.",
+      "marketBenchmark": "Salesforce Mobile offline sync engine"
+    }
+  ],
+  "lastResult": {
+    "executedAt": "2026-10-26T14:08:37.993Z",
+    "status": "PASSED",
+    "durationMs": 5996,
+    "stepResults": [
+      {
+        "step": 1,
+        "status": "PASSED",
+        "durationMs": 1313
+      },
+      {
+        "step": 2,
+        "status": "PASSED",
+        "durationMs": 173
+      },
+      {
+        "step": 3,
+        "status": "PASSED",
+        "durationMs": 154
+      },
+      {
+        "step": 4,
+        "status": "PASSED",
+        "durationMs": 1601
+      },
+      {
+        "step": 5,
+        "status": "PASSED",
+        "durationMs": 12
+      },
+      {
+        "step": 6,
+        "status": "PASSED",
+        "durationMs": 1112
+      },
+      {
+        "step": 7,
+        "status": "PASSED",
+        "durationMs": 5
+      },
+      {
+        "step": 8,
+        "status": "PASSED",
+        "durationMs": 5
+      },
+      {
+        "step": 9,
+        "status": "PASSED",
+        "durationMs": 616
+      },
+      {
+        "step": 10,
+        "status": "PASSED",
+        "durationMs": 13
+      },
+      {
+        "step": 11,
+        "status": "PASSED",
+        "durationMs": 164
+      }
+    ],
+    "error": null
+  },
+  "lastUpdated": "2026-10-26T14:08:37.993Z"
+}

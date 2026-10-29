@@ -194,10 +194,165 @@ fn host_member_diagnostics(codeunits: &[CodeunitIR]) -> Vec<CompilerDiagnosticIR
         for method in &codeunit.methods {
             if let Some(script) = &method.script {
                 scan_host_members(script, &mut diags);
+                scan_codeunit_this(&codeunit.name, script, &mut diags);
             }
         }
     }
     diags
+}
+
+fn scan_codeunit_this(cu_name: &str, script: &str, diags: &mut Vec<CompilerDiagnosticIR>) {
+    let bytes = script.as_bytes();
+    let mut i = 0;
+    let mut in_string: Option<u8> = None;
+    while i + 5 <= bytes.len() {
+        let b = bytes[i];
+        if let Some(quote) = in_string {
+            if b == b'\\' {
+                i += 2;
+                continue;
+            }
+            if b == quote {
+                in_string = None;
+            }
+            i += 1;
+            continue;
+        }
+        if b == b'\'' || b == b'"' || b == b'`' {
+            in_string = Some(b);
+            i += 1;
+            continue;
+        }
+        if b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+            i += 2;
+            while i < bytes.len() && bytes[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+        if b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
+            i += 2;
+            while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                i += 1;
+            }
+            i += 2;
+            continue;
+        }
+
+        let is_boundary = i == 0 || (!bytes[i - 1].is_ascii_alphanumeric() && bytes[i - 1] != b'_' && bytes[i - 1] != b'$');
+        if is_boundary && bytes[i..].starts_with(b"this.") {
+            let start = i + 5;
+            let (first, _) = read_ident(script, start);
+            let ident = if first.is_empty() { "method" } else { &first };
+            diags.push(CompilerDiagnosticIR {
+                severity: "error".to_string(),
+                code: "BOS1003".to_string(),
+                message: format!("'this.{ident}' is not valid inside codeunit '{cu_name}'"),
+                line: 1,
+                column: 1,
+                end_line: 1,
+                end_column: 1,
+                hint: Some(format!("'this' is not bound inside QuickJS codeunits. Use 'self.{ident}(...)' or 'ctx.call(\"{cu_name}\", \"{ident}\", params)' or direct table operations.")),
+            });
+            i = start + first.len();
+            continue;
+        }
+        i += 1;
+    }
+}
+
+fn rewrite_codeunit_self(codeunits: &mut [CodeunitIR]) {
+    for codeunit in codeunits {
+        for method in &mut codeunit.methods {
+            if let Some(script) = method.script.as_mut() {
+                *script = rewrite_self_in_script(script, &codeunit.name);
+            }
+        }
+    }
+}
+
+fn rewrite_self_in_script(script: &str, cu_name: &str) -> String {
+    let bytes = script.as_bytes();
+    let mut out = String::with_capacity(script.len() + 32);
+    let mut i = 0;
+    let mut in_string: Option<u8> = None;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if let Some(quote) = in_string {
+            out.push(b as char);
+            if b == b'\\' {
+                if i + 1 < bytes.len() {
+                    i += 1;
+                    out.push(bytes[i] as char);
+                }
+                i += 1;
+                continue;
+            }
+            if b == quote {
+                in_string = None;
+            }
+            i += 1;
+            continue;
+        }
+        if b == b'\'' || b == b'"' || b == b'`' {
+            in_string = Some(b);
+            out.push(b as char);
+            i += 1;
+            continue;
+        }
+        if b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+            while i < bytes.len() && bytes[i] != b'\n' {
+                out.push(bytes[i] as char);
+                i += 1;
+            }
+            continue;
+        }
+        if b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
+            out.push('/');
+            out.push('*');
+            i += 2;
+            while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                out.push(bytes[i] as char);
+                i += 1;
+            }
+            if i + 1 < bytes.len() {
+                out.push('*');
+                out.push('/');
+                i += 2;
+            }
+            continue;
+        }
+
+        let is_boundary = i == 0 || (!bytes[i - 1].is_ascii_alphanumeric() && bytes[i - 1] != b'_' && bytes[i - 1] != b'$');
+        if is_boundary && bytes[i..].starts_with(b"self.") {
+            let start = i + 5;
+            let (method_name, end) = read_ident(script, start);
+            if !method_name.is_empty() {
+                let mut paren_idx = end;
+                while paren_idx < bytes.len() && (bytes[paren_idx] == b' ' || bytes[paren_idx] == b'\t' || bytes[paren_idx] == b'\r' || bytes[paren_idx] == b'\n') {
+                    paren_idx += 1;
+                }
+                if paren_idx < bytes.len() && bytes[paren_idx] == b'(' {
+                    let mut after_paren = paren_idx + 1;
+                    while after_paren < bytes.len() && (bytes[after_paren] == b' ' || bytes[after_paren] == b'\t' || bytes[after_paren] == b'\r' || bytes[after_paren] == b'\n') {
+                        after_paren += 1;
+                    }
+                    if after_paren < bytes.len() && bytes[after_paren] == b')' {
+                        out.push_str(&format!("ctx.call(\"{cu_name}\", \"{method_name}\")"));
+                        i = after_paren + 1;
+                        continue;
+                    } else {
+                        out.push_str(&format!("ctx.call(\"{cu_name}\", \"{method_name}\", "));
+                        i = after_paren;
+                        continue;
+                    }
+                }
+            }
+        }
+        out.push(b as char);
+        i += 1;
+    }
+    out
 }
 
 fn scan_host_members(script: &str, diags: &mut Vec<CompilerDiagnosticIR>) {
@@ -638,6 +793,7 @@ impl SemanticAnalyzer {
 
         let decimal_fields = decimal_field_names(&tables, &table_extensions);
         rewrite_decimal_scripts(&decimal_fields, &mut table_logics, &mut table_logic_extensions, &mut codeunits);
+        rewrite_codeunit_self(&mut codeunits);
         for table in &mut tables {
             for trigger in &mut table.triggers {
                 if let Some(script) = trigger.script.as_mut() {
@@ -1475,6 +1631,7 @@ impl SemanticAnalyzer {
             }
 
             let row_filter = perm.row_filter.as_ref().map(|f| lower_expr_to_sql_filter(f, &sql_table_name));
+            let exclude_fields = perm.exclude_fields.iter().map(|f| to_snake_case(f)).collect();
 
             permissions.push(TablePermissionIR {
                 table_name: perm.table_name.clone(),
@@ -1484,6 +1641,7 @@ impl SemanticAnalyzer {
                 can_modify,
                 can_delete,
                 row_filter,
+                exclude_fields,
             });
         }
 
@@ -1512,12 +1670,20 @@ impl SemanticAnalyzer {
 
         let mut select_fields = Vec::new();
         for sf in &v.select_fields {
+            let expr_str = match &sf.field_expr {
+                Expr::Ident(s) => format!("\"{}\"", to_snake_case(s)),
+                Expr::MemberAccess { object, member } => {
+                    format!("\"{}\".\"{}\"", format_expr(object), to_snake_case(member))
+                }
+                _ => format_expr(&sf.field_expr),
+            };
             select_fields.push(ViewSelectFieldIR {
-                expr: format_expr(&sf.field_expr),
-                alias: sf.alias.clone(),
+                expr: expr_str,
+                alias: sf.alias.as_ref().map(|a| to_snake_case(a)),
             });
         }
 
+        let src_table = to_snake_case(&v.source_table);
         let mut joins = Vec::new();
         for j in &v.joins {
             joins.push(ViewJoinIR {
@@ -1526,12 +1692,12 @@ impl SemanticAnalyzer {
                     JoinType::Inner => "INNER".to_string(),
                 },
                 target_table: to_snake_case(&j.target_table),
-                alias: j.alias.clone(),
-                condition: format_expr(&j.condition),
+                alias: j.alias.as_ref().map(|a| to_snake_case(a)),
+                condition: lower_expr_to_sql_filter(&j.condition, &to_snake_case(&j.target_table)),
             });
         }
 
-        let where_clause = v.where_filter.as_ref().map(|f| format_expr(f));
+        let where_clause = v.where_filter.as_ref().map(|f| lower_expr_to_sql_filter(f, &src_table));
 
         Ok(ViewIR {
             name: v.name.clone(),
@@ -2737,7 +2903,7 @@ mod tests {
         let mut parser = Parser::new(tokens);
         let program = parser.parse_program().expect("Parsing failed");
 
-        let analyzer = SemanticAnalyzer::new("bos.auth");
+        let analyzer = SemanticAnalyzer::new("bos.core");
         let model = analyzer.analyze_and_lower(&program).expect("Lowering failed");
 
         assert_eq!(model.tables.len(), 1);
@@ -2778,7 +2944,7 @@ mod tests {
         let mut parser = Parser::with_source(tokens, source.to_string());
         let program = parser.parse_program().expect("Parsing failed");
 
-        let analyzer = SemanticAnalyzer::new("bos.auth");
+        let analyzer = SemanticAnalyzer::new("bos.core");
         let model = analyzer.analyze_and_lower(&program).expect("Lowering failed");
 
         assert_eq!(model.tables.len(), 1);
@@ -3251,6 +3417,20 @@ mod tests {
         assert_eq!(menu.items.len(), 1);
         assert_eq!(menu.items[0].items.len(), 1);
         assert_eq!(menu.items[0].items[0].page.as_deref(), Some("CustomerList"));
+    }
+
+    #[test]
+    fn test_codeunit_this_diagnostic_and_self_lowering() {
+        let mut diags = Vec::new();
+        let bad_script = "const setup = this.GetAuthSetup();";
+        scan_codeunit_this("AuthManager", bad_script, &mut diags);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].code, "BOS1003");
+        assert!(diags[0].message.contains("'this.GetAuthSetup' is not valid"));
+
+        let self_script = "const setup = self.GetAuthSetup(); self.TerminateAllSessions(targetUser);";
+        let lowered = rewrite_self_in_script(self_script, "AuthManager");
+        assert_eq!(lowered, "const setup = ctx.call(\"AuthManager\", \"GetAuthSetup\"); ctx.call(\"AuthManager\", \"TerminateAllSessions\", targetUser);");
     }
 }
 

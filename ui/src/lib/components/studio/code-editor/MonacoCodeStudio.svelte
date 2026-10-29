@@ -101,6 +101,46 @@
 
   const QUICK_SNIPPETS = [
     {
+      id: "page-group",
+      label: "Page Group (Card Section)",
+      code: '        group(Details) {\n            caption = "Details";\n            field(code) { caption = "Code"; }\n            field(name) { caption = "Name"; }\n        }\n',
+    },
+    {
+      id: "page-field",
+      label: "Page Field",
+      code: '            field(status) {\n                caption = "Status";\n                editable = true;\n            }\n',
+    },
+    {
+      id: "page-repeater",
+      label: "Page Repeater (Grid Lines)",
+      code: '        repeater(Lines) {\n            caption = "Lines";\n            field(line_no) { caption = "Line No"; }\n            field(description) { caption = "Description"; }\n            field(amount) { caption = "Amount"; }\n        }\n',
+    },
+    {
+      id: "page-part",
+      label: "Page Part / Factbox",
+      code: '        part(FactBox, CustomerFactbox) {\n            caption = "Customer Details";\n            subFormLink = [customer_id == this.id];\n        }\n',
+    },
+    {
+      id: "page-action",
+      label: "Page Action",
+      code: '        action(Post) {\n            caption = "Post Document";\n            trigger onAction() {\n                ctx.ui.toast("Posted", "success");\n            }\n        }\n',
+    },
+    {
+      id: "ext-addlast",
+      label: "Page Extension addLast",
+      code: '        addLast(Content) {\n            group(CustomDetails) {\n                caption = "Custom Details";\n                field(custom_tag) { caption = "Custom Tag"; }\n            }\n        }\n',
+    },
+    {
+      id: "ext-addafter",
+      label: "Page Extension addAfter",
+      code: '        addAfter(General) {\n            group(Audit) {\n                caption = "Audit Trail";\n                field(audit_note) { caption = "Audit Note"; }\n            }\n        }\n',
+    },
+    {
+      id: "ext-modify",
+      label: "Page Extension modify",
+      code: '        modify(name) {\n            caption = "Legal Name";\n            editable = false;\n        }\n',
+    },
+    {
       id: "field",
       label: "Table Field (Column)",
       code: '    new_field: String(100) notNull default("");\n',
@@ -427,9 +467,28 @@
     }
   });
 
-  function getDefaultCatalogTable(fallback = "Record") {
-    const firstTbl = (studioStore.catalog || []).find((o) => o.object_type === "table");
+  function getDefaultCatalogTable(fallback = "Record", pkg = packageName) {
+    const cat = studioStore.catalog || [];
+    const pkgTbl = cat.find((o) => o.object_type === "table" && (o.package_name === pkg || o.package === pkg));
+    if (pkgTbl) return pkgTbl.name || pkgTbl.object_name;
+    const firstTbl = cat.find((o) => o.object_type === "table");
     return firstTbl?.name || firstTbl?.object_name || fallback;
+  }
+
+  function getDefaultCatalogPage(fallback = "CustomerCard", pkg = packageName) {
+    const cat = studioStore.catalog || [];
+    const pkgPage = cat.find((o) => o.object_type === "page" && (o.package_name === pkg || o.package === pkg));
+    if (pkgPage) return pkgPage.name || pkgPage.object_name;
+    const firstPage = cat.find((o) => o.object_type === "page");
+    return firstPage?.name || firstPage?.object_name || fallback;
+  }
+
+  function getDefaultCatalogEnum(fallback = "OrderStatus", pkg = packageName) {
+    const cat = studioStore.catalog || [];
+    const pkgEnum = cat.find((o) => o.object_type === "enum" && (o.package_name === pkg || o.package === pkg));
+    if (pkgEnum) return pkgEnum.name || pkgEnum.object_name;
+    const firstEnum = cat.find((o) => o.object_type === "enum");
+    return firstEnum?.name || firstEnum?.object_name || fallback;
   }
 
   function getBoilerplate(type, name) {
@@ -443,15 +502,19 @@
       case "statemachineextension":
         return `statemachine ${safeName} for ${activeTbl}.status {\n    initial state Draft {\n        allowModify: true;\n        allowDelete: true;\n    }\n    state PendingApproval {\n        allowModify: false;\n        allowDelete: false;\n    }\n    state Released {\n        allowModify: false;\n        allowDelete: false;\n    }\n\n    transition submit from Draft to PendingApproval {}\n    transition approve from PendingApproval to Released {}\n}\n`;
       case "page":
+        return `page ${safeName} for ${activeTbl} {\n    pageType = Card;\n    caption = "${safeName}";\n\n    layout {\n        area(Content) {\n            group(General) {\n                caption = "General";\n                field(code) { caption = "Code"; }\n                field(name) { caption = "Name"; }\n            }\n        }\n    }\n    actions {\n        area(Processing) {\n            action(Approve) {\n                caption = "Approve";\n            }\n        }\n    }\n}\n`;
       case "pageextension":
-        return `page ${safeName} {\n    pageType: Card;\n    sourceTable: ${activeTbl};\n    caption: "${safeName}";\n\n    layout {\n        group(General) {\n            field(code) { caption: "Code"; }\n            field(name) { caption: "Name"; }\n        }\n    }\n    actions {\n        action(Approve) {\n            caption: "Approve";\n        }\n    }\n}\n`;
+        const targetPage = getDefaultCatalogPage("VendorCard");
+        return `pageextension ${safeName} extends ${targetPage} {\n    layout {\n        addLast(Content) {\n            group(Audit) {\n                caption = "Audit and Compliance";\n                field(audit_status) { caption = "Audit Status"; }\n            }\n        }\n    }\n    actions {\n        addLast(Processing) {\n            action(AuditCheck) {\n                caption = "Run Audit Check";\n            }\n        }\n    }\n}\n`;
       case "query":
         return `query ${safeName} {\n    sourceTable: ${activeTbl};\n    columns {\n        column(id, id);\n        column(name, name);\n    }\n}\n`;
       case "view":
         return `view ${safeName} {\n    SELECT id FROM ${activeTableSql}\n}\n`;
       case "enum":
-      case "enumextension":
         return `enum ${safeName} {\n    extensible: true;\n    value(0, Draft);\n    value(1, Active);\n    value(2, Archived);\n}\n`;
+      case "enumextension":
+        const targetEnum = getDefaultCatalogEnum("OrderStatus");
+        return `enumextension ${safeName} extends ${targetEnum} {\n    value(10, CustomPending);\n    value(11, CustomVerified);\n}\n`;
       case "interface":
         return `interface ${safeName} {\n    procedure calculate(amount: Decimal): Decimal;\n}\n`;
       case "permissionset":

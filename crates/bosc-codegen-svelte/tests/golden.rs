@@ -63,6 +63,7 @@ pub const UI_PAGES: &[&str] = &[
     "OrderBoard",
     "ActivityTimeline",
     "CustomerWorkspace",
+    "CustomDashboard",
 ];
 
 #[test]
@@ -146,8 +147,8 @@ fn hidden_controls_are_dropped_except_in_design_mode() {
 }
 
 #[test]
-fn bos_auth_pages_generate() {
-    let src = std::fs::read_to_string(Path::new(&crate_dir()).join("../../packages/bos.auth/package.bos")).unwrap();
+fn bos_core_pages_generate() {
+    let src = std::fs::read_to_string(Path::new(&crate_dir()).join("../../packages/bos.core/03_user_auth.bos")).unwrap();
     let model = compile_source(&src);
     for page in &model.pages {
         let out = generate(&compiled(&model, &page.name), GenerateOptions::default()).expect("generate");

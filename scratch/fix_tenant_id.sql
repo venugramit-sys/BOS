@@ -1,0 +1,2 @@
+UPDATE tenant_master SET _tenant_id = '00000000-0000-0000-0000-000000000000';
+UPDATE company_transaction SET _tenant_id = '00000000-0000-0000-0000-000000000000';

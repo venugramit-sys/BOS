@@ -1,0 +1,168 @@
+{
+  "id": "BM-002-MULTI-COMPANY-DATA-SEPARATION",
+  "name": "Multi-Strategy Data Separation & Company Isolation Verification",
+  "description": "Verifies data separation across shared_rls, partitioned, schema_per_company, and table_per_company models, confirming global shared master records vs company ledger isolation.",
+  "category": "Data Architecture & Multi-Tenancy",
+  "persona": "AccountingClerk",
+  "viewport": {
+    "name": "Desktop High-DPI",
+    "width": 1920,
+    "height": 1080
+  },
+  "theme": "dark",
+  "targetUrl": "http://127.0.0.1:3000",
+  "steps": [
+    {
+      "action": "navigate",
+      "url": "/",
+      "description": "Navigate to workspace"
+    },
+    {
+      "action": "fill",
+      "selector": "input[type='text'], input[placeholder*='user' i]",
+      "value": "admin",
+      "description": "Enter User ID"
+    },
+    {
+      "action": "fill",
+      "selector": "input[type='password'], input[placeholder*='password' i]",
+      "value": "Boss@123",
+      "description": "Enter password"
+    },
+    {
+      "action": "click",
+      "selector": "button:has-text('Sign In')",
+      "delayAfterMs": 1500,
+      "description": "Log in to workspace"
+    },
+    {
+      "action": "assert_visible",
+      "selector": "button:has-text('Tenant Master List')",
+      "timeout": 20000,
+      "description": "Wait for catalog pages to hydrate in sidebar navigation"
+    },
+    {
+      "action": "click",
+      "selector": "button:has-text('Tenant Master List')",
+      "delayAfterMs": 1000,
+      "description": "Open Tenant Master List (dataPerCompany = false)"
+    },
+    {
+      "action": "assert_visible",
+      "selector": ":text('SHARED_CURRENCY_USD')",
+      "timeout": 15000,
+      "description": "Verify tenant-wide shared currency is visible"
+    },
+    {
+      "action": "screenshot",
+      "name": "tenant_master_isolation_view",
+      "description": "Capture shared master view",
+      "screenshotPath": "tests\\browser-memory\\screenshots\\BM-002-MULTI-COMPANY-DATA-SEPARATION_step_8_tenant_master_isolation_view.png"
+    },
+    {
+      "action": "click",
+      "selector": "button:has-text('Company Transaction List')",
+      "delayAfterMs": 1000,
+      "description": "Open Company Transaction List (dataPerCompany = true)"
+    },
+    {
+      "action": "assert_visible",
+      "selector": "button:has-text('New')",
+      "timeout": 15000,
+      "description": "Verify company transaction list rendered with New action"
+    },
+    {
+      "action": "screenshot",
+      "name": "company_transaction_isolation_view",
+      "description": "Capture company transaction view",
+      "screenshotPath": "tests\\browser-memory\\screenshots\\BM-002-MULTI-COMPANY-DATA-SEPARATION_step_11_company_transaction_isolation_view.png"
+    }
+  ],
+  "lastResult": {
+    "executedAt": "2026-10-26T14:08:17.117Z",
+    "status": "PASSED",
+    "durationMs": 6857,
+    "stepResults": [
+      {
+        "step": 1,
+        "status": "PASSED",
+        "durationMs": 1349
+      },
+      {
+        "step": 2,
+        "status": "PASSED",
+        "durationMs": 204
+      },
+      {
+        "step": 3,
+        "status": "PASSED",
+        "durationMs": 155
+      },
+      {
+        "step": 4,
+        "status": "PASSED",
+        "durationMs": 1629
+      },
+      {
+        "step": 5,
+        "status": "PASSED",
+        "durationMs": 214
+      },
+      {
+        "step": 6,
+        "status": "PASSED",
+        "durationMs": 1134
+      },
+      {
+        "step": 7,
+        "status": "PASSED",
+        "durationMs": 13
+      },
+      {
+        "step": 8,
+        "status": "PASSED",
+        "durationMs": 223
+      },
+      {
+        "step": 9,
+        "status": "PASSED",
+        "durationMs": 1126
+      },
+      {
+        "step": 10,
+        "status": "PASSED",
+        "durationMs": 10
+      },
+      {
+        "step": 11,
+        "status": "PASSED",
+        "durationMs": 60
+      }
+    ],
+    "error": null
+  },
+  "improvementsLog": [
+    {
+      "type": "system",
+      "title": "Declarative Cross-Company FlowField Query Pushdown",
+      "rating": 9.4,
+      "detail": "Enable FlowFields with 'crossCompany = true' to aggregate financial totals across all sister subsidiaries in real-time by generating dynamic UNION ALL views pushed down into PostgreSQL.",
+      "marketBenchmark": "Dynamics 365 Business Central ChangeCompany & SAP S/4HANA AMDP cross-client CDS views"
+    },
+    {
+      "type": "system",
+      "title": "Instant Tenant Offboarding via DROP PARTITION / SCHEMA",
+      "rating": 9.2,
+      "detail": "For GDPR and tenant deprovisioning, execute O(1) DROP TABLE ... PARTITION or DROP SCHEMA ... CASCADE rather than slow, locked row-by-row DELETE triggers.",
+      "marketBenchmark": "Enterprise SaaS regulatory compliance standard"
+    },
+    {
+      "type": "market_beating",
+      "title": "Zero-Copy Company Cloning via PostgreSQL Logical DDL",
+      "rating": 9.6,
+      "detail": "Provide 1-click 'Clone Company into Sandbox' using 'CREATE SCHEMA ... (LIKE ... INCLUDING ALL)'. Creates an exact replica of master tables and configuration without copying ledger history.",
+      "marketBenchmark": "Microsoft Business Central Company Copy tool, executed 10x faster"
+    }
+  ],
+  "lastUpdated": "2026-10-26T14:08:17.118Z"
+}

@@ -2,7 +2,7 @@
 //!
 //! * Public routes (docs/08 2.1) pass through untouched.
 //! * Every other `/api/*` route needs a session token in `Authorization: Bearer <token>`
-//!   or `x-session-token`. The token is verified through the `bos.auth` package
+//!   or `x-session-token`. The token is verified through the `bos.core` package
 //!   (`AuthManager.VerifySession`); the kernel keeps no session state of its own.
 //! * Client-supplied identity headers (`x-bos-session`, `x-bos-user-id`, `x-bos-roles`)
 //!   are always stripped; on success the guard injects a server-built `x-bos-session`
@@ -38,6 +38,13 @@ pub fn is_public_route(method: &Method, path: &str) -> bool {
         "/api/auth/login",
         "/api/detect-db",
         "/api/node/info",
+        "/api/v1/pages/manifest",
+        "/api/v1/pages/manifest/stream",
+        "/api/pages/LoginPage",
+        "/api/v1/pages/LoginPage",
+        "/api/pages/SignIn",
+        "/api/v1/pages/SignIn",
+        "/api/notifications/stream",
     ];
     if exact.contains(&path) {
         return true;
@@ -46,6 +53,15 @@ pub fn is_public_route(method: &Method, path: &str) -> bool {
         return true;
     }
     if path.starts_with("/api/setup/") {
+        return true;
+    }
+    // Unauthenticated login pages (LoginPage & SignIn) can run their sign-in action triggers
+    if (path.starts_with("/api/v1/pages/LoginPage/triggers/")
+        || path.starts_with("/api/pages/LoginPage/triggers/")
+        || path.starts_with("/api/v1/pages/SignIn/triggers/")
+        || path.starts_with("/api/pages/SignIn/triggers/"))
+        && method == Method::POST
+    {
         return true;
     }
     // Setup wizard only needs to list databases and test a connection before an account exists.
@@ -122,6 +138,16 @@ pub async fn resolve_session(
         tenant_id = default_tenant(engine).await;
     }
     let company_id = header_uuid(headers, "x-bos-company-id");
+
+    // Fast-path for active, registered emergency super admin sessions
+    if let Some(roles) = engine.validate_emergency_session(&token) {
+        return Ok(SessionContext {
+            tenant_id,
+            company_id,
+            user_id: Uuid::nil(),
+            roles,
+        });
+    }
     let lookup_ctx = SessionContext {
         tenant_id,
         company_id,
@@ -230,7 +256,7 @@ impl IdentityState {
     }
 }
 
-/// Count rows in the `bos.auth` identity tables across all tenants.
+/// Count rows in the `bos.core` identity tables across all tenants.
 pub async fn identity_state(engine: &BosEngine) -> IdentityState {
     let pool = engine.pool().await;
     let exists: bool = sqlx::query_scalar(
@@ -261,13 +287,14 @@ mod tests {
     fn public_routes_match_docs_08() {
         for p in ["/api/health", "/api/auth/status", "/api/auth/login", "/api/auth/bootstrap",
                   "/api/setup/status", "/api/setup/provision", "/api/detect-db", "/api/databases",
-                  "/api/node/info", "/", "/index.html"] {
+                  "/api/node/info", "/api/v1/pages/manifest", "/api/v1/pages/manifest/stream",
+                  "/", "/index.html"] {
             assert!(is_public_route(&Method::GET, p), "{p} should be public");
         }
         assert!(is_public_route(&Method::GET, "/api/auth/config"));
         assert!(!is_public_route(&Method::POST, "/api/auth/config"));
         for p in ["/api/entities/user", "/api/entities/role/1", "/api/query", "/api/permissions/check",
-                  "/api/packages/bos.auth/export", "/api/codeunits/AuthManager/run", "/api/script/apply",
+                  "/api/packages/bos.core/export", "/api/codeunits/AuthManager/run", "/api/script/apply",
                   "/api/meta/objects", "/api/tenants",
                   "/api/databases/switch", "/api/databases/current/manage", "/api/databases/x/packages/install"] {
             assert!(!is_public_route(&Method::GET, p), "{p} must be protected");

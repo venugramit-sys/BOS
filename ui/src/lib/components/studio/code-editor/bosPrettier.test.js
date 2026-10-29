@@ -67,7 +67,7 @@ test("reloaded table + tablelogic round-trip normalizes legacy unevenly indented
             {
               name: "onInsert",
               params: ["rec", "ctx"],
-              // Simulate legacy DB script where line 1 had 0 indent and line 2 had 8/16 spaces
+              // Test legacy DB script where line 1 had 0 indent and line 2 had 8/16 spaces
               script: 'const text = rec.content || "";\n                rec.content = text.trim();',
             },
           ],

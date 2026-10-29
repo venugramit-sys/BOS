@@ -46,7 +46,7 @@ foreach ($targetPath in $scanTargets) {
         ($_.FullName -notmatch '[\\/]target[\\/]') -and
         ($_.FullName -notmatch '[\\/]node_modules[\\/]') -and
         ($_.FullName -notmatch '[\\/]dist[\\/]') -and
-        ($IncludeTests -or ($_.FullName -notmatch '[\\/]tests[\\/]'))
+        ($IncludeTests -or ($_.FullName -notmatch '[\\/]tests[\\/]' -and $_.Name -notmatch '(_test(s)?|\.test)\.(rs|js|ts)$'))
     }
 
     foreach ($file in $files) {
@@ -70,8 +70,8 @@ foreach ($targetPath in $scanTargets) {
 
             foreach ($p in $patterns) {
                 if ($line -match $p.Pattern) {
-                    # Filter out this script itself or comments explaining audit
-                    if ($line -match 'audit_keywords\.json' -or $line -match 'detect_flaws\.ps1') {
+                    # Filter out this script itself, test assertions, or doc comments stating zero-mock/zero-dummy, or HTML input type dictionaries
+                    if ($line -match 'audit_keywords\.json' -or $line -match 'detect_flaws\.ps1' -or $line -match '(?i)zero[- ](mock|dummy)' -or $line -match 'without.*dummy' -or $line -match 'PASSWORD:\s*[''"]password[''"]' -or $line -match 'InputTypes|INPUT_TYPES') {
                         continue
                     }
 

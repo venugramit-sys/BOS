@@ -115,11 +115,74 @@ export class PageDesignerModel {
   }
   /** Compiled control at the selected path (auto-filled values, data binding). */
   get selectedCompiled() {
-    return this.selected ? (this.compiledControls.find((c) => c.path === this.selected) ?? null) : null;
+    if (!this.selected) return null;
+    if (this.selected === "header:title") {
+      return {
+        path: "header:title",
+        kind: "headline",
+        name: "Title",
+        caption: this.compiled?.caption ?? this.object?.caption ?? this.name,
+        style: this.compiled?.style ?? this.object?.style ?? {},
+        visible: true
+      };
+    }
+    if (this.selected === "header:instruction") {
+      return {
+        path: "header:instruction",
+        kind: "label",
+        name: "Instruction",
+        caption: this.compiled?.instructional_text ?? this.object?.instructional_text ?? "",
+        visible: Boolean(this.compiled?.instructional_text ?? this.object?.instructional_text)
+      };
+    }
+    if (this.selected === "header") {
+      return {
+        path: "header",
+        kind: "header",
+        name: "Header",
+        caption: "Page Header",
+        style: this.compiled?.style ?? this.object?.style ?? {},
+        visible: true
+      };
+    }
+    return this.compiledControls.find((c) => c.path === this.selected) ?? null;
   }
   /** Authored outline node at the selected path (develop mode). */
   get selectedNode() {
-    return this.selected && this.selected !== "page" ? findNode([...this.nodes, ...this.actionNodes], this.selected) : null;
+    if (!this.selected || this.selected === "page") return null;
+    if (this.selected === "header:title") {
+      return {
+        path: "header:title",
+        kind: "headline",
+        name: "Title",
+        caption: this.object?.caption ?? this.name,
+        style: this.object?.style ?? {},
+        blocks: this.object?.blocks ?? [],
+        props: this.object?.props ?? []
+      };
+    }
+    if (this.selected === "header:instruction") {
+      return {
+        path: "header:instruction",
+        kind: "label",
+        name: "Instruction",
+        caption: this.object?.instructional_text ?? "",
+        blocks: this.object?.blocks ?? [],
+        props: this.object?.props ?? []
+      };
+    }
+    if (this.selected === "header") {
+      return {
+        path: "header",
+        kind: "header",
+        name: "Header",
+        caption: "Page Header",
+        style: this.object?.style ?? {},
+        blocks: this.object?.blocks ?? [],
+        props: this.object?.props ?? []
+      };
+    }
+    return findNode([...this.nodes, ...this.actionNodes], this.selected);
   }
   get selectedAction() {
     if (!this.selected?.startsWith("action:")) return null;
@@ -133,6 +196,80 @@ export class PageDesignerModel {
   get unplacedFields() {
     const placed = new Set(this.compiledControls.filter((c) => c.field).map((c) => (c.field.source ?? c.name).toLowerCase()));
     return this.fields.filter((f) => !placed.has(f.name.toLowerCase()));
+  }
+  /** Page variables declared on the page. */
+  get variables() {
+    if (this.compiled?.variables?.length) return this.compiled.variables;
+    if (this.ir?.variables?.length) return this.ir.variables;
+    const varsMatch = /variables\s*\{([^}]*)\}/i.exec(this.source);
+    if (varsMatch) {
+      const block = varsMatch[1];
+      const re = /([A-Za-z0-9_]+)\s*:\s*([^;{=]+)(?:=\s*([^;{]+))?(?:\{([^}]*)\})?;/g;
+      const parsed = [];
+      let m;
+      while ((m = re.exec(block)) !== null) {
+        const name = m[1].trim();
+        const data_type = m[2].trim();
+        const defVal = m[3] ? m[3].trim() : null;
+        const propsStr = m[4] || "";
+        const capMatch = /caption\s*=\s*"([^"]+)"/.exec(propsStr);
+        parsed.push({
+          name,
+          data_type,
+          caption: capMatch ? capMatch[1] : name,
+          default_value: defVal
+        });
+      }
+      return parsed;
+    }
+    return [];
+  }
+  /** Page variables not placed on the page yet. */
+  get unplacedVariables() {
+    const placed = new Set(this.compiledControls.filter((c) => c.field).map((c) => (c.field.source ?? c.field.key ?? c.name).toLowerCase()));
+    return this.variables.filter((v) => !placed.has(v.name.toLowerCase()));
+  }
+
+  /** Declares a new page variable inside the variables block in page source. */
+  async addVariable({ name, data_type, caption, default_value }) {
+    if (!name || !data_type) return;
+    this.#push();
+    let src = this.source;
+    let varDef = `        ${name}: ${data_type}`;
+    if (default_value) varDef += ` = ${default_value}`;
+    if (caption && caption !== name) varDef += ` { caption = "${caption}"; }`;
+    varDef += `;\n`;
+
+    const varsIndex = src.search(/\bvariables\s*\{/i);
+    if (varsIndex !== -1) {
+      const openBrace = src.indexOf("{", varsIndex);
+      let depth = 1;
+      let closeBrace = -1;
+      for (let i = openBrace + 1; i < src.length; i++) {
+        if (src[i] === "{") depth++;
+        else if (src[i] === "}") {
+          depth--;
+          if (depth === 0) {
+            closeBrace = i;
+            break;
+          }
+        }
+      }
+      if (closeBrace !== -1) {
+        src = src.slice(0, closeBrace) + varDef + src.slice(closeBrace);
+      }
+    } else {
+      const pageHeaderMatch = /page\s+[A-Za-z0-9_]+[^{]*\{/i.exec(src);
+      if (pageHeaderMatch) {
+        const insertPos = pageHeaderMatch.index + pageHeaderMatch[0].length;
+        const block = `\n    variables {\n${varDef}    }\n`;
+        src = src.slice(0, insertPos) + block + src.slice(insertPos);
+      }
+    }
+    this.source = src;
+    await this.#parse();
+    this.onSourceChange?.(this.source);
+    await this.refreshPreview(true);
   }
 
   // ----------------------------------------------------
@@ -163,8 +300,8 @@ export class PageDesignerModel {
       const compiled = this.apiPage || !knownPage ? null : await designerApi.compiled(this.targetPage).catch(() => null);
       this.#base = compiled?.base ?? null;
       this.#baseExtensions = compiled?.extensions ?? [];
-      this.customizable = Boolean(compiled);
-      this.mode = this.object || !this.customizable ? "develop" : "customize";
+      this.customizable = false;
+      this.mode = "develop";
       if (this.customizable) {
         const current = await designerApi.customization(this.targetPage);
         this.changes = { ...emptyChanges(), ...current.changes };
@@ -298,11 +435,8 @@ export class PageDesignerModel {
   setMode(mode) {
     if (mode === this.mode) return;
     if (mode === "develop" && !this.object) {
-      this.notice = "This page's source is not open here; open the page object in the Studio to develop it.";
+      this.notice = "This page's source is not open here; open the page object in the Studio to design it.";
       return;
-    }
-    if (mode === "customize" && this.source !== this.savedSource) {
-      this.notice = "Customize mode works on the published page; your unapplied Develop changes are kept and show again in Develop.";
     }
     this.mode = mode;
     this.undoStack = [];
@@ -339,7 +473,16 @@ export class PageDesignerModel {
 
   /** Whether the selected node is defined in this source (not by an extension or the base page). */
   isAuthored(path) {
-    return path === "page" || Boolean(findNode([...this.nodes, ...this.actionNodes], path));
+    if (this.objectKind === "page") {
+      return (
+        path === "page" ||
+        path === "header" ||
+        path === "header:title" ||
+        path === "header:instruction" ||
+        Boolean(findNode([...this.nodes, ...this.actionNodes], path))
+      );
+    }
+    return Boolean(findNode([...this.nodes, ...this.actionNodes], path));
   }
 
   /** Develop mode can only move or insert relative to controls this source defines. */
@@ -355,24 +498,32 @@ export class PageDesignerModel {
 
   /** Sets (or clears with `null`) a property of the selected control. `block`: `style` | `responsive`. */
   async setProperty(path, name, bosValue, { block = null, raw = null } = {}) {
+    let effectivePath = path;
+    let effectiveName = name;
+    if (path === "header:title" || path === "header") {
+      effectivePath = "page";
+    } else if (path === "header:instruction") {
+      effectivePath = "page";
+      if (name === "caption") effectiveName = "instructional_text";
+    }
     if (this.mode === "develop") {
-      const op = bosValue === null ? { op: "removeProperty", path, name, block } : { op: "setProperty", path, name, value: bosValue, block };
+      const op = bosValue === null ? { op: "removeProperty", path: effectivePath, name: effectiveName, block } : { op: "setProperty", path: effectivePath, name: effectiveName, value: bosValue, block };
       return this.applyOps([op]);
     }
     this.#push();
-    if (path === "page") {
+    if (effectivePath === "page") {
       const page = { ...(this.changes.page ?? {}) };
-      if (block === "style") page.style = { ...(page.style ?? {}), [name]: raw ?? undefined };
-      else page[name] = raw ?? undefined;
+      if (block === "style") page.style = { ...(page.style ?? {}), [effectiveName]: raw ?? undefined };
+      else page[effectiveName] = raw ?? undefined;
       this.changes = { ...this.changes, page };
-    } else if (path.startsWith("action:")) {
-      this.changes = patchAction($state.snapshot(this.changes), path.slice(7), { [name]: raw });
+    } else if (effectivePath.startsWith("action:")) {
+      this.changes = patchAction($state.snapshot(this.changes), effectivePath.slice(7), { [effectiveName]: raw });
     } else {
-      const control = lastSegment(path).name;
-      if (block === "style") this.changes = patchControl($state.snapshot(this.changes), control, { style: { [name]: raw } });
+      const control = lastSegment(effectivePath).name;
+      if (block === "style") this.changes = patchControl($state.snapshot(this.changes), control, { style: { [effectiveName]: raw } });
       else if (block === "responsive")
-        this.changes = patchControl($state.snapshot(this.changes), control, name === "hideBelow" ? { responsive: { hideBelow: raw } } : { responsive: { span: { [name]: raw } } });
-      else this.changes = patchControl($state.snapshot(this.changes), control, { [name]: raw });
+        this.changes = patchControl($state.snapshot(this.changes), control, effectiveName === "hideBelow" ? { responsive: { hideBelow: raw } } : { responsive: { span: { [effectiveName]: raw } } });
+      else this.changes = patchControl($state.snapshot(this.changes), control, { [effectiveName]: raw });
     }
     return this.refreshPreview();
   }
@@ -395,6 +546,24 @@ export class PageDesignerModel {
   /** Inserts a new control (develop) or adds a table field (customize) at `target`/`placement`. */
   async insertAt(item, target, placement) {
     if (this.mode === "develop") {
+      if (item.kind === "action_group") {
+        const name = "Group_" + Math.floor(Math.random() * 900 + 100);
+        return this.addActionGroup({
+          name,
+          caption: item.label ?? "Menu Group",
+          area: "Processing"
+        });
+      }
+      if (item.category === "actions" || item.kind === "action") {
+        const name = "Action_" + Math.floor(Math.random() * 900 + 100);
+        return this.addAction({
+          name,
+          caption: item.label ?? "New Action",
+          area: "Processing",
+          primary: false,
+          promoted: true
+        });
+      }
       if (target && !this.#editableHere(placement === "inside" ? target.path : parentOf(target.path))) return;
       if (!target && this.nodes.length === 0) {
         // Empty page: controls live in an area (NAV `area(Content)`).
@@ -445,6 +614,191 @@ export class PageDesignerModel {
     const other = siblings[i + delta];
     if (!other) return;
     return this.moveTo(path, other, delta < 0 ? "before" : "after");
+  }
+
+  /** Duplicates the selected control in develop mode. */
+  async duplicate(path) {
+    if (this.mode !== "develop" || !this.isAuthored(path)) {
+      this.notice = "Only authored controls in Develop mode can be duplicated.";
+      return;
+    }
+    const node = findNode([...this.nodes, ...this.actionNodes], path);
+    if (!node) return;
+    const { kind, name } = lastSegment(path);
+    const newName = `${name}_Copy`;
+    const source = `${kind}(${newName}) { caption = "${name} (Copy)"; }`;
+    return this.insertAt({ kind, source }, node, "after");
+  }
+
+  /**
+   * Adds an action to the page AST inside actions { area(...) { ... } }.
+   */
+  async addAction({
+    name,
+    caption,
+    area = "Processing",
+    group = null,
+    groupCaption = null,
+    icon = null,
+    primary = false,
+    promoted = false,
+    promotedCategory = null,
+    confirm = null,
+    shortcut = null,
+    tooltip = null,
+    runCodeunit = null,
+    openPage = null,
+    runPageMode = null,
+    runPageLink = null,
+    script = null
+  }) {
+    if (this.mode !== "develop") {
+      this.notice = "Actions can only be added in Develop mode.";
+      return;
+    }
+
+    const lines = [`action(${name}) {`];
+    if (caption) lines.push(`    caption = "${caption.replace(/"/g, '\\"')}";`);
+    if (icon) lines.push(`    icon = "${icon}";`);
+    if (primary) lines.push(`    primary = true;`);
+    if (promoted) lines.push(`    promoted = true;`);
+    if (promotedCategory) lines.push(`    promotedCategory = ${promotedCategory};`);
+    if (confirm) lines.push(`    confirm = "${confirm.replace(/"/g, '\\"')}";`);
+    if (shortcut) lines.push(`    shortcut = "${shortcut}";`);
+    if (tooltip) lines.push(`    tooltip = "${tooltip.replace(/"/g, '\\"')}";`);
+    if (runCodeunit) lines.push(`    runCodeunit = ${runCodeunit};`);
+    if (openPage) lines.push(`    openPage = ${openPage};`);
+    if (runPageMode) lines.push(`    runPageMode = ${runPageMode};`);
+    if (runPageLink) lines.push(`    runPageLink = "${runPageLink}";`);
+    if (script) {
+      lines.push(`    trigger onAction() {`);
+      lines.push(`        ${script}`);
+      lines.push(`    }`);
+    }
+    lines.push(`}`);
+    const actionSource = lines.join("\n");
+
+    const flatActions = flatten(this.actionNodes);
+    const areaNode = flatActions.find(
+      (n) => n.kind === "area" && n.name.toLowerCase() === area.toLowerCase()
+    );
+
+    if (group) {
+      const groupNode = flatActions.find(
+        (n) => n.kind === "group" && n.name.toLowerCase() === group.toLowerCase()
+      );
+      if (groupNode) {
+        await this.applyOps([{ op: "insert", parent: groupNode.path, before: null, source: actionSource }]);
+      } else if (areaNode) {
+        const grpCaption = groupCaption || group;
+        const groupSource = `group(${group}) {\n    caption = "${grpCaption.replace(/"/g, '\\"')}";\n${actionSource.split("\n").map((l) => "    " + l).join("\n")}\n}`;
+        await this.applyOps([{ op: "insert", parent: areaNode.path, before: null, source: groupSource }]);
+      } else {
+        const grpCaption = groupCaption || group;
+        const combined = `area(${area}) {\n    group(${group}) {\n        caption = "${grpCaption.replace(/"/g, '\\"')}";\n${actionSource.split("\n").map((l) => "        " + l).join("\n")}\n    }\n}`;
+        await this.applyOps([{ op: "insert", parent: "actions", before: null, source: combined }]);
+      }
+    } else {
+      if (areaNode) {
+        await this.applyOps([{ op: "insert", parent: areaNode.path, before: null, source: actionSource }]);
+      } else {
+        const combined = `area(${area}) {\n${actionSource.split("\n").map((l) => "    " + l).join("\n")}\n}`;
+        await this.applyOps([{ op: "insert", parent: "actions", before: null, source: combined }]);
+      }
+    }
+
+    this.selected = `action:${name}`;
+    await this.refreshPreview();
+  }
+
+  /**
+   * Adds an action menu group container inside an area.
+   */
+  async addActionGroup({ name, caption, area = "Processing" }) {
+    if (this.mode !== "develop") {
+      this.notice = "Action groups can only be added in Develop mode.";
+      return;
+    }
+    const groupSource = `group(${name}) {\n    caption = "${caption.replace(/"/g, '\\"')}";\n}`;
+    const flatActions = flatten(this.actionNodes);
+    const areaNode = flatActions.find(
+      (n) => n.kind === "area" && n.name.toLowerCase() === area.toLowerCase()
+    );
+    if (areaNode) {
+      await this.applyOps([{ op: "insert", parent: areaNode.path, before: null, source: groupSource }]);
+    } else {
+      const combined = `area(${area}) {\n${groupSource.split("\n").map((l) => "    " + l).join("\n")}\n}`;
+      await this.applyOps([{ op: "insert", parent: "actions", before: null, source: combined }]);
+    }
+    await this.refreshPreview();
+  }
+
+  /**
+   * Deletes an action or action group.
+   */
+  async removeAction(nameOrPath) {
+    if (this.mode !== "develop") {
+      return this.remove(nameOrPath.startsWith("action:") ? nameOrPath : `action:${nameOrPath}`);
+    }
+    const flat = flatten(this.actionNodes);
+    const target = nameOrPath.startsWith("action:") ? nameOrPath.slice(7) : nameOrPath;
+    const node = flat.find((n) => n.name.toLowerCase() === target.toLowerCase() || n.path === nameOrPath);
+    if (node) {
+      if (this.selected?.toLowerCase().includes(target.toLowerCase())) this.selected = null;
+      return this.applyOps([{ op: "delete", path: node.path }]);
+    }
+  }
+
+  /**
+   * Moves an action up or down relative to sibling actions.
+   */
+  async moveAction(nameOrPath, delta) {
+    if (this.mode !== "develop") return;
+    const flat = flatten(this.actionNodes);
+    const target = nameOrPath.startsWith("action:") ? nameOrPath.slice(7) : nameOrPath;
+    const node = flat.find((n) => n.name.toLowerCase() === target.toLowerCase() || n.path === nameOrPath);
+    if (!node) return;
+    const parent = node.path.slice(0, node.path.lastIndexOf("/"));
+    const siblings = flat.filter((n) => n.path.slice(0, n.path.lastIndexOf("/")) === parent);
+    const i = siblings.findIndex((n) => n.path === node.path);
+    const other = siblings[i + delta];
+    if (!other) return;
+    const before = delta < 0 ? other.path : (siblings[i + 2]?.path ?? null);
+    return this.applyOps([{ op: "move", path: node.path, parent, before }]);
+  }
+
+  /**
+   * Reorders an action relative to a target action directly on the canvas action bar.
+   */
+  async reorderAction(sourceName, targetName) {
+    if (this.mode !== "develop" || sourceName === targetName) return;
+    const flat = flatten(this.actionNodes);
+    const sourceNode = flat.find((n) => n.name.toLowerCase() === sourceName.toLowerCase());
+    const targetNode = flat.find((n) => n.name.toLowerCase() === targetName.toLowerCase());
+    if (!sourceNode || !targetNode) return;
+    const parent = targetNode.path.slice(0, targetNode.path.lastIndexOf("/"));
+    await this.applyOps([{ op: "move", path: sourceNode.path, parent, before: targetNode.path }]);
+  }
+
+  /**
+   * 1-Click companion codeunit scaffolding to resolve BOS3004.
+   */
+  async scaffoldCodeunit(codeunitName) {
+    if (!codeunitName) return;
+    this.busy = true;
+    try {
+      const cuSource = `codeunit ${codeunitName} {\n    procedure Run() {\n        Message("${codeunitName} executed successfully.");\n    }\n}\n`;
+      const res = await StudioApi.applyScript(cuSource, this.packageName);
+      if (res?.applied === false || res?.success === false) {
+        throw new Error(res.message || "Failed to scaffold codeunit");
+      }
+      this.notice = `Codeunit '${codeunitName}' created and registered in ${this.packageName}.`;
+      await this.refreshPreview();
+    } catch (e) {
+      this.error = `Could not scaffold codeunit ${codeunitName}: ${e.message ?? e}`;
+    } finally {
+      this.busy = false;
+    }
   }
 
   // ----------------------------------------------------

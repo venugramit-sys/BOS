@@ -79,7 +79,7 @@ pub struct TenantInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompanyInfo {
     pub company_id: Uuid,
-    pub tenant_id: Uuid,
+    pub tenant_id: Option<Uuid>,
     pub code: String,
     pub name: String,
     pub is_active: bool,
@@ -98,9 +98,29 @@ pub struct CreateTenantRequest {
 pub struct CreateCompanyRequest {
     pub database: Option<String>,
     pub company_id: Option<Uuid>,
-    pub tenant_id: Uuid,
+    pub tenant_id: Option<Uuid>,
     pub code: String,
     pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CloneCompanyRequest {
+    pub database: Option<String>,
+    pub source_code: String,
+    pub target_code: String,
+    pub target_name: String,
+    pub tenant_id: Option<Uuid>,
+    #[serde(default)]
+    pub copy_data: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SchemaDriftReport {
+    pub status: String,
+    pub total_tables: usize,
+    pub unindexed_foreign_keys: Vec<String>,
+    pub issues_count: usize,
+    pub checked_at: String,
 }
 
 fn default_true() -> bool {
@@ -207,8 +227,14 @@ impl DatabaseManager {
         let query = r#"
             SELECT 
                 datname::text as name, 
-                COALESCE(pg_size_pretty(CASE WHEN has_database_privilege(datname, 'CONNECT') THEN pg_database_size(datname) ELSE NULL END), 'N/A') as size_pretty,
-                COALESCE(CASE WHEN has_database_privilege(datname, 'CONNECT') THEN pg_database_size(datname) ELSE 0 END, 0) as size_bytes
+                CASE 
+                    WHEN datname = current_database() THEN COALESCE(pg_size_pretty(pg_database_size(datname)), '0 bytes')
+                    ELSE 'Cached'
+                END as size_pretty,
+                CASE 
+                    WHEN datname = current_database() THEN COALESCE(pg_database_size(datname), 0)
+                    ELSE 0
+                END as size_bytes
             FROM pg_database 
             WHERE datistemplate = false 
             ORDER BY datname;
@@ -380,7 +406,7 @@ impl DatabaseManager {
                         || req.tenant_name.is_some()
                         || req.tenant_id.is_some();
                     if has_tenant {
-                        let t_id = req.tenant_id.unwrap_or_else(Uuid::new_v4);
+                        let t_id = req.tenant_id.unwrap_or_else(Uuid::now_v7);
                         let t_code = req
                             .tenant_code
                             .clone()
@@ -399,52 +425,51 @@ impl DatabaseManager {
                         .execute(&new_pool)
                         .await;
                         created_tenant_id = Some(t_id);
+                    }
 
-                        // If user specified initial company details, create them linked to the tenant
-                        let has_company = req.company_code.is_some()
-                            || req.company_name.is_some()
-                            || req.company_id.is_some();
-                        if has_company {
-                            let c_id = req.company_id.unwrap_or_else(Uuid::new_v4);
-                            let c_code = req
-                                .company_code
-                                .clone()
-                                .unwrap_or_else(|| "DEFAULT".to_string());
-                            let c_name = req
-                                .company_name
-                                .clone()
-                                .unwrap_or_else(|| "Default Company".to_string());
+                    // If user specified initial company details, create them (with or without tenant)
+                    let has_company = req.company_code.is_some()
+                        || req.company_name.is_some()
+                        || req.company_id.is_some();
+                    if has_company {
+                        let c_id = req.company_id.unwrap_or_else(Uuid::now_v7);
+                        let c_code = req
+                            .company_code
+                            .clone()
+                            .unwrap_or_else(|| "DEFAULT".to_string());
+                        let c_name = req
+                            .company_name
+                            .clone()
+                            .unwrap_or_else(|| "Default Company".to_string());
 
-                            let _ = sqlx::query(
-                                "INSERT INTO \"_bos_companies\" (\"company_id\", \"tenant_id\", \"code\", \"name\", \"is_active\", \"created_at\") VALUES ($1, $2, $3, $4, true, NOW()) ON CONFLICT (\"company_id\") DO NOTHING;"
-                            )
-                            .bind(c_id)
-                            .bind(t_id)
-                            .bind(&c_code)
-                            .bind(&c_name)
+                        let _ = sqlx::query(
+                            "INSERT INTO \"_bos_companies\" (\"company_id\", \"tenant_id\", \"code\", \"name\", \"is_active\", \"created_at\") VALUES ($1, $2, $3, $4, true, NOW()) ON CONFLICT (\"company_id\") DO NOTHING;"
+                        )
+                        .bind(c_id)
+                        .bind(created_tenant_id)
+                        .bind(&c_code)
+                        .bind(&c_name)
+                        .execute(&new_pool)
+                        .await;
+                        created_company_id = Some(c_id);
+
+                        if strat == "schema_per_company" {
+                            let schema =
+                                format!("comp_{}", c_code.to_lowercase().replace('-', "_"));
+                            let _ = sqlx::raw_sql(&format!(
+                                "CREATE SCHEMA IF NOT EXISTS \"{}\";",
+                                schema
+                            ))
                             .execute(&new_pool)
                             .await;
-                            created_company_id = Some(c_id);
-
-                            if strat == "schema_per_company" {
-                                let schema =
-                                    format!("comp_{}", c_code.to_lowercase().replace('-', "_"));
-                                let _ = sqlx::raw_sql(&format!(
-                                    "CREATE SCHEMA IF NOT EXISTS \"{}\";",
-                                    schema
-                                ))
-                                .execute(&new_pool)
-                                .await;
-                            }
                         }
                     }
 
                     // 4. Import base packages if requested (ADR 12 & ADR 24: Enterprise Security Package)
                     if req.import_base_packages {
                         let mut pkgs_to_install = Vec::new();
-                        // Always include core security and auth packages by default
-                        pkgs_to_install.push("bos.security".to_string());
-                        pkgs_to_install.push("bos.auth".to_string());
+                        // Always include canonical bos.core mega package by default
+                        pkgs_to_install.push("bos.core".to_string());
 
                         // Add any additional packages specified in request
                         for p in &req.packages {
@@ -552,11 +577,15 @@ impl DatabaseManager {
             }
         }
 
-        // 2. If pre-compiled .bospkg does not exist, compile dynamically from package.bos
+        // 2. If pre-compiled .bospkg does not exist, compile dynamically from package source
+        let pkg_suffix = pkg_id_clean.split('.').last().unwrap_or(pkg_id_clean);
         let mut package_bos_candidates = vec![
+                        format!("packages/{}/{}.bos", pkg_id_clean, pkg_suffix),
             format!("packages/{}/package.bos", pkg_id_clean),
             format!("packages/{}.bos", pkg_id_clean),
+                        format!("../../packages/{}/{}.bos", pkg_id_clean, pkg_suffix),
             format!("../../packages/{}/package.bos", pkg_id_clean),
+                        format!("../packages/{}/{}.bos", pkg_id_clean, pkg_suffix),
             format!("../packages/{}/package.bos", pkg_id_clean),
         ];
         if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
@@ -651,7 +680,7 @@ impl DatabaseManager {
         pool: &PgPool,
         req: CreateTenantRequest,
     ) -> Result<TenantInfo, RuntimeError> {
-        let tenant_id = req.tenant_id.unwrap_or_else(Uuid::new_v4);
+        let tenant_id = req.tenant_id.unwrap_or_else(Uuid::now_v7);
         let row = sqlx::query(
             "INSERT INTO \"_bos_tenants\" (\"tenant_id\", \"code\", \"name\", \"is_active\", \"created_at\") VALUES ($1, $2, $3, true, NOW()) RETURNING \"tenant_id\", \"code\", \"name\", \"is_active\", \"created_at\";"
         )
@@ -696,7 +725,7 @@ impl DatabaseManager {
         for r in rows {
             list.push(CompanyInfo {
                 company_id: r.try_get("company_id")?,
-                tenant_id: r.try_get("tenant_id")?,
+                tenant_id: r.try_get("tenant_id").ok(),
                 code: r.try_get("code")?,
                 name: r.try_get("name")?,
                 is_active: r.try_get("is_active")?,
@@ -712,7 +741,7 @@ impl DatabaseManager {
         req: CreateCompanyRequest,
         strategy_str: Option<&str>,
     ) -> Result<CompanyInfo, RuntimeError> {
-        let company_id = req.company_id.unwrap_or_else(Uuid::new_v4);
+        let company_id = req.company_id.unwrap_or_else(Uuid::now_v7);
         let row = sqlx::query(
             "INSERT INTO \"_bos_companies\" (\"company_id\", \"tenant_id\", \"code\", \"name\", \"is_active\", \"created_at\") VALUES ($1, $2, $3, $4, true, NOW()) RETURNING \"company_id\", \"tenant_id\", \"code\", \"name\", \"is_active\", \"created_at\";"
         )
@@ -725,7 +754,7 @@ impl DatabaseManager {
 
         let res = CompanyInfo {
             company_id: row.try_get("company_id")?,
-            tenant_id: row.try_get("tenant_id")?,
+            tenant_id: row.try_get("tenant_id").ok(),
             code: row.try_get("code")?,
             name: row.try_get("name")?,
             is_active: row.try_get("is_active")?,
@@ -740,6 +769,178 @@ impl DatabaseManager {
         }
 
         Ok(res)
+    }
+
+    /// Clone an existing company (optionally with ledger transactions)
+    pub async fn clone_company(
+        pool: &PgPool,
+        req: CloneCompanyRequest,
+        strategy_str: Option<&str>,
+    ) -> Result<CompanyInfo, RuntimeError> {
+        Self::validate_db_name(&req.target_code)?;
+        let new_company_id = Uuid::now_v7();
+
+        // 1. Insert target company into _bos_companies
+        let row = sqlx::query(
+            "INSERT INTO \"_bos_companies\" (\"company_id\", \"tenant_id\", \"code\", \"name\", \"is_active\", \"created_at\") VALUES ($1, $2, $3, $4, true, NOW()) RETURNING \"company_id\", \"tenant_id\", \"code\", \"name\", \"is_active\", \"created_at\";"
+        )
+        .bind(new_company_id)
+        .bind(req.tenant_id)
+        .bind(&req.target_code)
+        .bind(&req.target_name)
+        .fetch_one(pool)
+        .await?;
+
+        let res = CompanyInfo {
+            company_id: row.try_get("company_id")?,
+            tenant_id: row.try_get("tenant_id").ok(),
+            code: row.try_get("code")?,
+            name: row.try_get("name")?,
+            is_active: row.try_get("is_active")?,
+            created_at: row.try_get("created_at")?,
+        };
+
+        // 2. Physical cloning based on strategy
+        if strategy_str == Some("schema_per_company") {
+            let src_schema = format!("comp_{}", req.source_code.to_lowercase().replace('-', "_"));
+            let tgt_schema = format!("comp_{}", req.target_code.to_lowercase().replace('-', "_"));
+
+            sqlx::raw_sql(&format!("CREATE SCHEMA IF NOT EXISTS \"{}\";", tgt_schema))
+                .execute(pool)
+                .await?;
+
+            // Fetch all base tables in source schema
+            let tables: Vec<String> = sqlx::query_scalar(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = $1 AND table_type = 'BASE TABLE';"
+            )
+            .bind(&src_schema)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+
+            for tbl in tables {
+                let ddl = format!(
+                    "CREATE TABLE IF NOT EXISTS \"{}\".\"{}\" (LIKE \"{}\".\"{}\" INCLUDING ALL);",
+                    tgt_schema, tbl, src_schema, tbl
+                );
+                sqlx::raw_sql(&ddl).execute(pool).await?;
+
+                if req.copy_data {
+                    let copy_sql = format!(
+                        "INSERT INTO \"{}\".\"{}\" SELECT * FROM \"{}\".\"{}\";",
+                        tgt_schema, tbl, src_schema, tbl
+                    );
+                    let _ = sqlx::raw_sql(&copy_sql).execute(pool).await;
+                }
+            }
+        } else if strategy_str == Some("table_per_company") {
+            let src_prefix = format!("{}$", req.source_code.to_lowercase().replace('-', "_"));
+            let tgt_prefix = format!("{}$", req.target_code.to_lowercase().replace('-', "_"));
+
+            let tables: Vec<String> = sqlx::query_scalar(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name LIKE $1;"
+            )
+            .bind(format!("{}%", src_prefix))
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+
+            for tbl in tables {
+                if let Some(suffix) = tbl.strip_prefix(&src_prefix) {
+                    let tgt_tbl = format!("{}{}", tgt_prefix, suffix);
+                    let ddl = format!(
+                        "CREATE TABLE IF NOT EXISTS \"{}\" (LIKE \"{}\" INCLUDING ALL);",
+                        tgt_tbl, tbl
+                    );
+                    sqlx::raw_sql(&ddl).execute(pool).await?;
+
+                    if req.copy_data {
+                        let copy_sql = format!(
+                            "INSERT INTO \"{}\" SELECT * FROM \"{}\";",
+                            tgt_tbl, tbl
+                        );
+                        let _ = sqlx::raw_sql(&copy_sql).execute(pool).await;
+                    }
+                }
+            }
+        }
+
+        Ok(res)
+    }
+
+    /// Drop a company and its physical schemas/tables
+    pub async fn drop_company(
+        pool: &PgPool,
+        code: &str,
+        strategy_str: Option<&str>,
+    ) -> Result<(), RuntimeError> {
+        // Delete company record
+        sqlx::query("DELETE FROM \"_bos_companies\" WHERE LOWER(\"code\") = LOWER($1);")
+            .bind(code)
+            .execute(pool)
+            .await?;
+
+        if strategy_str == Some("schema_per_company") {
+            let schema = format!("comp_{}", code.to_lowercase().replace('-', "_"));
+            let drop_sql = format!("DROP SCHEMA IF EXISTS \"{}\" CASCADE;", schema);
+            let _ = sqlx::raw_sql(&drop_sql).execute(pool).await;
+        } else if strategy_str == Some("table_per_company") {
+            let prefix = format!("{}$", code.to_lowercase().replace('-', "_"));
+            let tables: Vec<String> = sqlx::query_scalar(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name LIKE $1;"
+            )
+            .bind(format!("{}%", prefix))
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+
+            for tbl in tables {
+                let _ = sqlx::raw_sql(&format!("DROP TABLE IF EXISTS \"{}\" CASCADE;", tbl))
+                    .execute(pool)
+                    .await;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Check for schema drifts and unindexed foreign keys across PostgreSQL tables
+    pub async fn check_schema_drift(pool: &PgPool) -> Result<SchemaDriftReport, RuntimeError> {
+        let total_tables: i64 = sqlx::query_scalar(
+            "SELECT count(*)::bigint FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema') AND table_type = 'BASE TABLE';"
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+
+        let unindexed_fks: Vec<String> = sqlx::query_scalar(
+            r#"
+            SELECT 
+                format('%s (%s)', c.conrelid::regclass::text, c.conname) AS issue
+            FROM pg_constraint c
+            WHERE c.contype = 'f'
+              AND NOT EXISTS (
+                  SELECT 1 FROM pg_index i 
+                  WHERE i.indrelid = c.conrelid 
+                    AND (i.indkey::int2[])[0] = (c.conkey)[1]
+              )
+            LIMIT 20;
+            "#
+        )
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+        let issues_count = unindexed_fks.len();
+        let status = if issues_count == 0 { "OPTIMAL".to_string() } else { "WARNING_UNINDEXED_FK".to_string() };
+
+        Ok(SchemaDriftReport {
+            status,
+            total_tables: total_tables as usize,
+            unindexed_foreign_keys: unindexed_fks,
+            issues_count,
+            checked_at: chrono::Utc::now().to_rfc3339(),
+        })
     }
 
     /// Drop a PostgreSQL database (optionally with force termination of open connections)

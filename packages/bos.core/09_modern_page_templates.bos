@@ -1,0 +1,772 @@
+// ============================================================================
+// BOS ENTERPRISE READY-MADE PAGE TEMPLATES COLLECTION
+// ============================================================================
+// Comprehensive modern page templates showcasing enterprise ERP patterns,
+// SaaS UX standards, and full BOS meta-object engine capabilities:
+//
+// 1. ExecutiveDashboardTemplate  (RoleCenter / C-Suite & Operations Cockpit)
+// 2. SetupWizardTemplate         (NavigatePage / Assisted Setup & Onboarding)
+// 3. SplitMasterDetailWorklist   (NavigatePage / 2-Column Split Worklist)
+// 4. KanbanPipelineTemplate      (NavigatePage / Visual Sales & Order Pipeline)
+// 5. DocumentCheckoutTemplate    (Document / FastTabs & High-Speed POS Order)
+// 6. AuditComplianceTimeline     (NavigatePage / Activity & Audit Trail)
+// 7. EnterpriseSettingsCenter    (Card / FastTabs Settings & Preferences Hub)
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// TEMPLATE 1: ExecutiveDashboardTemplate (RoleCenter)
+// ----------------------------------------------------------------------------
+// Operational overview, real-time financial metrics, KPI cue cards, and quick actions.
+// ----------------------------------------------------------------------------
+
+page ExecutiveDashboardTemplate {
+    pageType = RoleCenter;
+    caption = "Executive Operations Cockpit";
+    instructionalText = "High-level overview of enterprise revenue, open transactions, and pending operational tasks.";
+
+    variables {
+        grossRevenueYtd: Decimal = 1845200.50;
+        pendingApprovalsCount: Integer = 7;
+        openOrdersCount: Integer = 24;
+        systemHealthPct: Integer = 100;
+        monthlyGrowthPct: Decimal = 14.8;
+        activeTenantCount: Integer = 3;
+    }
+
+    layout {
+        area(RoleCenter) {
+            headline(WelcomeBanner) {
+                caption = "Welcome to BOS Enterprise Operations";
+                instructionalText = "All distributed ledgers are synchronized. System health is optimal at 99.99% uptime.";
+            }
+
+            cuegroup(FinancialKpis) {
+                caption = "Real-Time Financial Cues";
+                field(grossRevenueYtd) {
+                    caption = "Gross Revenue YTD (USD)";
+                }
+                field(monthlyGrowthPct) {
+                    caption = "MoM Growth Rate (%)";
+                }
+            }
+
+            cuegroup(OperationalQueues) {
+                caption = "Active Operational Queues";
+                field(pendingApprovalsCount) {
+                    caption = "Pending Approvals";
+                }
+                field(openOrdersCount) {
+                    caption = "Open Orders In Flight";
+                }
+                field(activeTenantCount) {
+                    caption = "Active Corporate Tenants";
+                }
+            }
+
+            group(SystemOverview) {
+                caption = "Platform Diagnostics & Integrity";
+                field(systemHealthPct) {
+                    caption = "Cluster Health Score (%)";
+                    editable = false;
+                }
+            }
+        }
+    }
+
+    actions {
+        action(NewSalesOrder) {
+            caption = "New Sales Order";
+            icon = "PlusCircle";
+            promoted = true;
+            onAction(rec, ctx) {
+                ctx.ui.notify("info", "Opening high-speed sales order document...");
+                return { action: "open_document", target: "DocumentCheckoutTemplate" };
+            }
+        }
+
+        action(ApprovePendingQueues) {
+            caption = "Batch Review Approvals";
+            icon = "CheckCircle2";
+            promoted = true;
+            onAction(rec, ctx) {
+                ctx.ui.notify("success", "Dispatched approval review workflow.");
+                return { reviewed: true };
+            }
+        }
+
+        action(RefreshKpis) {
+            caption = "Refresh Metrics";
+            icon = "RefreshCw";
+            onAction(rec, ctx) {
+                ctx.ui.notify("info", "Synchronizing telemetry from database cluster...");
+                return { refreshed: true };
+            }
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// TEMPLATE 2: SetupWizardTemplate (NavigatePage / Assisted Setup)
+// ----------------------------------------------------------------------------
+// Step-by-step guided onboarding wizard: Organization -> Fiscal -> Compliance -> Finish.
+// ----------------------------------------------------------------------------
+
+page SetupWizardTemplate {
+    pageType = NavigatePage;
+    caption = "Assisted Enterprise Setup Wizard";
+    instructionalText = "Follow the guided steps below to configure your company, currency, and regulatory compliance.";
+
+    variables {
+        currentStep: Integer = 1;
+        companyLegalName: String(100) = "Acme Global Industries Ltd";
+        registrationTaxId: String(50) = "GSTIN27AAAAA0000A1Z5";
+        industryVertical: String(50) = "Manufacturing & Logistics";
+        baseCurrency: String(10) = "USD";
+        fiscalStartMonth: Integer = 4;
+        enableMultiCurrency: Boolean = true;
+        dpdpConsentEnabled: Boolean = true;
+        enforceMfaPolicy: Boolean = true;
+        sessionTimeoutMinutes: Integer = 30;
+        setupCompleted: Boolean = false;
+    }
+
+    layout {
+        area(Content) {
+            group(Step1Organization) {
+                caption = "Step 1: Organization & Legal Identity";
+                instructionalText = "Enter the primary registered legal entity name and taxation identifier.";
+                field(companyLegalName) {
+                    caption = "Legal Entity Name";
+                    required = true;
+                }
+                field(registrationTaxId) {
+                    caption = "Tax / VAT / GST Registration No";
+                    required = true;
+                }
+                field(industryVertical) {
+                    caption = "Industry Classification";
+                }
+            }
+
+            group(Step2FiscalCalendar) {
+                caption = "Step 2: Financial Calendar & Base Currency";
+                instructionalText = "Define your functional reporting currency and fiscal accounting start period.";
+                field(baseCurrency) {
+                    caption = "Functional Base Currency";
+                    required = true;
+                }
+                field(fiscalStartMonth) {
+                    caption = "Fiscal Year Starting Month (1-12)";
+                }
+                field(enableMultiCurrency) {
+                    caption = "Enable Multi-Currency Real-Time Conversions";
+                }
+            }
+
+            group(Step3SecurityCompliance) {
+                caption = "Step 3: Security, Governance & DPDP Compliance";
+                instructionalText = "Configure data privacy, session protection, and two-factor authentication requirements.";
+                field(dpdpConsentEnabled) {
+                    caption = "Enforce India DPDP Act 2023 & GDPR Data Retention";
+                }
+                field(enforceMfaPolicy) {
+                    caption = "Mandate Multi-Factor Authentication (TOTP / Passkey)";
+                }
+                field(sessionTimeoutMinutes) {
+                    caption = "Session Idle Timeout (Minutes)";
+                }
+            }
+
+            group(Step4Confirmation) {
+                caption = "Step 4: Review & Initialize Platform";
+                instructionalText = "Review your configuration parameters before applying them to the operational schema.";
+                field(setupCompleted) {
+                    caption = "Configuration Verified and Ready for Production";
+                }
+            }
+        }
+    }
+
+    actions {
+        action(PreviousStep) {
+            caption = "Back";
+            icon = "ArrowLeft";
+            inFooterBar = true;
+            onAction(rec, ctx) {
+                const vars = (ctx.page && ctx.page.variables) || {};
+                let step = Number(vars.currentStep) || 1;
+                if (step > 1) {
+                    step -= 1;
+                    if (ctx.page && ctx.page.variables) ctx.page.variables.currentStep = step;
+                    ctx.ui.notify("info", "Navigated to step " + step);
+                }
+                return { currentStep: step };
+            }
+        }
+
+        action(NextStep) {
+            caption = "Continue";
+            icon = "ArrowRight";
+            primary = true;
+            inFooterBar = true;
+            onAction(rec, ctx) {
+                const vars = (ctx.page && ctx.page.variables) || {};
+                let step = Number(vars.currentStep) || 1;
+                if (step < 4) {
+                    step += 1;
+                    if (ctx.page && ctx.page.variables) ctx.page.variables.currentStep = step;
+                    ctx.ui.notify("info", "Advanced to step " + step);
+                } else {
+                    ctx.ui.notify("success", "Setup steps complete. Click Finish to initialize.");
+                }
+                return { currentStep: step };
+            }
+        }
+
+        action(FinishSetup) {
+            caption = "Initialize Workspace";
+            icon = "Check";
+            promoted = true;
+            inFooterBar = true;
+            onAction(rec, ctx) {
+                const vars = (ctx.page && ctx.page.variables) || {};
+                if (ctx.page && ctx.page.variables) ctx.page.variables.setupCompleted = true;
+                ctx.ui.notify("success", "Enterprise configuration committed successfully. Workspace initialized!");
+                return { success: true, completed: true };
+            }
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// TEMPLATE 3: SplitMasterDetailWorklist (NavigatePage / 2-Column Split View)
+// ----------------------------------------------------------------------------
+// High-productivity inbox & ledger reviewer layout like Linear, Zendesk, or Outlook.
+// ----------------------------------------------------------------------------
+
+page SplitMasterDetailWorklist {
+    pageType = NavigatePage;
+    caption = "Master-Detail Split Worklist";
+    instructionalText = "Review pending operational documents in the split list pane and inspect live line details on the right.";
+
+    variables {
+        selectedDocumentNo: String(30) = "DOC-2026-0042";
+        documentStatus: String(20) = "PendingReview";
+        customerName: String(100) = "Global Nexus Logistics Ltd";
+        documentTotal: Decimal = 12450.00;
+        documentCurrency: String(10) = "USD";
+        urgencyLevel: String(20) = "High";
+        auditNotes: String(250) = "Awaiting final credit limit clearance and tax exemption documentation.";
+    }
+
+    layout {
+        area(Content) {
+            group(WorklistHeader) {
+                caption = "Queue Information";
+                field(selectedDocumentNo) {
+                    caption = "Active Document No";
+                    editable = false;
+                }
+                field(documentStatus) {
+                    caption = "Workflow Status";
+                }
+                field(urgencyLevel) {
+                    caption = "Priority";
+                }
+            }
+
+            group(DocumentSummaryCard) {
+                caption = "Customer & Financial Overview";
+                field(customerName) {
+                    caption = "Customer Account";
+                }
+                field(documentTotal) {
+                    caption = "Total Amount";
+                }
+                field(documentCurrency) {
+                    caption = "Currency";
+                }
+                field(auditNotes) {
+                    caption = "Reviewer Notes";
+                }
+            }
+        }
+    }
+
+    actions {
+        action(ApproveDocument) {
+            caption = "Approve Record";
+            icon = "CheckCircle";
+            primary = true;
+            inFooterBar = true;
+            onAction(rec, ctx) {
+                if (ctx.page && ctx.page.variables) {
+                    ctx.page.variables.documentStatus = "Approved";
+                }
+                ctx.ui.notify("success", "Document approved and transitioned to next ledger stage.");
+                return { status: "Approved" };
+            }
+        }
+
+        action(RejectDocument) {
+            caption = "Reject Record";
+            icon = "XCircle";
+            inFooterBar = true;
+            onAction(rec, ctx) {
+                if (ctx.page && ctx.page.variables) {
+                    ctx.page.variables.documentStatus = "Rejected";
+                }
+                ctx.ui.notify("warning", "Document rejected with notification dispatched to submitter.");
+                return { status: "Rejected" };
+            }
+        }
+
+        action(PutOnHold) {
+            caption = "Hold for Clarification";
+            icon = "Clock";
+            inFooterBar = true;
+            onAction(rec, ctx) {
+                if (ctx.page && ctx.page.variables) {
+                    ctx.page.variables.documentStatus = "OnHold";
+                }
+                ctx.ui.notify("info", "Document placed on hold pending external clarification.");
+                return { status: "OnHold" };
+            }
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// TEMPLATE 4: KanbanPipelineTemplate (NavigatePage / Visual Kanban Board)
+// ----------------------------------------------------------------------------
+// Deal progression and order stage visual pipeline like Salesforce Opportunity Board.
+// ----------------------------------------------------------------------------
+
+page KanbanPipelineTemplate {
+    pageType = NavigatePage;
+    caption = "Sales & Order Pipeline Kanban Board";
+    instructionalText = "Visual multi-stage pipeline showing deal progression, cumulative stage values, and velocity.";
+
+    variables {
+        pipelineTotalValue: Decimal = 548200.00;
+        leadStageCount: Integer = 12;
+        leadStageTotal: Decimal = 95000.00;
+        reviewStageCount: Integer = 6;
+        reviewStageTotal: Decimal = 142000.00;
+        negotiationStageCount: Integer = 4;
+        negotiationStageTotal: Decimal = 210000.00;
+        wonStageCount: Integer = 5;
+        wonStageTotal: Decimal = 101200.00;
+        selectedDealId: String(30) = "DEAL-9902";
+    }
+
+    layout {
+        area(Content) {
+            group(PipelineSummary) {
+                caption = "Pipeline Volume Summary";
+                field(pipelineTotalValue) {
+                    caption = "Total Pipeline Value ($)";
+                }
+                field(leadStageCount) {
+                    caption = "Qualified Leads";
+                }
+                field(reviewStageCount) {
+                    caption = "Under Review";
+                }
+                field(negotiationStageCount) {
+                    caption = "In Negotiation";
+                }
+                field(wonStageCount) {
+                    caption = "Closed & Won";
+                }
+            }
+
+            group(StageBreakdown) {
+                caption = "Active Pipeline Stages";
+                field(leadStageTotal) {
+                    caption = "Stage 1: Lead Discovery Total";
+                    editable = false;
+                }
+                field(reviewStageTotal) {
+                    caption = "Stage 2: Technical Review Total";
+                    editable = false;
+                }
+                field(negotiationStageTotal) {
+                    caption = "Stage 3: Executive Negotiation Total";
+                    editable = false;
+                }
+                field(wonStageTotal) {
+                    caption = "Stage 4: Closed / Won Booked";
+                    editable = false;
+                }
+                field(selectedDealId) {
+                    caption = "Focused Deal Reference";
+                }
+            }
+        }
+    }
+
+    actions {
+        action(AdvanceDealStage) {
+            caption = "Advance Deal to Next Stage";
+            icon = "ChevronRight";
+            primary = true;
+            inFooterBar = true;
+            onAction(rec, ctx) {
+                ctx.ui.notify("success", "Deal advanced to the next pipeline milestone.");
+                return { advanced: true };
+            }
+        }
+
+        action(AddNewOpportunity) {
+            caption = "Add Opportunity";
+            icon = "Plus";
+            inFooterBar = true;
+            onAction(rec, ctx) {
+                ctx.ui.notify("info", "Opening new opportunity creator...");
+                return { created: true };
+            }
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// TEMPLATE 5: DocumentCheckoutTemplate (Document / FastTabs & POS Checkout)
+// ----------------------------------------------------------------------------
+// High-speed order entry with real-time tax, discount cascading, and sticky summary totals.
+// ----------------------------------------------------------------------------
+
+page DocumentCheckoutTemplate {
+    pageType = Document;
+    caption = "High-Speed Document Order & Checkout";
+    instructionalText = "Enter order header details, line items, and observe real-time tax, discount, and net totals.";
+
+    variables {
+        documentNo: String(30) = "SO-2026-1008";
+        customerCode: String(30) = "CUST-0010";
+        customerName: String(100) = "Apex Global Retailers";
+        orderDate: Date = "2026-10-28";
+        currencyCode: String(10) = "USD";
+        paymentTerms: String(20) = "Net 30 Days";
+        subtotalAmount: Decimal = 8500.00;
+        discountPct: Decimal = 5.00;
+        discountAmount: Decimal = 425.00;
+        taxRatePct: Decimal = 18.00;
+        taxAmount: Decimal = 1453.50;
+        freightShipping: Decimal = 150.00;
+        grandTotal: Decimal = 9678.50;
+        documentStatus: String(20) = "Draft";
+    }
+
+    layout {
+        area(Content) {
+            group(GeneralFastTab) {
+                caption = "General Order Information";
+                field(documentNo) {
+                    caption = "Order No";
+                    editable = false;
+                }
+                field(customerCode) {
+                    caption = "Customer No";
+                    required = true;
+                }
+                field(customerName) {
+                    caption = "Customer Legal Name";
+                }
+                field(orderDate) {
+                    caption = "Order Date";
+                }
+                field(paymentTerms) {
+                    caption = "Payment Terms";
+                }
+                field(documentStatus) {
+                    caption = "Document Status";
+                    editable = false;
+                }
+            }
+
+            group(SummaryTotalsFastTab) {
+                caption = "Sticky Checkout Totals & Tax Breakdown";
+                instructionalText = "Calculated in real-time with exact decimal precision (zero floating point drift).";
+                field(subtotalAmount) {
+                    caption = "Gross Subtotal";
+                }
+                field(discountPct) {
+                    caption = "Document Discount (%)";
+                }
+                field(discountAmount) {
+                    caption = "Discount Deducted";
+                    editable = false;
+                }
+                field(taxRatePct) {
+                    caption = "Applicable GST / VAT Rate (%)";
+                }
+                field(taxAmount) {
+                    caption = "Calculated Tax Amount";
+                    editable = false;
+                }
+                field(freightShipping) {
+                    caption = "Freight & Handling";
+                }
+                field(grandTotal) {
+                    caption = "Net Payable Amount (Grand Total)";
+                    editable = false;
+                }
+            }
+        }
+    }
+
+    actions {
+        action(CalculateTotals) {
+            caption = "Recalculate Totals";
+            icon = "Calculator";
+            onAction(rec, ctx) {
+                const vars = (ctx.page && ctx.page.variables) || {};
+                const sub = Number(vars.subtotalAmount) || 0;
+                const discPct = Number(vars.discountPct) || 0;
+                const taxPct = Number(vars.taxRatePct) || 0;
+                const freight = Number(vars.freightShipping) || 0;
+                const disc = (sub * discPct) / 100;
+                const taxable = sub - disc;
+                const tax = (taxable * taxPct) / 100;
+                const grand = taxable + tax + freight;
+
+                if (ctx.page && ctx.page.variables) {
+                    ctx.page.variables.discountAmount = disc;
+                    ctx.page.variables.taxAmount = tax;
+                    ctx.page.variables.grandTotal = grand;
+                }
+                ctx.ui.notify("info", "Recalculated totals: Grand Total = $" + grand.toFixed(2));
+                return { grandTotal: grand };
+            }
+        }
+
+        action(ReleaseOrder) {
+            caption = "Release Order";
+            icon = "Send";
+            inFooterBar = true;
+            onAction(rec, ctx) {
+                if (ctx.page && ctx.page.variables) {
+                    ctx.page.variables.documentStatus = "Released";
+                }
+                ctx.ui.notify("success", "Order released for warehouse fulfillment.");
+                return { status: "Released" };
+            }
+        }
+
+        action(PostAndPrint) {
+            caption = "Post and Print Invoice";
+            icon = "Printer";
+            primary = true;
+            inFooterBar = true;
+            onAction(rec, ctx) {
+                if (ctx.page && ctx.page.variables) {
+                    ctx.page.variables.documentStatus = "Posted";
+                }
+                ctx.ui.notify("success", "Document posted to immutable financial ledger. Dispatched PDF print job.");
+                return { status: "Posted", posted: true };
+            }
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// TEMPLATE 6: AuditComplianceTimeline (NavigatePage / Activity Timeline)
+// ----------------------------------------------------------------------------
+// Chronological change log and ledger audit feed with cryptographic hash verification.
+// ----------------------------------------------------------------------------
+
+page AuditComplianceTimeline {
+    pageType = NavigatePage;
+    caption = "Compliance & Security Audit Timeline";
+    instructionalText = "Chronological immutable ledger change feed, actor identity verification, and integrity signatures.";
+
+    variables {
+        totalAuditEvents: Integer = 1420;
+        lastVerifiedHash: String(64) = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        selectedActor: String(50) = "admin@system.local";
+        selectedAction: String(30) = "UPDATE_RECORD";
+        selectedTable: String(50) = "PurchaseHeader";
+        timestampUtc: String(30) = "2026-10-28T18:30:00Z";
+        ipAddress: String(45) = "192.168.1.104";
+        diffOldValue: String(200) = "{\"status\": \"Draft\", \"amount\": 1200.00}";
+        diffNewValue: String(200) = "{\"status\": \"Released\", \"amount\": 1200.00}";
+        integrityStatus: String(20) = "VERIFIED_VALID";
+    }
+
+    layout {
+        area(Content) {
+            group(AuditTelemetry) {
+                caption = "Audit Integrity Status";
+                field(totalAuditEvents) {
+                    caption = "Total Immutable Events";
+                }
+                field(integrityStatus) {
+                    caption = "Ledger Cryptographic Status";
+                    editable = false;
+                }
+            }
+
+            group(FocusedEventCard) {
+                caption = "Focused Ledger Change Event";
+                field(timestampUtc) {
+                    caption = "Timestamp (UTC)";
+                    editable = false;
+                }
+                field(selectedActor) {
+                    caption = "Authenticated User / Actor";
+                    editable = false;
+                }
+                field(ipAddress) {
+                    caption = "Origin IP / Gateway";
+                    editable = false;
+                }
+                field(selectedAction) {
+                    caption = "Audit Operation";
+                    editable = false;
+                }
+                field(selectedTable) {
+                    caption = "Target Meta-Object";
+                    editable = false;
+                }
+                field(diffOldValue) {
+                    caption = "Snapshot (xRec / Previous State)";
+                    editable = false;
+                }
+                field(diffNewValue) {
+                    caption = "Committed Mutation (Rec / New State)";
+                    editable = false;
+                }
+                field(lastVerifiedHash) {
+                    caption = "SHA-256 Checksum Signature";
+                    editable = false;
+                }
+            }
+        }
+    }
+
+    actions {
+        action(VerifyLedgerSignatures) {
+            caption = "Verify Cryptographic Chain";
+            icon = "ShieldCheck";
+            primary = true;
+            inFooterBar = true;
+            onAction(rec, ctx) {
+                ctx.ui.notify("success", "All 1,420 audit blocks verified with zero hash chain drift.");
+                return { verified: true };
+            }
+        }
+
+        action(ExportAuditReport) {
+            caption = "Export Compliance Report (CSV/JSON)";
+            icon = "Download";
+            inFooterBar = true;
+            onAction(rec, ctx) {
+                ctx.ui.notify("info", "Generating signed compliance audit manifest...");
+                return { exported: true };
+            }
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// TEMPLATE 7: EnterpriseSettingsCenter (Card / Settings Hub)
+// ----------------------------------------------------------------------------
+// Centralized organization preferences, security policies, and numbering controls.
+// ----------------------------------------------------------------------------
+
+page EnterpriseSettingsCenter {
+    pageType = Card;
+    caption = "Enterprise Preferences & System Settings";
+    instructionalText = "Manage system-wide configuration, password policies, numbering sequences, and webhook integrations.";
+
+    variables {
+        portalTitle: String(100) = "BOS Enterprise Cloud";
+        defaultLanguage: String(10) = "en-US";
+        systemTheme: String(10) = "system";
+        passwordExpiryDays: Integer = 90;
+        enforceMfa: Boolean = true;
+        sessionTimeoutMinutes: Integer = 60;
+        maxFailedLogins: Integer = 5;
+        defaultInvoiceSeries: String(20) = "INV-2026";
+        defaultOrderSeries: String(20) = "ORD-2026";
+        webhookEndpointUrl: String(200) = "https://api.partner.com/webhooks/bos";
+        enableEventOutbox: Boolean = true;
+    }
+
+    layout {
+        area(Content) {
+            group(GeneralSettingsFastTab) {
+                caption = "General Branding & Appearance";
+                field(portalTitle) {
+                    caption = "Application Title";
+                }
+                field(defaultLanguage) {
+                    caption = "Default Platform Language";
+                }
+                field(systemTheme) {
+                    caption = "Theme Mode (light / dark / system)";
+                }
+            }
+
+            group(SecurityPolicyFastTab) {
+                caption = "Identity, Session & Password Policies";
+                field(passwordExpiryDays) {
+                    caption = "Password Expiry Interval (Days)";
+                }
+                field(enforceMfa) {
+                    caption = "Mandatory Multi-Factor Authentication";
+                }
+                field(sessionTimeoutMinutes) {
+                    caption = "Inactivity Session Timeout (Minutes)";
+                }
+                field(maxFailedLogins) {
+                    caption = "Failed Login Lockout Threshold";
+                }
+            }
+
+            group(NumberSeriesFastTab) {
+                caption = "Sequential Document Numbering Defaults";
+                field(defaultInvoiceSeries) {
+                    caption = "Default Sales Invoice Series";
+                }
+                field(defaultOrderSeries) {
+                    caption = "Default Sales Order Series";
+                }
+            }
+
+            group(IntegrationFastTab) {
+                caption = "Webhooks & Event Outbox Dispatcher";
+                field(webhookEndpointUrl) {
+                    caption = "External Webhook URL";
+                }
+                field(enableEventOutbox) {
+                    caption = "Enable Transactional Event Outbox Worker";
+                }
+            }
+        }
+    }
+
+    actions {
+        action(SaveSettings) {
+            caption = "Save Preferences";
+            icon = "Save";
+            primary = true;
+            inFooterBar = true;
+            onAction(rec, ctx) {
+                ctx.ui.notify("success", "Enterprise system preferences saved successfully.");
+                return { saved: true };
+            }
+        }
+
+        action(TestWebhook) {
+            caption = "Ping Webhook Endpoint";
+            icon = "Radio";
+            inFooterBar = true;
+            onAction(rec, ctx) {
+                ctx.ui.notify("info", "Dispatched ping test payload to external webhook gateway.");
+                return { pinged: true };
+            }
+        }
+    }
+}

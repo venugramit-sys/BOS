@@ -66,6 +66,23 @@ export const pageManifest = new ManifestStore();
 
 const modules = new Map();
 
+async function importWithRetry(targetUrl, attempts = 3) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const fetchUrl = i === 0 ? targetUrl : `${targetUrl}${targetUrl.includes("?") ? "&" : "?"}retry=${Date.now()}`;
+      const m = await import(/* @vite-ignore */ fetchUrl);
+      return m.default;
+    } catch (e) {
+      lastErr = e;
+      if (i < attempts - 1) {
+        await new Promise((r) => setTimeout(r, 200 * (i + 1)));
+      }
+    }
+  }
+  throw lastErr;
+}
+
 /**
  * Imports the compiled component of `name`. Resolves to `{ component, entry }`.
  * Throws when the page does not exist or failed to compile.
@@ -79,9 +96,9 @@ export async function loadPageComponent(name) {
   }
   if (entry.errors > 0) throw new Error(`Page "${entry.name}" has ${entry.errors} compile error(s); open it in the Studio to fix them`);
   const url = DEV ? `/@bos-page/${entry.name}.svelte` : entry.url;
-  const key = DEV ? `${url}#${entry.hash}` : url;
+  const key = DEV ? `${url}#${entry.hash}` : `${url}#${entry.hash}`;
   if (!modules.has(key)) {
-    const promise = import(/* @vite-ignore */ url).then((m) => m.default);
+    const promise = importWithRetry(url);
     promise.catch(() => modules.delete(key));
     modules.set(key, promise);
   }
@@ -104,6 +121,8 @@ export async function loadPreview(result) {
     const { url } = await res.json();
     return (await import(/* @vite-ignore */ url)).default;
   }
-  if (!/^\/page-artifacts\/[0-9a-f]{16}\/preview\/[A-Za-z0-9_.-]+\.js$/.test(result.url)) throw new Error("invalid preview URL");
-  return (await import(/* @vite-ignore */ result.url)).default;
+  const cleanUrl = String(result.url ?? "").split("?")[0];
+  if (!/^\/page-artifacts\/[0-9a-f]{16}\/preview\/[A-Za-z0-9_.-]+\.js$/.test(cleanUrl)) throw new Error("invalid preview URL");
+  const fetchUrl = `${cleanUrl}?t=${result.hash || Date.now()}`;
+  return (await import(/* @vite-ignore */ fetchUrl)).default;
 }

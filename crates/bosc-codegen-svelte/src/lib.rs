@@ -166,6 +166,7 @@ impl Emitter {
             K::Tabs => "Tabs",
             K::Split => "Split",
             K::WizardStep => "WizardSteps",
+            K::Action => "Action",
             _ => "Container",
         };
         self.use_component(name)

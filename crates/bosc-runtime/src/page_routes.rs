@@ -198,10 +198,21 @@ fn default_true() -> bool {
 const DESIGNER_ROLES: &[&str] = &["SUPER", "Admin", "Global Admin", "Developer", "PageDesigner"];
 
 async fn preview_handler(headers: HeaderMap, Extension(engine): Extension<Arc<BosEngine>>, Json(req): Json<PreviewRequest>) -> Response {
-    let ctx = match extract_context(&headers) {
+    let mut ctx = match extract_context(&headers) {
         Ok(ctx) => ctx,
         Err(r) => return r,
     };
+    if ctx.tenant_id.is_nil() {
+        let pool = engine.pool().await;
+        if let Ok(Some(tid)) = sqlx::query_scalar::<_, uuid::Uuid>(
+            "SELECT tenant_id FROM \"_bos_tenants\" WHERE is_active = true ORDER BY created_at LIMIT 1",
+        )
+        .fetch_optional(&pool)
+        .await
+        {
+            ctx.tenant_id = tid;
+        }
+    }
     if !ctx.roles.iter().any(|r| DESIGNER_ROLES.iter().any(|d| d.eq_ignore_ascii_case(r))) {
         return AppError::new(StatusCode::FORBIDDEN, "page preview requires a designer role").with_code("FORBIDDEN").into_response();
     }
@@ -239,10 +250,21 @@ async fn trigger_handler(
     Path((name, trigger)): Path<(String, String)>,
     body: Option<Json<TriggerRequest>>,
 ) -> Response {
-    let ctx = match extract_context(&headers) {
+    let mut ctx = match extract_context(&headers) {
         Ok(ctx) => ctx,
         Err(r) => return r,
     };
+    if ctx.tenant_id.is_nil() {
+        let pool = engine.pool().await;
+        if let Ok(Some(tid)) = sqlx::query_scalar::<_, uuid::Uuid>(
+            "SELECT tenant_id FROM \"_bos_tenants\" WHERE is_active = true ORDER BY created_at LIMIT 1",
+        )
+        .fetch_optional(&pool)
+        .await
+        {
+            ctx.tenant_id = tid;
+        }
+    }
     let req = body.map(|Json(b)| b).unwrap_or_default();
     let record = req.record.unwrap_or_else(|| serde_json::json!({}));
     let variables = req.variables.unwrap_or_else(|| serde_json::json!({}));

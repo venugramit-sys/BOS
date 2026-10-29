@@ -56,6 +56,9 @@ impl Default for EventRegistry {
     }
 }
 
+static INITIALIZED_DBS: std::sync::LazyLock<dashmap::DashSet<String>> =
+    std::sync::LazyLock::new(dashmap::DashSet::new);
+
 impl EventRegistry {
     pub fn new() -> Self {
         Self {
@@ -106,8 +109,17 @@ impl EventRegistry {
         all
     }
 
+    /// Invalidate database initialization cache so DDL will re-run on next access
+    pub fn invalidate_cache(db_name: &str) {
+        INITIALIZED_DBS.remove(db_name);
+    }
+
     /// Ensure the backing persistence table exists in PostgreSQL
     pub async fn init_table(pool: &PgPool) -> Result<(), RuntimeError> {
+        let db_name = pool.connect_options().get_database().unwrap_or("default").to_string();
+        if INITIALIZED_DBS.contains(&db_name) {
+            return Ok(());
+        }
         let ddl = r#"
             CREATE TABLE IF NOT EXISTS "_bos_event_subscribers" (
                 "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -139,8 +151,25 @@ impl EventRegistry {
             );
             CREATE INDEX IF NOT EXISTS "idx_bos_event_outbox_status_created"
                 ON "_bos_event_outbox" ("status", "created_at");
+
+            ALTER TABLE "_bos_event_outbox" ADD COLUMN IF NOT EXISTS "next_retry_at" TIMESTAMPTZ;
+            CREATE INDEX IF NOT EXISTS "idx_bos_event_outbox_retry_poll"
+                ON "_bos_event_outbox" ("status", "next_retry_at", "created_at");
+
+            CREATE OR REPLACE FUNCTION notify_bos_event_outbox() RETURNS TRIGGER AS $$
+            BEGIN
+                PERFORM pg_notify('bos_event_outbox_channel', NEW.id::text);
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+
+            DROP TRIGGER IF EXISTS trg_bos_event_outbox ON "_bos_event_outbox";
+            CREATE TRIGGER trg_bos_event_outbox
+                AFTER INSERT ON "_bos_event_outbox"
+                FOR EACH ROW EXECUTE FUNCTION notify_bos_event_outbox();
         "#;
         sqlx::raw_sql(ddl).execute(pool).await?;
+        INITIALIZED_DBS.insert(db_name);
         Ok(())
     }
 
@@ -442,7 +471,9 @@ impl EventRegistry {
                 r#"
                 SELECT id, tenant_id, company_id, publisher, event_name, payload, retry_count, max_retries
                 FROM "_bos_event_outbox"
-                WHERE "status" = 'pending' AND "retry_count" < "max_retries"
+                WHERE "status" = 'pending' 
+                  AND "retry_count" < "max_retries"
+                  AND ("next_retry_at" IS NULL OR "next_retry_at" <= NOW())
                 ORDER BY "created_at" ASC
                 LIMIT $1
                 FOR UPDATE SKIP LOCKED;
@@ -462,7 +493,12 @@ impl EventRegistry {
             let company_id: Option<Uuid> = r.try_get("company_id")?;
             let publisher: String = r.try_get("publisher")?;
             let event_name: String = r.try_get("event_name")?;
-            let payload: serde_json::Value = r.try_get("payload")?;
+            let mut payload: serde_json::Value = r.try_get("payload")?;
+            if let Some(obj) = payload.as_object_mut() {
+                if !obj.contains_key("_event_id") {
+                    obj.insert("_event_id".to_string(), serde_json::json!(id.to_string()));
+                }
+            }
             let retry_count: i32 = r.try_get("retry_count")?;
             let max_retries: i32 = r.try_get("max_retries")?;
 
@@ -507,13 +543,21 @@ impl EventRegistry {
                     } else {
                         "pending"
                     };
+                    // Exponential backoff: 2^new_retry seconds (capped at 300s)
+                    let backoff_secs = 2_i64.pow(new_retry.min(8) as u32);
                     let res = sqlx::query(
-                        r#"UPDATE "_bos_event_outbox" SET "retry_count" = $2, "status" = $3, "last_error" = $4 WHERE "id" = $1"#,
+                        r#"UPDATE "_bos_event_outbox" 
+                           SET "retry_count" = $2, 
+                               "status" = $3, 
+                               "last_error" = $4,
+                               "next_retry_at" = NOW() + ($5 * INTERVAL '1 second')
+                           WHERE "id" = $1"#,
                     )
                     .bind(id)
                     .bind(new_retry)
                     .bind(new_status)
                     .bind(e.to_string())
+                    .bind(backoff_secs)
                     .execute(&mut *conn)
                     .await;
                     db.track(res)?;

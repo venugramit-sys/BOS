@@ -1,0 +1,532 @@
+// =============================================================================
+// BOS Architecture Comprehensive Test Package: test.procurement
+// Exercises all 18 Meta-Objects defined in BOS Specification
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// 1. Interfaces, Enums & Enum Extensions
+// -----------------------------------------------------------------------------
+interface IPricingCalculator {
+    calculatePrice(basePrice: number, quantity: number, tier: string): number;
+}
+
+codeunit StandardPricingCalculator implements IPricingCalculator {
+    calculatePrice(basePrice: number, quantity: number, tier: string): number {
+        return basePrice * quantity;
+    }
+}
+
+codeunit VolumePricingCalculator implements IPricingCalculator {
+    calculatePrice(basePrice: number, quantity: number, tier: string): number {
+        const subtotal = basePrice * quantity;
+        if (quantity > 100) {
+            return subtotal * 0.90; // 10% volume discount
+        }
+        return subtotal;
+    }
+}
+
+enum VendorTier implements IPricingCalculator {
+    Standard = StandardPricingCalculator;
+    Volume = VolumePricingCalculator;
+}
+
+enum PurchaseOrderStatus {
+    Draft;
+    PendingApproval;
+    Approved;
+    Ordered;
+    Received;
+    Closed;
+}
+
+enumextension VendorTierExt extends VendorTier {
+    Enterprise;
+}
+
+// -----------------------------------------------------------------------------
+// 2. Custom Metadata (Configuration Store)
+// -----------------------------------------------------------------------------
+custommetadata ProcurementSetting {
+    approvalThreshold: Decimal;
+    defaultPaymentTerms: String(50);
+    autoReceiveThreshold: Decimal;
+}
+
+// -----------------------------------------------------------------------------
+// 3. Core Tables & SIFT FlowFields
+// -----------------------------------------------------------------------------
+table Vendor {
+    no: String(20);
+    name: String(100);
+    tier: Enum(VendorTier);
+    contactEmail: String(100);
+    isBlocked: Boolean;
+
+    // SIFT FlowFields
+    totalOrderAmount: Decimal {
+        calcFormula = sum(PurchaseOrderHeader.totalAmount where (vendorNo == no));
+    };
+
+    primaryKey(no);
+    fieldgroup DropDown(no, name);
+    fieldgroup Brick(no, name, tier);
+}
+
+table PurchaseOrderHeader {
+    orderNo: String(20);
+    vendorNo: String(20) {
+        relation = Vendor.no;
+    };
+    orderDate: DateTime;
+    status: Enum(PurchaseOrderStatus);
+    currency: String(10);
+    totalAmount: Decimal;
+    notes: String(250);
+
+    primaryKey(orderNo);
+}
+
+table PurchaseOrderLine {
+    orderNo: String(20) {
+        relation = PurchaseOrderHeader.orderNo;
+    };
+    lineNo: Integer;
+    itemDescription: String(120);
+    quantity: Decimal;
+    unitPrice: Decimal;
+    lineAmount: Decimal;
+
+    primaryKey(orderNo, lineNo);
+}
+
+// -----------------------------------------------------------------------------
+// 4. Schema Extensions (tableextension)
+// -----------------------------------------------------------------------------
+tableextension VendorRiskExt extends Vendor {
+    riskScore: Integer;
+    lastAuditDate: DateTime;
+}
+
+// -----------------------------------------------------------------------------
+// 5. Table Logic Triggers & Validations (tablelogic & tablelogicextension)
+// -----------------------------------------------------------------------------
+tablelogic Vendor {
+    validate name(val) {
+        if (!val || val.trim().length === 0) {
+            throw new Error("Vendor name cannot be blank.");
+        }
+    }
+
+    onInsert(rec, ctx) {
+        if (!rec.tier) {
+            rec.tier = "Standard";
+        }
+    }
+}
+
+tablelogicextension VendorRiskLogicExt for Vendor {
+    validate riskScore(val) {
+        if (val !== undefined && val !== null && (val < 0 || val > 100)) {
+            throw new Error("Risk score must be between 0 and 100.");
+        }
+    }
+}
+
+tablelogic PurchaseOrderHeader {
+    validate vendorNo(val) {
+        if (!val) {
+            throw new Error("Vendor number is required.");
+        }
+    }
+
+    onInsert(rec, ctx) {
+        if (!rec.status) {
+            rec.status = "Draft";
+        }
+        if (!rec.currency) {
+            rec.currency = "USD";
+        }
+    }
+
+    onDelete(rec, ctx) {
+        // Cascade delete child lines when a draft order is deleted
+        PurchaseOrderLine.deleteAll({ orderNo: rec.orderNo });
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 6. State Machine & Extensions (statemachine & statemachineextension)
+// -----------------------------------------------------------------------------
+statemachine PurchaseOrderWorkflow for PurchaseOrderHeader {
+    initial: Draft;
+    states: [Draft, PendingApproval, Approved, Ordered, Closed];
+
+    transition submit from Draft to PendingApproval;
+    transition approve from PendingApproval to Approved;
+    transition placeOrder from Approved to Ordered;
+    transition close from Ordered to Closed;
+}
+
+statemachineextension PurchaseOrderWorkflowExt extends PurchaseOrderWorkflow {
+    state Received {}
+    transition receive from Ordered to Received;
+    transition closeReceived from Received to Closed;
+}
+
+// -----------------------------------------------------------------------------
+// 7. Codeunits (Cross-entity Business Logic)
+// -----------------------------------------------------------------------------
+codeunit ProcurementManagement {
+    CreatePurchaseOrder(vendorNo: string, amount: number): any {
+        const orderId = ctx.call("NoSeriesManagement", "GetNextNo", {
+            seriesCode: "PO",
+            targetDate: new Date().toISOString().slice(0, 10),
+            updateSeries: true
+        });
+        const order = models.PurchaseOrderHeader.insert({
+            orderNo: orderId,
+            vendorNo: vendorNo,
+            orderDate: new Date().toISOString(),
+            status: "Draft",
+            currency: "USD",
+            totalAmount: amount,
+            notes: "Automated procurement order"
+        });
+        return order;
+    }
+
+    ApprovePurchaseOrder(orderNo: string): any {
+        const order = models.PurchaseOrderHeader.getById(orderNo);
+        if (!order) {
+            throw new Error("Purchase order not found: " + orderNo);
+        }
+        order.status = "Approved";
+        return models.PurchaseOrderHeader.updateOptimistic(order);
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 8. PermissionSet (RBAC Security)
+// -----------------------------------------------------------------------------
+permissionset ProcurementBuyer {
+    caption = "Procurement Buyer";
+
+    permissions = {
+        Vendor = RIMD {
+            exclude: [contactEmail];
+            where (isBlocked == false);
+        };
+        PurchaseOrderHeader = RIMD;
+        PurchaseOrderLine = RIMD;
+    };
+
+    execute = [
+        ProcurementManagement
+    ];
+}
+
+// -----------------------------------------------------------------------------
+// 9. Views & Analytical Queries
+// -----------------------------------------------------------------------------
+view ActiveVendorView {
+    caption = "Active Vendors";
+    select {
+        no,
+        name,
+        tier,
+        contactEmail
+    }
+    from Vendor
+    where (isBlocked == false);
+}
+
+query VendorSpendAnalytics {
+    caption = "Vendor Spend Analytics";
+
+    elements {
+        dataitem(v; Vendor) {
+            column(vendorNo; no) {}
+            column(vendorName; name) {}
+
+            dataitem(po; PurchaseOrderHeader) {
+                leftJoin (po.vendorNo == v.no);
+                column(totalSpend; totalAmount; sum) {}
+                column(orderCount; orderNo; count) {}
+            }
+        }
+    }
+
+    groupBy(v.no, v.name);
+    orderBy(totalSpend desc);
+}
+
+// -----------------------------------------------------------------------------
+// 10. UI Pages & Page Extensions
+// -----------------------------------------------------------------------------
+page VendorCard for Vendor {
+    pageType = Card;
+    caption = "Vendor Details";
+
+    layout {
+        area(Content) {
+            group(General) {
+                caption = "General Information";
+                field(no) { caption = "Vendor Code"; required = true; }
+                field(name) { required = true; }
+                field(tier);
+                field(contactEmail);
+                field(isBlocked);
+            }
+            group(Performance) {
+                caption = "Order Performance";
+                field(totalOrderAmount);
+            }
+        }
+    }
+
+    actions {
+        area(Processing) {
+            action(CreateOrder) {
+                caption = "New Purchase Order";
+                icon = "ShoppingCart";
+                primary = true;
+                onAction(rec, ctx) {
+                    const result = ctx.call("ProcurementManagement", "CreatePurchaseOrder", {
+                        vendorNo: rec.no,
+                        amount: 500
+                    });
+                    ctx.ui.message("Created Purchase Order: " + result.orderNo);
+                }
+            }
+        }
+    }
+}
+
+pageextension VendorCardAuditExt extends VendorCard {
+    layout {
+        addLast(Content) {
+            group(Audit) {
+                caption = "Risk & Compliance";
+                field(riskScore);
+                field(lastAuditDate);
+            }
+        }
+    }
+}
+
+page PurchaseOrderCard for PurchaseOrderHeader {
+    pageType = Document;
+    caption = "Purchase Order";
+
+    layout {
+        area(Content) {
+            group(Header) {
+                field(orderNo) { required = true; }
+                field(vendorNo) { required = true; }
+                field(orderDate);
+                field(status);
+                field(currency);
+                field(totalAmount);
+                field(notes);
+            }
+        }
+    }
+
+    actions {
+        area(Processing) {
+            action(Approve) {
+                caption = "Approve Order";
+                icon = "CheckCircle";
+                primary = true;
+                onAction(rec, ctx) {
+                    ctx.call("ProcurementManagement", "ApprovePurchaseOrder", { orderNo: rec.orderNo });
+                    ctx.ui.message("Order Approved");
+                }
+            }
+            action(PostOrder) {
+                caption = "Post Purchase Order";
+                icon = "Send";
+                primary = false;
+                onAction(rec, ctx) {
+                    const res = ctx.call("PurchasePost", "Run", { orderNo: rec.orderNo });
+                    ctx.ui.message("Purchase Order posted successfully: " + res.postedInvoiceNo);
+                }
+            }
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 11. Navigation Menu & Analytical Report
+// -----------------------------------------------------------------------------
+menu ProcurementNavigation {
+    label = "Procurement & Purchasing";
+    role = "ProcurementBuyer";
+
+    items {
+        item Vendors {
+            label = "Vendors";
+            icon = "Building2";
+            page = VendorCard;
+        }
+        item Orders {
+            label = "Purchase Orders";
+            icon = "FileText";
+            page = PurchaseOrderCard;
+        }
+    }
+}
+
+report VendorTrialBalance {
+    caption = "Vendor Trial Balance";
+    dataset: Vendor;
+    columns {
+        column(no, no);
+        column(name, name);
+        column(tier, tier);
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 12. Immutable Ledger Tables & Document Posting Engine
+// -----------------------------------------------------------------------------
+
+table PurchInvHeader {
+    caption = "Posted Purchase Invoice Header";
+    tableType = Ledger;
+
+    invoiceNo: String(30);
+    orderNo: String(20);
+    vendorNo: String(20);
+    postingDate: Date;
+    currency: String(10);
+    totalAmount: Decimal;
+    notes: String(250);
+
+    primaryKey(invoiceNo);
+}
+
+table PurchInvLine {
+    caption = "Posted Purchase Invoice Line";
+    tableType = Ledger;
+
+    invoiceNo: String(30);
+    lineNo: Integer;
+    itemDescription: String(120);
+    quantity: Decimal;
+    unitPrice: Decimal;
+    lineAmount: Decimal;
+
+    primaryKey(invoiceNo, lineNo);
+}
+
+table VendorLedgerEntry {
+    caption = "Vendor Sub-Ledger Entry";
+    tableType = Ledger;
+
+    id: UUID;
+    vendorNo: String(20);
+    postingDate: Date;
+    documentType: String(20);
+    documentNo: String(30);
+    amount: Decimal;
+    isOpen: Boolean;
+
+    primaryKey(id);
+}
+
+codeunit PurchasePost {
+    caption = "Purchase Order Posting Engine";
+
+    Run(orderNo: String, postingDate: String): any {
+        const oNo = (rec && rec.orderNo !== undefined) ? rec.orderNo : orderNo;
+        const pDate = (rec && rec.postingDate !== undefined) ? rec.postingDate : (postingDate || new Date().toISOString().slice(0, 10));
+
+        if (!oNo) throw new Error("Posting Error: 'orderNo' must be specified.");
+
+        // Phase 1: Check & Concurrency Lock
+        const header = PurchaseOrderHeader.lock(oNo);
+        if (!header) {
+            throw new Error("Posting Error: Purchase order '" + oNo + "' not found.");
+        }
+        if (header.status !== "Approved" && header.status !== "Ordered") {
+            throw new Error("Posting Error: Order '" + oNo + "' must be Approved or Ordered before posting. Status: " + header.status);
+        }
+
+        const vendor = Vendor.get(header.vendorNo);
+        if (!vendor) {
+            throw new Error("Posting Error: Vendor '" + header.vendorNo + "' not found.");
+        }
+        if (vendor.isBlocked) {
+            throw new Error("Posting Error: Vendor '" + header.vendorNo + "' is blocked for transactions.");
+        }
+
+        const lines = PurchaseOrderLine.findMany({ where: { orderNo: oNo } });
+        if (!lines || lines.length === 0) {
+            throw new Error("Posting Error: Order '" + oNo + "' has no order lines.");
+        }
+
+        // Validate line integrity and totals BEFORE allocating document sequence numbers
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (!line.quantity || Number(line.quantity) <= 0) {
+                throw new Error("Posting Error: Line " + line.lineNo + " has invalid quantity (" + line.quantity + ").");
+            }
+            if (line.unitPrice === undefined || Number(line.unitPrice) < 0) {
+                throw new Error("Posting Error: Line " + line.lineNo + " has negative unit price.");
+            }
+        }
+
+        // Phase 2: Deferred Sequence Allocation (Number Series allocated right before ledger write)
+        const postedInvNo = ctx.call("NoSeriesManagement", "GetNextNo", {
+            seriesCode: "PI_POST",
+            targetDate: pDate,
+            updateSeries: true
+        });
+
+        PurchInvHeader.insert({
+            invoiceNo: postedInvNo,
+            orderNo: header.orderNo,
+            vendorNo: header.vendorNo,
+            postingDate: pDate,
+            currency: header.currency || "USD",
+            totalAmount: header.totalAmount,
+            notes: header.notes || ""
+        });
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            PurchInvLine.insert({
+                invoiceNo: postedInvNo,
+                lineNo: line.lineNo,
+                itemDescription: line.itemDescription,
+                quantity: line.quantity,
+                unitPrice: line.unitPrice,
+                lineAmount: line.lineAmount
+            });
+        }
+
+        VendorLedgerEntry.insert({
+            id: ctx.crypto.uuidv7(),
+            vendorNo: header.vendorNo,
+            postingDate: pDate,
+            documentType: "Invoice",
+            documentNo: postedInvNo,
+            amount: header.totalAmount,
+            isOpen: true
+        });
+
+        // Phase 3: Archive & Clean
+        PurchaseOrderLine.deleteAll({ orderNo: oNo });
+        PurchaseOrderHeader.update(header.orderNo, { status: "Closed" });
+
+        return {
+            success: true,
+            postedInvoiceNo: postedInvNo,
+            orderNo: oNo,
+            message: "Purchase order '" + oNo + "' posted successfully as '" + postedInvNo + "'."
+        };
+    }
+}
+

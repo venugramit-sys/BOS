@@ -139,6 +139,16 @@ impl OutlineObject {
             .and_then(|s| walk(&s.nodes, name))
             .or_else(|| self.actions.as_ref().and_then(|s| walk(&s.nodes, name)))
     }
+
+    /// Finds a node by exact path, or falls back to matching by the last segment name (e.g. for page extensions).
+    pub fn find_or_by_name(&self, path: &str) -> Option<&OutlineNode> {
+        if let Some(n) = self.find(path) {
+            return Some(n);
+        }
+        let seg = path.rsplit('/').next().unwrap_or(path);
+        let name = seg.split(':').nth(1).unwrap_or(seg);
+        self.find_by_name(name)
+    }
 }
 
 /// Keywords the parser treats as containers (a bare label may follow them).
@@ -146,7 +156,7 @@ const CONTAINER_KEYWORDS: &[&str] = &[
     "area", "group", "section", "repeater", "lines", "part", "factbox", "tabs", "tab", "columns", "column", "card", "step",
     "steps", "tile", "tiles", "region", "regions", "main", "side", "header", "footer", "content", "split", "grid", "flex",
     "bento", "kanban", "accordion", "panel", "drawer", "modal", "stepper", "fixed", "cuegroup", "cue", "headline",
-    "wizardstep", "container", "systempart", "usercontrol", "label", "image", "spacer", "divider", "wrap", "replace",
+    "wizardstep", "container", "systempart", "usercontrol", "label", "image", "spacer", "divider", "action", "button", "cta", "wrap", "replace",
     "addAfter", "addBefore", "addFirst", "addLast", "modify", "moveAfter", "moveBefore", "moveFirst", "moveLast", "hide",
 ];
 /// Bodies in which `name;` is a flag property rather than a compact field.
@@ -609,7 +619,11 @@ struct Target {
 }
 
 fn target_of(obj: &OutlineObject, path: &str) -> Result<Target, String> {
-    if path.eq_ignore_ascii_case("page") {
+    if path.eq_ignore_ascii_case("page")
+        || path.eq_ignore_ascii_case("header")
+        || path.eq_ignore_ascii_case("header:title")
+        || path.eq_ignore_ascii_case("header:instruction")
+    {
         return Ok(Target {
             body: Some((obj.open, obj.close)),
             header_end: obj.open,
@@ -633,7 +647,7 @@ fn target_of(obj: &OutlineObject, path: &str) -> Result<Target, String> {
             children: sec.nodes.clone(),
         });
     }
-    let n = obj.find(path).ok_or_else(|| format!("control '{path}' does not exist in the source"))?;
+    let n = obj.find_or_by_name(path).ok_or_else(|| format!("control '{path}' does not exist in the source"))?;
     Ok(Target {
         body: n.body,
         header_end: n.header_end,
@@ -732,7 +746,7 @@ fn remove_property(src: &str, obj: &OutlineObject, path: &str, name: &str, block
 }
 
 fn delete_node(src: &str, obj: &OutlineObject, path: &str) -> Result<String, String> {
-    let n = obj.find(path).ok_or_else(|| format!("control '{path}' does not exist in the source"))?;
+    let n = obj.find_or_by_name(path).ok_or_else(|| format!("control '{path}' does not exist in the source"))?;
     let (s, e) = whole_lines(src, n.start, n.end);
     Ok(splice(src, s, e, ""))
 }
@@ -782,7 +796,7 @@ fn insert_node(src: &str, obj: &OutlineObject, parent: &str, before: Option<&str
 }
 
 fn move_node(src: &str, obj: &OutlineObject, path: &str, parent: &str, before: Option<&str>) -> Result<(String, String), String> {
-    let n = obj.find(path).ok_or_else(|| format!("control '{path}' does not exist in the source"))?;
+    let n = obj.find_or_by_name(path).ok_or_else(|| format!("control '{path}' does not exist in the source"))?;
     if parent.to_ascii_lowercase().starts_with(&format!("{}/", n.path.to_ascii_lowercase())) || parent.eq_ignore_ascii_case(&n.path) {
         return Err(format!("'{path}' cannot be moved into itself"));
     }

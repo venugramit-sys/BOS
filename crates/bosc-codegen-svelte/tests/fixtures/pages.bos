@@ -316,3 +316,25 @@ page CustomerApi for Customer {
     pageType = Api;
     layout { area(Content) { repeater(Fields) { field(no); field(name); } } }
 }
+
+page CustomDashboard {
+    pageType = Custom;
+    caption = "Operations Dashboard";
+    layout {
+        area(Content) {
+            section(Hero) {
+                headline(Title) { caption = "Executive Dashboard"; }
+                label(Desc) { caption = "Real-time metrics and operations"; }
+                action(Refresh) { caption = "Refresh"; primary = true; }
+            }
+            grid(Metrics) {
+                cols = 2;
+                card(CardA) { caption = "Revenue"; label(ValA) { caption = "$100,000"; } }
+                card(CardB) { caption = "Users"; label(ValB) { caption = "2,400"; } }
+            }
+            flex(ActionsRow) {
+                action(DownloadReport) { caption = "Download Report"; }
+            }
+        }
+    }
+}

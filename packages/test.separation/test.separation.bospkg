@@ -1,0 +1,238 @@
+{
+  "manifest": {
+    "package_id": "test.separation",
+    "name": "Data Separation Test Suite",
+    "version": "1.0.0",
+    "publisher": "BOS System Test",
+    "dependencies": [],
+    "optional_features": []
+  },
+  "objects": [
+    {
+      "caption": "Tenant Level Shared Master",
+      "check_constraints": [],
+      "columns": [
+        {
+          "caption": "code",
+          "check_constraint": null,
+          "data_type": "String(30)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": true,
+          "name": "code",
+          "sql_name": "code",
+          "sql_type": "VARCHAR(30)"
+        },
+        {
+          "caption": "name",
+          "check_constraint": null,
+          "data_type": "String(100)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "name",
+          "sql_name": "name",
+          "sql_type": "VARCHAR(100)"
+        }
+      ],
+      "data_per_company": false,
+      "field_groups": [],
+      "flow_fields": [],
+      "indexes": [],
+      "name": "TenantMaster",
+      "object_type": "table",
+      "on_delete": null,
+      "package_name": "test.separation",
+      "primary_key": [
+        "code"
+      ],
+      "sql_table_name": "tenant_master",
+      "table_type": "Normal",
+      "triggers": [],
+      "version": "1.0.0"
+    },
+    {
+      "caption": "Company Specific Transactions",
+      "check_constraints": [],
+      "columns": [
+        {
+          "caption": "entryNo",
+          "check_constraint": null,
+          "data_type": "Integer",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": true,
+          "name": "entryNo",
+          "sql_name": "entry_no",
+          "sql_type": "INTEGER"
+        },
+        {
+          "caption": "documentNo",
+          "check_constraint": null,
+          "data_type": "String(30)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": false,
+          "name": "documentNo",
+          "sql_name": "document_no",
+          "sql_type": "VARCHAR(30)"
+        },
+        {
+          "caption": "amount",
+          "check_constraint": null,
+          "data_type": "Decimal(18, 2)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "amount",
+          "sql_name": "amount",
+          "sql_type": "NUMERIC(18, 2)"
+        }
+      ],
+      "data_per_company": true,
+      "field_groups": [],
+      "flow_fields": [],
+      "indexes": [],
+      "name": "CompanyTransaction",
+      "object_type": "table",
+      "on_delete": null,
+      "package_name": "test.separation",
+      "primary_key": [
+        "entry_no"
+      ],
+      "sql_table_name": "company_transaction",
+      "table_type": "Normal",
+      "triggers": [],
+      "version": "1.0.0"
+    },
+    {
+      "actions": [],
+      "caption": "Tenant Master List",
+      "controls": [
+        {
+          "caption": null,
+          "children": [
+            {
+              "caption": null,
+              "children": [
+                {
+                  "caption": null,
+                  "children": [],
+                  "kind": "field",
+                  "name": "code",
+                  "properties": {},
+                  "source_expr": "code"
+                },
+                {
+                  "caption": null,
+                  "children": [],
+                  "kind": "field",
+                  "name": "name",
+                  "properties": {},
+                  "source_expr": "name"
+                }
+              ],
+              "kind": "repeater",
+              "name": "Table",
+              "properties": {},
+              "source_expr": null
+            }
+          ],
+          "kind": "area",
+          "name": "Content",
+          "properties": {},
+          "source_expr": null
+        }
+      ],
+      "delete_allowed": null,
+      "editable": null,
+      "filters": [],
+      "insert_allowed": null,
+      "ir_version": 2,
+      "modify_allowed": null,
+      "name": "TenantMasterList",
+      "object_type": "page",
+      "package_name": "test.separation",
+      "page_type": "List",
+      "source_kind": "table",
+      "source_table": "TenantMaster",
+      "triggers": [],
+      "version": "1.0.0",
+      "views": []
+    },
+    {
+      "actions": [],
+      "caption": "Company Transaction List",
+      "controls": [
+        {
+          "caption": null,
+          "children": [
+            {
+              "caption": null,
+              "children": [
+                {
+                  "caption": null,
+                  "children": [],
+                  "kind": "field",
+                  "name": "entryNo",
+                  "properties": {},
+                  "source_expr": "entryNo"
+                },
+                {
+                  "caption": null,
+                  "children": [],
+                  "kind": "field",
+                  "name": "documentNo",
+                  "properties": {},
+                  "source_expr": "documentNo"
+                },
+                {
+                  "caption": null,
+                  "children": [],
+                  "kind": "field",
+                  "name": "amount",
+                  "properties": {},
+                  "source_expr": "amount"
+                }
+              ],
+              "kind": "repeater",
+              "name": "Table",
+              "properties": {},
+              "source_expr": null
+            }
+          ],
+          "kind": "area",
+          "name": "Content",
+          "properties": {},
+          "source_expr": null
+        }
+      ],
+      "delete_allowed": null,
+      "editable": null,
+      "filters": [],
+      "insert_allowed": null,
+      "ir_version": 2,
+      "modify_allowed": null,
+      "name": "CompanyTransactionList",
+      "object_type": "page",
+      "package_name": "test.separation",
+      "page_type": "List",
+      "source_kind": "table",
+      "source_table": "CompanyTransaction",
+      "triggers": [],
+      "version": "1.0.0",
+      "views": []
+    }
+  ],
+  "checksum": "65ded5a6a07416e1"
+}

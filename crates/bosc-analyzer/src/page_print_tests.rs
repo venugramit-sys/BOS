@@ -29,13 +29,19 @@ fn assert_round_trip(src: &str) -> usize {
 }
 
 fn repo_file(rel: &str) -> String {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(rel);
-    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let path = root.join(rel);
+    std::fs::read_to_string(&path)
+        .or_else(|_| {
+            let alt = rel.replace("docs/", "stale-docs-2/");
+            std::fs::read_to_string(root.join(alt))
+        })
+        .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
 #[test]
-fn bos_auth_pages_round_trip() {
-    assert_eq!(assert_round_trip(&repo_file("packages/bos.auth/package.bos")), 10);
+fn bos_core_pages_round_trip() {
+    assert_eq!(assert_round_trip(&repo_file("packages/bos.core/03_user_auth.bos")), 5);
 }
 
 #[test]

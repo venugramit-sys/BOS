@@ -543,5 +543,59 @@ mod tests {
         assert_eq!(pe.actions[1].kind, "modify");
         assert_eq!((pe.actions[2].kind.as_str(), pe.actions[2].name.as_str()), ("hide", "Delete"));
     }
+
+    #[test]
+    fn test_syntax_symmetry_and_flexible_grammar() {
+        let program = parse(
+            r##"
+            tablelogic VendorLogic for Vendor {
+                validate(name) {
+                    if (!val) throw new Error("Name required");
+                }
+                validate(email, customVal) {
+                    if (!customVal.includes("@")) throw new Error("Invalid email");
+                }
+            }
+
+            statemachineextension OrderWorkflowExt extends OrderWorkflow {
+                states: [Shipped, Returned];
+                state Delivered;
+                transition ship from Ordered to Shipped;
+            }
+
+            permissionset FlexibleSecurity {
+                permissions = {
+                    Vendor = RIMD,
+                    Order = RIMD;
+                };
+            }
+
+            view OpenOrdersView {
+                select { id, orderNo }
+                from Order
+                where { isClosed == false };
+            }
+            "##,
+        );
+
+        assert_eq!(program.items.len(), 4);
+        let Item::TableLogic(tl) = &program.items[0] else { panic!("expected tablelogic") };
+        assert_eq!(tl.field_validations.len(), 2);
+        assert_eq!(tl.field_validations[0].field_name, "name");
+        assert_eq!(tl.field_validations[1].field_name, "email");
+        assert_eq!(tl.field_validations[1].param_name, "customVal");
+
+        let Item::StateMachineExtension(sme) = &program.items[1] else { panic!("expected statemachineextension") };
+        assert_eq!(sme.states.len(), 3);
+        assert_eq!(sme.states[0].name, "Shipped");
+        assert_eq!(sme.states[1].name, "Returned");
+        assert_eq!(sme.states[2].name, "Delivered");
+
+        let Item::PermissionSet(ps) = &program.items[2] else { panic!("expected permissionset") };
+        assert_eq!(ps.permissions.len(), 2);
+
+        let Item::View(v) = &program.items[3] else { panic!("expected view") };
+        assert!(v.where_filter.is_some());
+    }
 }
 

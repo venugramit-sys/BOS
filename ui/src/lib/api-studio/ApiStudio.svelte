@@ -195,7 +195,7 @@
           const page = await readJson(`${apiBase}/api/entities/${encodeURIComponent(physical)}?page=1&limit=1`);
           row = page.data?.records?.[0] || null;
         }
-        const id = row?._id || existingId || '00000000-0000-0000-0000-000000000000';
+        const id = row?._id || existingId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : '');
         activeMethod = activeMethod === 'PATCH' ? 'PATCH' : 'PUT';
         activePath = `/api/entities/${physical}/${id}`;
         activeBody = JSON.stringify(updatePayloadFromSchema(schema, row), null, 2);

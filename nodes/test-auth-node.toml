@@ -1,0 +1,45 @@
+[node]
+id = "node-test-auth"
+name = "BOS Test Auth Node"
+role = "all_in_one"
+
+[network]
+host = "127.0.0.1"
+port = 3000
+cors_origins = ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"]
+
+[ui]
+enabled = true
+static_dir = "../ui/dist"
+index_file = "index.html"
+
+[database]
+url = "postgres://postgres:postgres@localhost:5432/test_bos_auth_db"
+min_pool_size = 1
+max_pool_size = 10
+storage_strategy = "shared_rls"
+connection_timeout_seconds = 10
+
+[defaults]
+default_tenant = "DEFAULT_TENANT"
+default_company = "MAIN_COMPANY"
+
+[nas_worker]
+enabled = true
+poll_interval_ms = 1000
+batch_size = 50
+process_outbox = true
+process_job_queue = true
+
+[security]
+maintenance_mode = false
+emergency_username = "emergency.admin"
+emergency_name = "Emergency Maintenance Administrator"
+emergency_roles = ["SUPER", "Admin", "Global Admin"]
+auto_fallback_on_auth_failure = true
+
+[pages]
+enabled = true
+artifact_dir = "../data/page-artifacts"
+compiler_workers = 0
+seed_dirs = ["../dist/packages"]

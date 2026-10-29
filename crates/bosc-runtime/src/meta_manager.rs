@@ -205,6 +205,10 @@ pub struct MetaObjectSummary {
     pub sub_type: Option<String>,
     pub status: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feature: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub definition: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -254,6 +258,21 @@ pub struct PackageSummary {
     pub publisher: String,
     pub status: String,
     pub installed_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterPackageRequest {
+    pub package_id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub version: Option<String>,
+    #[serde(default)]
+    pub publisher: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 pub struct MetaManager;
@@ -636,6 +655,7 @@ impl MetaManager {
         // stored authoritatively inside _bos_meta_objects.definition (JSONB).
         // No auxiliary dictionary table writes are required.
 
+        let feat = definition.get("feature").and_then(|f| f.as_str()).map(|s| s.to_string());
         Ok(MetaObjectSummary {
             object_id,
             object_type,
@@ -646,6 +666,8 @@ impl MetaManager {
             sub_type: Some(sub_type_str),
             status: "active".to_string(),
             created_at,
+            feature: feat,
+            definition: Some(definition),
         })
     }
 
@@ -803,6 +825,8 @@ impl MetaManager {
             sub_type: Some("Extension".to_string()),
             status: "active".to_string(),
             created_at,
+            feature: None,
+            definition: None,
         })
     }
 
@@ -811,15 +835,27 @@ impl MetaManager {
         pool: &PgPool,
         object_type: Option<&str>,
     ) -> Result<Vec<MetaObjectSummary>, RuntimeError> {
+        // Auto-seed core features and tag objects if core objects lack features
+        let needs_tagging: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM \"_bos_meta_objects\" WHERE package_name = 'bos.core' AND object_type != 'feature' AND (definition->>'feature' IS NULL OR definition->>'feature' = ''))"
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap_or(false);
+
+        if needs_tagging {
+            let _ = Self::seed_core_features(pool).await;
+        }
+
         let query = match object_type {
             Some(t) => {
                 format!(
-                    "SELECT object_id, object_type, object_name, package_name, version, caption, sub_type, status, created_at FROM \"_bos_meta_objects\" WHERE LOWER(object_type) = '{}' ORDER BY object_type, object_name;",
-                    t.to_lowercase().replace("'", "''")
+                    "SELECT object_id, object_type, object_name, package_name, version, caption, sub_type, status, created_at, COALESCE(definition->>'feature', '') as feature, definition FROM \"_bos_meta_objects\" WHERE LOWER(object_type) = '{}' ORDER BY object_type, object_name;",
+                    t.to_lowercase().replace('\'', "''")
                 )
             }
             None => {
-                "SELECT object_id, object_type, object_name, package_name, version, caption, sub_type, status, created_at FROM \"_bos_meta_objects\" ORDER BY object_type, object_name;".to_string()
+                "SELECT object_id, object_type, object_name, package_name, version, caption, sub_type, status, created_at, COALESCE(definition->>'feature', '') as feature, definition FROM \"_bos_meta_objects\" ORDER BY object_type, object_name;".to_string()
             }
         };
 
@@ -827,6 +863,10 @@ impl MetaManager {
         let mut list = Vec::new();
 
         for r in rows {
+            let feat_str: String = r.try_get("feature").unwrap_or_default();
+            let feat_opt = if feat_str.trim().is_empty() { None } else { Some(feat_str) };
+            let def_val: Option<serde_json::Value> = r.try_get("definition").ok();
+
             list.push(MetaObjectSummary {
                 object_id: r.try_get("object_id")?,
                 object_type: r.try_get("object_type")?,
@@ -837,6 +877,8 @@ impl MetaManager {
                 sub_type: r.try_get("sub_type").ok(),
                 status: r.try_get("status")?,
                 created_at: r.try_get("created_at")?,
+                feature: feat_opt,
+                definition: def_val,
             });
         }
 
@@ -844,6 +886,129 @@ impl MetaManager {
     }
 
     /// Fetch details for a specific meta-object by name
+
+    /// Assign or remove an object's feature tag in PostgreSQL _bos_meta_objects
+    pub async fn assign_meta_object_feature(
+        pool: &PgPool,
+        name: &str,
+        feature: Option<&str>,
+    ) -> Result<(), RuntimeError> {
+        let obj_name = name.trim();
+        if let Some(feat) = feature {
+            if !feat.trim().is_empty() {
+                let query = r#"UPDATE "_bos_meta_objects" SET definition = jsonb_set(COALESCE(definition, '{}'::jsonb), '{feature}', to_jsonb($1::text)), updated_at = NOW() WHERE LOWER(object_name) = LOWER($2);"#;
+                sqlx::query(query).bind(feat.trim()).bind(obj_name).execute(pool).await?;
+                return Ok(());
+            }
+        }
+        let query = r#"UPDATE "_bos_meta_objects" SET definition = definition - 'feature', updated_at = NOW() WHERE LOWER(object_name) = LOWER($1);"#;
+        sqlx::query(query).bind(obj_name).execute(pool).await?;
+        Ok(())
+    }
+
+    /// Idempotently seed the 8 core features of bos.core and tag existing objects
+    pub async fn seed_core_features(pool: &PgPool) -> Result<(), RuntimeError> {
+        let features = vec![
+            ("AppManagement", "App & Environment Management", "Multi-Tenant, Multi-Company, Regional localization & Theming"),
+            ("UserManagement", "User & Profile Management", "User Master, Roles, User Groups & Personalization"),
+            ("UserAuth", "Identity & Authentication", "Sessions, Lockout, Argon2, TOTP MFA, Google SSO & VITS Override"),
+            ("Integration", "Third-Party Integrations", "Scoped API Keys, OAuth IdP Providers & Service Accounts"),
+            ("SecurityAndRbac", "Security, RBAC & Menus", "Role Centers, Permissionsets & Navigation Trees"),
+            ("NumberSeries", "Number Series", "Sequential auto-numbering engines, lines & relationships"),
+            ("Dimensions", "Financial Dimensions", "Global & shortcut dimensions, dimension sets & combinations"),
+            ("LoginTemplates", "Login Experience Templates", "Responsive enterprise login templates: Split Hero, Glassmorphism, Multi-Tenant Domain"),
+        ];
+
+        for (feat_id, caption, desc) in features {
+            let def_json = serde_json::json!({
+                "type": "feature",
+                "description": desc,
+                "status": "active"
+            });
+            let insert_sql = r#"
+                INSERT INTO "_bos_meta_objects" (
+                    "object_type", "object_name", "package_name", "version", "caption",
+                    "sub_type", "definition", "checksum", "status", "updated_at"
+                ) VALUES (
+                    'feature', $1, 'bos.core', '1.0.0', $2, 'Feature', $3, '', 'active', NOW()
+                )
+                ON CONFLICT ("object_type", "object_name", "package_name") DO UPDATE
+                SET "caption" = EXCLUDED."caption",
+                    "definition" = EXCLUDED."definition",
+                    "updated_at" = NOW();
+            "#;
+            let _ = sqlx::query(insert_sql)
+                .bind(feat_id)
+                .bind(caption)
+                .bind(&def_json)
+                .execute(pool)
+                .await;
+        }
+
+        let mappings: Vec<(&str, Vec<&str>)> = vec![
+            ("AppManagement", vec![
+                "CoreSetup", "Tenant", "Company", "Currency", "CountryRegion", "CoreManager",
+                "CoreSetupCard", "TenantList", "TenantCard", "CompanyList", "CompanyCard",
+                "CurrencyList", "CurrencyCard", "CountryRegionList", "CountryRegionCard",
+                "TenantTier", "TenantStatus", "CompanyStatus", "ColorTheme", "ThemeMode",
+                "DateFormatEnum", "TimeFormatEnum", "NumberFormatEnum", "CurrencyPosition",
+            ]),
+            ("UserManagement", vec![
+                "User", "Role", "UserRole", "UserGroup", "UserGroupMember", "UserPersonalization",
+                "UserSecuritySetting", "UserManager", "UserList", "UserCard", "RoleList", "RoleCard",
+                "UserGroupList", "UserGroupCard", "UserRoleList", "UserPersonalizationList",
+                "UserPersonalizationCard", "UserSecuritySettingList", "UserStatus", "UserType",
+            ]),
+            ("UserAuth", vec![
+                "UserSession", "SecurityAuditLog", "AuthSetup", "AuthConfiguration", "AuthManager",
+                "LoginPage", "AuthSetupCard", "SessionList", "SecurityAuditLogList", "AuthConfigurationCard",
+                "SessionState", "AuditAction", "MfaMethod", "MfaPolicy",
+            ]),
+            ("Integration", vec![
+                "ApiKey", "ExternalAuthProvider", "ServiceAccount", "IntegrationManager",
+                "ApiKeyList", "ApiKeyCard", "ExternalAuthProviderList", "ExternalAuthProviderCard",
+                "ServiceAccountList", "ServiceAccountCard", "ApiKeyStatus", "AuthProviderType",
+            ]),
+            ("SecurityAndRbac", vec![
+                "CoreAdmin", "SecurityAdmin", "CoreUser", "CorePlatformMenu", "SuperAdminMenu",
+                "SystemAdminMenu", "BusinessUserMenu",
+            ]),
+            ("NumberSeries", vec![
+                "NoSeries", "NoSeriesLine", "NoSeriesRelationship", "NoSeriesSetup",
+                "NoSeriesManagement", "NoSeriesList", "NoSeriesCard", "NoSeriesSetupCard", "NoSeriesType",
+            ]),
+            ("Dimensions", vec![
+                "Dimension", "DimensionValue", "DimensionSet", "DimensionSetEntry", "DimensionSetup",
+                "DimensionManagement", "DimensionList", "DimensionCard", "DimensionValueList",
+                "DimensionSetupCard", "DimensionValueType",
+            ]),
+            ("LoginTemplates", vec![
+                "SplitHeroLogin", "GlassmorphismLogin", "MultiTenantDomainLogin",
+                "MfaOtpStepUpLogin", "KioskPinLockscreen", "PasskeyWebAuthnLogin",
+            ]),
+        ];
+
+        for (feat_id, obj_names) in mappings {
+            for obj in obj_names {
+                let tag_sql = r#"
+                    UPDATE "_bos_meta_objects"
+                    SET "definition" = jsonb_set(COALESCE("definition", '{}'::jsonb), '{feature}', to_jsonb($1::text)),
+                        "updated_at" = NOW()
+                    WHERE LOWER("object_name") = LOWER($2)
+                      AND "package_name" = 'bos.core'
+                      AND "object_type" != 'feature';
+                "#;
+                let _ = sqlx::query(tag_sql)
+                    .bind(feat_id)
+                    .bind(obj)
+                    .execute(pool)
+                    .await;
+            }
+        }
+
+        Ok(())
+    }
+
     pub async fn get_meta_object(
         pool: &PgPool,
         name: &str,
@@ -872,6 +1037,8 @@ impl MetaManager {
             None => return Ok(None),
         };
 
+        let def_val: Option<serde_json::Value> = row.try_get("definition").ok();
+        let feat_opt = def_val.as_ref().and_then(|d| d.get("feature")).and_then(|f| f.as_str()).map(|s| s.to_string());
         let summary = MetaObjectSummary {
             object_id: row.try_get("object_id")?,
             object_type: row.try_get("object_type")?,
@@ -882,6 +1049,8 @@ impl MetaManager {
             sub_type: row.try_get("sub_type").ok(),
             status: row.try_get("status")?,
             created_at: row.try_get("created_at")?,
+            feature: feat_opt,
+            definition: def_val,
         };
 
         let definition: serde_json::Value = row.try_get("definition").unwrap_or_default();
@@ -1064,6 +1233,48 @@ impl MetaManager {
         }))
     }
 
+    fn extract_single_object_source(
+        object_type: &str,
+        object_name: &str,
+        full_source: &str,
+    ) -> Option<String> {
+        let mut lexer = Lexer::new(full_source);
+        let tokens = lexer.tokenize().ok()?;
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse_program().ok()?;
+
+        for item in &program.items {
+            let (item_type, item_name, span) = match item {
+                bosc_syntax::Item::Table(d) => ("table", &d.name, &d.span),
+                bosc_syntax::Item::TableLogic(d) => ("tablelogic", &d.name, &d.span),
+                bosc_syntax::Item::TableExtension(d) => ("tableextension", &d.name, &d.span),
+                bosc_syntax::Item::TableLogicExtension(d) => ("tablelogicextension", &d.name, &d.span),
+                bosc_syntax::Item::StateMachine(d) => ("statemachine", &d.name, &d.span),
+                bosc_syntax::Item::StateMachineExtension(d) => ("statemachineextension", &d.name, &d.span),
+                bosc_syntax::Item::Codeunit(d) => ("codeunit", &d.name, &d.span),
+                bosc_syntax::Item::Interface(d) => ("interface", &d.name, &d.span),
+                bosc_syntax::Item::Enum(d) => ("enum", &d.name, &d.span),
+                bosc_syntax::Item::EnumExtension(d) => ("enumextension", &d.name, &d.span),
+                bosc_syntax::Item::PermissionSet(d) => ("permissionset", &d.name, &d.span),
+                bosc_syntax::Item::View(d) => ("view", &d.name, &d.span),
+                bosc_syntax::Item::Query(d) => ("query", &d.name, &d.span),
+                bosc_syntax::Item::Page(d) => ("page", &d.name, &d.span),
+                bosc_syntax::Item::PageExtension(d) => ("pageextension", &d.name, &d.span),
+                bosc_syntax::Item::Menu(d) => ("menu", &d.name, &d.span),
+                bosc_syntax::Item::Report(d) => ("report", &d.name, &d.span),
+                bosc_syntax::Item::CustomMetadata(d) => ("custommetadata", &d.name, &d.span),
+            };
+
+            if item_type.eq_ignore_ascii_case(object_type) && item_name.eq_ignore_ascii_case(object_name) {
+                if span.start <= span.end && span.end <= full_source.len() {
+                    let slice = &full_source[span.start..span.end];
+                    return Some(slice.trim().to_string());
+                }
+            }
+        }
+        None
+    }
+
     fn extract_or_reconstruct_source(
         object_type: &str,
         object_name: &str,
@@ -1071,10 +1282,12 @@ impl MetaManager {
     ) -> String {
         if let Some(src) = definition.get("source_script").and_then(|v| v.as_str()) {
             if !src.trim().is_empty() {
-                return src.to_string();
+                if let Some(isolated) = Self::extract_single_object_source(object_type, object_name, src) {
+                    return isolated;
+                }
             }
         }
-        match object_type {
+        let reconstructed = match object_type {
             "table" => {
                 let mut lines = vec![format!("table {} {{", object_name)];
                 if let Some(cols) = definition.get("columns").and_then(|c| c.as_array()) {
@@ -1495,7 +1708,16 @@ impl MetaManager {
                 lines.join("\n")
             }
             _ => String::new(),
+        };
+        if !reconstructed.is_empty() {
+            return reconstructed;
         }
+        if let Some(src) = definition.get("source_script").and_then(|v| v.as_str()) {
+            if !src.trim().is_empty() {
+                return src.to_string();
+            }
+        }
+        String::new()
     }
 
     /// Retrieve installed packages from catalog (_bos_meta_packages)
@@ -1518,6 +1740,50 @@ impl MetaManager {
             });
         }
         Ok(pkgs)
+    }
+
+    /// Register or update a package in the catalog (_bos_meta_packages)
+    pub async fn register_package(
+        pool: &PgPool,
+        req: RegisterPackageRequest,
+    ) -> Result<PackageSummary, RuntimeError> {
+        let pkg_id = req.package_id.trim();
+        if pkg_id.is_empty() {
+            return Err(RuntimeError::Internal("Package ID cannot be empty".to_string()));
+        }
+        let name = req.name.unwrap_or_else(|| pkg_id.to_string());
+        let version = req.version.unwrap_or_else(|| "1.0.0".to_string());
+        let publisher = req.publisher.unwrap_or_else(|| "Workspace".to_string());
+        let status = req.status.unwrap_or_else(|| "active".to_string());
+
+        let row = sqlx::query(
+            r#"
+            INSERT INTO "_bos_meta_packages" ("package_id", "name", "version", "publisher", "status", "checksum", "installed_at")
+            VALUES ($1, $2, $3, $4, $5, '', NOW())
+            ON CONFLICT ("package_id") DO UPDATE
+            SET "name" = EXCLUDED."name",
+                "version" = EXCLUDED."version",
+                "publisher" = EXCLUDED."publisher",
+                "status" = EXCLUDED."status"
+            RETURNING package_id, name, version, publisher, status, installed_at
+            "#
+        )
+        .bind(pkg_id)
+        .bind(&name)
+        .bind(&version)
+        .bind(&publisher)
+        .bind(&status)
+        .fetch_one(pool)
+        .await?;
+
+        Ok(PackageSummary {
+            package_id: row.try_get("package_id")?,
+            name: row.try_get("name")?,
+            version: row.try_get("version")?,
+            publisher: row.try_get("publisher")?,
+            status: row.try_get("status")?,
+            installed_at: row.try_get("installed_at")?,
+        })
     }
 
     /// Compile and apply BOS-Script to an already created table

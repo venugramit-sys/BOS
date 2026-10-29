@@ -1,0 +1,464 @@
+// ============================================================================
+// BOS Core Mega-Package: Feature 4 - Third Party Integrations & M2M Access
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// 1. EXTENSIBLE ENUMERATIONS (Integration & M2M)
+// ----------------------------------------------------------------------------
+
+enum ApiKeyStatus {
+    extensible = true;
+    Active;
+    Revoked;
+    Expired;
+}
+
+enum AuthProviderType {
+    extensible = true;
+    Google;
+    Microsoft;
+    Okta;
+    GitHub;
+    CustomOIDC;
+    SAML2;
+}
+
+// ----------------------------------------------------------------------------
+// 2. DOMAIN TABLES
+// ----------------------------------------------------------------------------
+
+table ApiKey {
+    caption = "Scoped API Access Keys";
+    tableType = Normal;
+    dataPerCompany = false;
+
+    id: UUID {
+        default = auto();
+    };
+    name: String(100) {
+        notNull = true;
+    };
+    keyPrefix: String(16) {
+        notNull = true;
+    };
+    keyHash: String(64) {
+        notNull = true;
+        unique = true;
+    };
+    scopes: String(255) {
+        default = "api:read";
+    };
+    expiresAt: DateTime;
+    lastUsedAt: DateTime;
+    status: Enum(ApiKeyStatus) {
+        default = "Active";
+    };
+    createdBy: String(50);
+
+    primaryKey(id);
+    key(keyHash);
+    key(status);
+}
+
+table ExternalAuthProvider {
+    caption = "External Identity Providers";
+    tableType = Normal;
+    dataPerCompany = false;
+
+    providerId: String(30) {
+        notNull = true;
+        unique = true;
+    };
+    name: String(100) {
+        notNull = true;
+    };
+    providerType: Enum(AuthProviderType) {
+        default = "Google";
+    };
+    issuerUrl: String(255);
+    clientId: String(255) {
+        notNull = true;
+    };
+    clientSecretHash: String(255);
+    isEnabled: Boolean {
+        default = true;
+    };
+    allowJitProvisioning: Boolean {
+        default = true;
+    };
+
+    primaryKey(providerId);
+    key(providerType);
+}
+
+table ServiceAccount {
+    caption = "Automated Service Accounts";
+    tableType = Normal;
+    dataPerCompany = false;
+
+    code: String(50) {
+        notNull = true;
+        unique = true;
+    };
+    name: String(100) {
+        notNull = true;
+    };
+    description: String(255);
+    defaultRoleCode: String(30) {
+        relation = Role.code;
+    };
+    isActive: Boolean {
+        default = true;
+    };
+
+    primaryKey(code);
+}
+
+// ----------------------------------------------------------------------------
+// 3. TABLE LOGIC COMPANIONS
+// ----------------------------------------------------------------------------
+
+tablelogic ApiKeyLogic for ApiKey {
+    onInsert(rec, ctx) {
+        if (!rec.name || String(rec.name).trim().length === 0) {
+            throw new Error("Validation Failed: API Key requires a descriptive 'name'.");
+        }
+        if (!rec.keyHash) {
+            throw new Error("Validation Failed: API Key requires 'keyHash'.");
+        }
+    }
+
+    onModify(rec, xRec, ctx) {
+        if (rec.keyHash && xRec.keyHash && rec.keyHash !== xRec.keyHash) {
+            throw new Error("Security Violation: An API key hash cannot be modified.");
+        }
+    }
+}
+
+tablelogic ExternalAuthProviderLogic for ExternalAuthProvider {
+    onInsert(rec, ctx) {
+        if (!rec.providerId || String(rec.providerId).trim().length === 0) {
+            throw new Error("Validation Failed: 'providerId' is required.");
+        }
+        rec.providerId = String(rec.providerId).toLowerCase().trim();
+        if (!rec.clientId) {
+            throw new Error("Validation Failed: 'clientId' is required.");
+        }
+    }
+}
+
+tablelogic ServiceAccountLogic for ServiceAccount {
+    onInsert(rec, ctx) {
+        if (!rec.code || String(rec.code).trim().length === 0) {
+            throw new Error("Validation Failed: ServiceAccount 'code' is required.");
+        }
+        rec.code = String(rec.code).toLowerCase().trim();
+    }
+}
+
+// ----------------------------------------------------------------------------
+// 4. CODEUNIT: IntegrationManager
+// ----------------------------------------------------------------------------
+
+codeunit IntegrationManager {
+    @businessEvent
+    onApiKeyGenerated(name: String, keyPrefix: String) {}
+
+    @businessEvent
+    onApiKeyRevoked(id: UUID) {}
+
+    GenerateApiKey(name: String, scopes: String, expiryDays: Integer, createdBy: String) {
+        const n = (rec && rec.name !== undefined) ? rec.name : name;
+        const sc = (rec && rec.scopes !== undefined) ? rec.scopes : (scopes || "api:read");
+        const days = (rec && rec.expiryDays !== undefined) ? rec.expiryDays : (expiryDays || 365);
+        const user = (rec && rec.createdBy !== undefined) ? rec.createdBy : (createdBy || "admin");
+
+        if (!n) throw new Error("Key name is required.");
+
+        // Generate 32-byte cryptographic entropy
+        const rawSecret = ctx.crypto.randomBytes(32).toHex();
+        const prefix = rawSecret.substring(0, 12);
+        const fullKey = `bos_live_${rawSecret}`;
+        const keyHash = ctx.crypto.sha256(fullKey);
+
+        const expiresAt = days > 0
+            ? new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
+            : null;
+
+        const record = ApiKey.insert({
+            name: String(n).trim(),
+            keyPrefix: `bos_live_${prefix}`,
+            keyHash: keyHash,
+            scopes: sc,
+            expiresAt: expiresAt,
+            status: "Active",
+            createdBy: user
+        });
+
+        SecurityAuditLog.insert({
+            username: user,
+            action: "RoleAssigned",
+            details: `New API Key '${n}' generated with prefix 'bos_live_${prefix}...'.`,
+            isSuccess: true
+        });
+
+        return {
+            success: true,
+            id: record.id,
+            name: record.name,
+            prefix: record.keyPrefix,
+            apiKey: fullKey,
+            expiresAt: expiresAt,
+            warning: "Store this key safely now. For security reasons, it cannot be displayed again."
+        };
+    }
+
+    VerifyApiKey(rawKey: String) {
+        const k = (rec && rec.rawKey !== undefined) ? rec.rawKey : rawKey;
+        if (!k || !String(k).startsWith("bos_live_")) {
+            return { valid: false, reason: "INVALID_KEY_FORMAT" };
+        }
+
+        const keyHash = ctx.crypto.sha256(String(k).trim());
+        const keyRecords = ApiKey.find({ keyHash: keyHash }) || [];
+        if (keyRecords.length === 0) {
+            return { valid: false, reason: "KEY_NOT_FOUND" };
+        }
+
+        const keyRecord = keyRecords[0];
+        if (keyRecord.status !== "Active") {
+            return { valid: false, reason: `KEY_${keyRecord.status.toUpperCase()}` };
+        }
+
+        if (keyRecord.expiresAt && new Date(keyRecord.expiresAt) <= new Date()) {
+            ApiKey.update(keyRecord.id, { status: "Expired" });
+            return { valid: false, reason: "KEY_EXPIRED" };
+        }
+
+        ApiKey.update(keyRecord.id, { lastUsedAt: new Date().toISOString() });
+
+        return {
+            valid: true,
+            name: keyRecord.name,
+            scopes: (keyRecord.scopes || "api:read").split(",").map(s => s.trim()),
+            createdBy: keyRecord.createdBy
+        };
+    }
+
+    RevokeApiKey(keyId: UUID) {
+        const id = (rec && rec.keyId !== undefined) ? rec.keyId : keyId;
+        if (!id) throw new Error("Key ID is required.");
+
+        ApiKey.update(id, { status: "Revoked" });
+
+        SecurityAuditLog.insert({
+            username: "system",
+            action: "RoleRevoked",
+            details: `API Key '${id}' revoked.`,
+            isSuccess: true
+        });
+
+        return { success: true, id: id, status: "Revoked" };
+    }
+}
+
+// ----------------------------------------------------------------------------
+// 5. USER INTERFACE PAGES
+// ----------------------------------------------------------------------------
+
+page ApiKeyList for ApiKey {
+    pageType = List;
+    caption = "API Keys";
+
+    layout {
+        area(Content) {
+            repeater(KeysRepeater) {
+                field(name) {
+                    caption = "Key Name";
+                }
+                field(keyPrefix) {
+                    caption = "Prefix";
+                }
+                field(scopes) {
+                    caption = "Permission Scopes";
+                }
+                field(status) {
+                    caption = "Status";
+                }
+                field(expiresAt) {
+                    caption = "Expires At";
+                }
+                field(lastUsedAt) {
+                    caption = "Last Used";
+                }
+                field(createdBy) {
+                    caption = "Created By";
+                }
+            }
+        }
+    }
+}
+
+page ApiKeyCard for ApiKey {
+    pageType = Card;
+    caption = "API Key Details";
+
+    layout {
+        area(Content) {
+            group(KeyGeneralFastTab) {
+                caption = "Key Information";
+                field(name) {
+                    caption = "Key Name";
+                }
+                field(keyPrefix) {
+                    caption = "Key Prefix Identifier";
+                }
+                field(scopes) {
+                    caption = "Permission Scopes";
+                }
+                field(status) {
+                    caption = "Key Lifecycle Status";
+                }
+                field(expiresAt) {
+                    caption = "Expiration Timestamp";
+                }
+                field(lastUsedAt) {
+                    caption = "Last Active Usage";
+                }
+                field(createdBy) {
+                    caption = "Authorizing Identity";
+                }
+            }
+        }
+    }
+
+    actions {
+        area(Processing) {
+            action(RevokeKeyAction) {
+                caption = "Revoke API Key";
+                icon = "Trash";
+                promotes = true;
+                onAction(rec, ctx) {
+                    const res = ctx.call("IntegrationManager", "RevokeApiKey", { keyId: rec.id });
+                    ctx.ui.message("API Key has been revoked.");
+                }
+            }
+        }
+    }
+}
+
+page ExternalAuthProviderList for ExternalAuthProvider {
+    pageType = List;
+    caption = "External Identity Providers";
+
+    layout {
+        area(Content) {
+            repeater(ProvidersRepeater) {
+                field(providerId) {
+                    caption = "Provider ID";
+                }
+                field(name) {
+                    caption = "Provider Name";
+                }
+                field(providerType) {
+                    caption = "Type";
+                }
+                field(clientId) {
+                    caption = "OAuth Client ID";
+                }
+                field(isEnabled) {
+                    caption = "Enabled";
+                }
+                field(allowJitProvisioning) {
+                    caption = "Auto JIT Provisioning";
+                }
+            }
+        }
+    }
+}
+
+page ExternalAuthProviderCard for ExternalAuthProvider {
+    pageType = Card;
+    caption = "Identity Provider Details";
+
+    layout {
+        area(Content) {
+            group(ProviderGeneralFastTab) {
+                caption = "Provider Configuration";
+                field(providerId) {
+                    caption = "Provider Identifier";
+                }
+                field(name) {
+                    caption = "Display Name";
+                }
+                field(providerType) {
+                    caption = "Federation Protocol";
+                }
+                field(issuerUrl) {
+                    caption = "OIDC Issuer / Metadata URL";
+                }
+                field(clientId) {
+                    caption = "OAuth / SAML Client ID";
+                }
+                field(isEnabled) {
+                    caption = "Enabled For Sign In";
+                }
+                field(allowJitProvisioning) {
+                    caption = "Allow Just-In-Time User Provisioning";
+                }
+            }
+        }
+    }
+}
+
+page ServiceAccountList for ServiceAccount {
+    pageType = List;
+    caption = "Service Accounts";
+
+    layout {
+        area(Content) {
+            repeater(ServiceAccountsRepeater) {
+                field(code) {
+                    caption = "Account Code";
+                }
+                field(name) {
+                    caption = "Service Name";
+                }
+                field(defaultRoleCode) {
+                    caption = "Assigned Role";
+                }
+                field(isActive) {
+                    caption = "Active";
+                }
+            }
+        }
+    }
+}
+
+page ServiceAccountCard for ServiceAccount {
+    pageType = Card;
+    caption = "Service Account Details";
+
+    layout {
+        area(Content) {
+            group(ServiceAccountGeneralFastTab) {
+                caption = "General Information";
+                field(code) {
+                    caption = "Account Code";
+                }
+                field(name) {
+                    caption = "Service Name";
+                }
+                field(description) {
+                    caption = "Description";
+                }
+                field(defaultRoleCode) {
+                    caption = "Default Assigned Security Role";
+                }
+                field(isActive) {
+                    caption = "Active Status";
+                }
+            }
+        }
+    }
+}

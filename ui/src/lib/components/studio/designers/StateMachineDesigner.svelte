@@ -31,6 +31,28 @@
 
   let isApplying = $state(false);
   let statusBanner = $state(null);
+  let selectedState = $state(null);
+
+  // Compute layout coordinates for SVG workflow diagram
+  let statePositions = $derived.by(() => {
+    const coords = {};
+    const count = states.length;
+    if (count === 0) return coords;
+    const startX = 70;
+    const stepX = 160;
+    const baseY = 80;
+    states.forEach((s, idx) => {
+      coords[s.name] = {
+        x: startX + idx * stepX,
+        y: baseY + (idx % 2 === 1 ? 40 : -20),
+      };
+    });
+    return coords;
+  });
+
+  let svgWidth = $derived.by(() => {
+    return Math.max(700, states.length * 170 + 80);
+  });
 
   function parseFromSource(src) {
     if (!src || !src.trim()) return;
@@ -47,7 +69,23 @@
     }
 
     const parsedStates = [];
-    const stateRegex = /(?:(initial|final)\s+)?state\s+([A-Za-z0-9_]+)\s*(?:\{([^}]*)\})?/g;
+
+    // Support states: [Draft, PendingApproval, Approved];
+    const statesArrayMatch = src.match(/states\s*:\s*\[([^\]]+)\]/);
+    if (statesArrayMatch) {
+      const names = statesArrayMatch[1].split(',').map(s => s.trim()).filter(Boolean);
+      for (let i = 0; i < names.length; i++) {
+        parsedStates.push({
+          name: names[i],
+          initial: i === 0,
+          final: i === names.length - 1,
+          allowModify: i === 0,
+          allowDelete: i === 0,
+        });
+      }
+    }
+
+    const stateRegex = /(?:(initial|final)\s+)?state\s+([A-Za-z0-9_]+)\s*(?:\{([^}]*)\}|;)/g;
     let sm;
     while ((sm = stateRegex.exec(src)) !== null) {
       const modifier = (sm[1] || "").toLowerCase();
@@ -57,31 +95,27 @@
       const isFinal = modifier === "final" || /final\s*[:=]\s*true/i.test(sBody);
       const modMatch = sBody.match(/allowModify\s*[:=]\s*(true|false)/i);
       const delMatch = sBody.match(/allowDelete\s*[:=]\s*(true|false)/i);
-      parsedStates.push({
-        name: sName,
-        initial: isInit,
-        final: isFinal,
-        allowModify: modMatch ? modMatch[1].toLowerCase() === "true" : isInit,
-        allowDelete: delMatch ? delMatch[1].toLowerCase() === "true" : isInit,
-      });
+      if (!parsedStates.some(s => s.name === sName)) {
+        parsedStates.push({
+          name: sName,
+          initial: isInit,
+          final: isFinal,
+          allowModify: modMatch ? modMatch[1].toLowerCase() === "true" : isInit,
+          allowDelete: delMatch ? delMatch[1].toLowerCase() === "true" : isInit,
+        });
+      }
     }
 
     const parsedTransitions = [];
     const trHeaderRegex =
-      /transition\s+([A-Za-z0-9_]+)\s+(?:from\s+([A-Za-z0-9_*]+)\s+to\s+([A-Za-z0-9_]+)|:\s*([A-Za-z0-9_*]+)\s*->\s*([A-Za-z0-9_]+))\s*\{/g;
+      /transition\s+([A-Za-z0-9_]+)\s*(?:from\s+([A-Za-z0-9_*]+)\s+to\s+([A-Za-z0-9_]+)|:\s*([A-Za-z0-9_*]+)\s*->\s*([A-Za-z0-9_]+))\s*(?:\{([^}]*)\}|;)/g;
     let tm;
     while ((tm = trHeaderRegex.exec(src)) !== null) {
       const action = tm[1];
       const from = tm[2] || tm[4];
       const to = tm[3] || tm[5];
-      let depth = 1;
-      let idx = trHeaderRegex.lastIndex;
-      while (idx < src.length && depth > 0) {
-        if (src[idx] === "{") depth++;
-        else if (src[idx] === "}") depth--;
-        idx++;
-      }
-      const body = src.slice(trHeaderRegex.lastIndex, idx - 1);
+      const body = tm[6] || "";
+
       const rolesMatch = body.match(/roles\s*[:=]\s*\[([^\]]*)\]/);
       const fnGuardMatch = body.match(/guard\s*\([^)]*\)\s*\{\s*(?:return\s+)?([^;}\n]+)/);
       const propGuardMatch = body.match(/guard\s*[:=]\s*([^;\n]+)/);
@@ -90,13 +124,16 @@
         : propGuardMatch
           ? propGuardMatch[1].trim().replace(/^["']|["']$/g, "")
           : "";
-      parsedTransitions.push({
-        action,
-        from,
-        to,
-        roles: rolesMatch ? rolesMatch[1].trim() : "",
-        guard: rawGuard,
-      });
+
+      if (!parsedTransitions.some(t => t.action === action && t.from === from && t.to === to)) {
+        parsedTransitions.push({
+          action,
+          from,
+          to,
+          roles: rolesMatch ? rolesMatch[1].trim() : "",
+          guard: rawGuard,
+        });
+      }
     }
 
     if (parsedStates.length > 0) states = parsedStates;
@@ -251,20 +288,121 @@
       />
     </div>
 
-    <!-- Visual State Flow Diagram -->
+    <!-- Interactive Visual Workflow Diagram -->
     <div class="space-y-2">
       <div class="flex items-center justify-between">
-        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500">Visual Lifecycle Flow</h3>
-        <Button size="xs" variant="secondary" icon={Plus} onclick={addState}>Add State</Button>
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500">Interactive Document Workflow Diagram</h3>
+        <div class="flex items-center gap-2">
+          {#if selectedState}
+            <Badge tone="info">Focused: {selectedState}</Badge>
+            <Button size="xs" variant="ghost" onclick={() => (selectedState = null)}>Clear Focus</Button>
+          {/if}
+          <Button size="xs" variant="secondary" icon={Plus} onclick={addState}>Add State</Button>
+        </div>
       </div>
-      <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/30 flex items-center gap-3 flex-wrap">
+      <div class="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-900/5 dark:bg-slate-900/40 p-3 overflow-x-auto">
+        <svg width={svgWidth} height="170" class="select-none">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 9 5 L 0 9 z" fill="#6366F1" />
+            </marker>
+            <marker id="arrow-active" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 1 L 9 5 L 0 9 z" fill="#10B981" />
+            </marker>
+          </defs>
+
+          <!-- Transition Curves -->
+          {#each transitions as tr}
+            {@const fromP = statePositions[tr.from]}
+            {@const toP = statePositions[tr.to]}
+            {#if fromP && toP}
+              {@const isActive = selectedState === tr.from || selectedState === tr.to}
+              {@const dx = toP.x - fromP.x}
+              {@const dy = toP.y - fromP.y}
+              {@const mx = (fromP.x + toP.x) / 2}
+              {@const my = (fromP.y + toP.y) / 2 + (dy > 0 ? -15 : 15)}
+              <path
+                d="M {fromP.x} {fromP.y} Q {mx} {my - 20} {toP.x} {toP.y}"
+                fill="none"
+                stroke={isActive ? "#10B981" : "#818CF8"}
+                stroke-width={isActive ? "2.5" : "1.5"}
+                stroke-dasharray={tr.guard ? "4 2" : "none"}
+                marker-end={isActive ? "url(#arrow-active)" : "url(#arrow)"}
+                class="transition-colors duration-200"
+              />
+              <g transform="translate({mx}, {my - 10})">
+                <rect
+                  x="-32"
+                  y="-9"
+                  width="64"
+                  height="18"
+                  rx="9"
+                  class="fill-white dark:fill-slate-800 stroke {isActive ? 'stroke-emerald-500' : 'stroke-indigo-400 dark:stroke-indigo-600'}"
+                  stroke-width="1"
+                />
+                <text
+                  x="0"
+                  y="3"
+                  text-anchor="middle"
+                  class="text-[9px] font-mono font-medium fill-slate-700 dark:fill-slate-200 pointer-events-none"
+                >
+                  {tr.action}
+                </text>
+              </g>
+            {/if}
+          {/each}
+
+          <!-- State Nodes -->
+          {#each states as st}
+            {@const pos = statePositions[st.name]}
+            {#if pos}
+              {@const isSelected = selectedState === st.name}
+              <g
+                transform="translate({pos.x}, {pos.y})"
+                class="cursor-pointer"
+                role="button"
+                tabindex="0"
+                onclick={() => (selectedState = isSelected ? null : st.name)}
+                onkeydown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") selectedState = isSelected ? null : st.name;
+                }}
+              >
+                <rect
+                  x="-50"
+                  y="-18"
+                  width="100"
+                  height="36"
+                  rx="18"
+                  class="fill-white dark:fill-slate-900 shadow-md transition-all duration-200 {isSelected ? 'stroke-indigo-500 stroke-2' : st.initial ? 'stroke-emerald-500 stroke-2' : st.final ? 'stroke-purple-500 stroke-2' : 'stroke-slate-300 dark:stroke-slate-700 stroke-1'}"
+                />
+                <text
+                  x="0"
+                  y="1"
+                  text-anchor="middle"
+                  class="font-mono text-[11px] font-semibold fill-slate-800 dark:fill-slate-100 pointer-events-none"
+                >
+                  {st.name}
+                </text>
+                {#if st.initial}
+                  <text x="0" y="11" text-anchor="middle" class="text-[7px] font-bold fill-emerald-600 uppercase tracking-widest pointer-events-none">Init</text>
+                {:else if st.final}
+                  <text x="0" y="11" text-anchor="middle" class="text-[7px] font-bold fill-purple-600 uppercase tracking-widest pointer-events-none">Final</text>
+                {/if}
+              </g>
+            {/if}
+          {/each}
+        </svg>
+      </div>
+
+      <!-- State Pills & Quick Config -->
+      <div class="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/30 flex items-center gap-2.5 flex-wrap">
         {#each states as st, idx}
-          <div class="px-3 py-2 rounded-lg border bg-white dark:bg-slate-900 shadow-xs flex items-center gap-2 {st.initial ? 'border-emerald-500' : st.final ? 'border-indigo-500' : 'border-slate-200 dark:border-slate-700'}">
+          <div class="px-3 py-1.5 rounded-lg border bg-white dark:bg-slate-900 shadow-xs flex items-center gap-2 {st.initial ? 'border-emerald-500' : st.final ? 'border-purple-500' : 'border-slate-200 dark:border-slate-700'}">
             <input
               type="text"
               bind:value={st.name}
               onchange={syncToSource}
-              class="font-mono text-xs font-semibold bg-transparent border-b border-transparent focus:border-indigo-500 focus:outline-none w-24"
+              class="font-mono text-xs font-semibold bg-transparent border-b border-transparent focus:border-indigo-500 focus:outline-none w-20"
             />
             <label class="flex items-center gap-1 text-[10px] text-slate-500 cursor-pointer">
               <input type="checkbox" bind:checked={st.initial} onchange={syncToSource} />
@@ -278,9 +416,6 @@
               <Trash2 class="size-3.5" />
             </button>
           </div>
-          {#if idx < states.length - 1}
-            <ArrowRight class="size-4 text-slate-400 shrink-0" />
-          {/if}
         {/each}
       </div>
     </div>

@@ -1,6 +1,10 @@
 import AppShell from "./AppShell.svelte";
 import TopNavBar from "./TopNavBar.svelte";
 import SidebarNav from "./SidebarNav.svelte";
+import NavSwitcher from "./NavSwitcher.svelte";
+import NavMain from "./NavMain.svelte";
+import NavSecondary from "./NavSecondary.svelte";
+import NavUser from "./NavUser.svelte";
 import WorkspaceTabs from "./WorkspaceTabs.svelte";
 import FactBoxDrawer from "./FactBoxDrawer.svelte";
 import MobileBottomNav from "./MobileBottomNav.svelte";
@@ -12,12 +16,17 @@ import UserProfilePage from "./UserProfilePage.svelte";
 import SignIn from "./SignIn.svelte";
 import InitialSetupWizard from "./InitialSetupWizard.svelte";
 import PageSurface from "./PageSurface.svelte";
+import TemplatesGallery from "./TemplatesGallery.svelte";
 import { shell } from "./shellStore.svelte.js";
 
 export {
   AppShell,
   TopNavBar,
   SidebarNav,
+  NavSwitcher,
+  NavMain,
+  NavSecondary,
+  NavUser,
   WorkspaceTabs,
   FactBoxDrawer,
   MobileBottomNav,
@@ -29,6 +38,7 @@ export {
   SignIn,
   InitialSetupWizard,
   PageSurface,
+  TemplatesGallery,
   shell
 };
 

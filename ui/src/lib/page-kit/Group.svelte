@@ -31,16 +31,25 @@
 </script>
 
 {#if shown}
-  {#if nested}
+  {#if nested || c.properties?.showCaption === "false" || c.properties?.header === "false" || !c.caption}
     <section class={boxClass(p, c, "bos-subgroup")} style={boxStyle(c)} {...nodeAttrs(p, c, isHidden(p, c, visible))}>
-      {#if c.caption}<h4 class="bos-subgroup-title">{c.caption}</h4>{/if}
+      {#if c.caption && c.properties?.showCaption !== "false"}<h4 class="bos-subgroup-title">{c.caption}</h4>{/if}
       <div class="bos-fields">{@render children?.()}</div>
     </section>
   {:else}
     <section class={boxClass(p, c, "bos-fasttab")} style={boxStyle(c)} {...nodeAttrs(p, c, isHidden(p, c, visible))}>
       <button type="button" class="bos-fasttab-header" aria-expanded={state.open} aria-controls={bodyId} onclick={() => (state.open = !state.open)}>
         <ChevronDown class={"size-4 shrink-0 transition-transform " + (state.open ? "" : "-rotate-90")} />
-        {#if c.style?.icon}<Icon name={c.style.icon} class="size-4 shrink-0" />{/if}
+        {#if c.style?.icon}
+          <Icon
+            name={c.style.icon}
+            class="shrink-0"
+            size={c.style.iconSize}
+            color={c.style.iconColor}
+            background={c.style.iconBackground}
+            radius={c.style.iconRadius}
+          />
+        {/if}
         <span class="font-semibold">{c.caption ?? c.name}</span>
         {#if !state.open && summary}
           <span class="ml-auto truncate text-xs font-normal text-[var(--bos-color-subordinate)]">{summary}</span>

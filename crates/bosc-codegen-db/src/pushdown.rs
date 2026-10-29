@@ -7,10 +7,8 @@ use bosc_ir::ActionIR;
 use bosc_ir::MethodIR;
 
 pub fn body(method: &MethodIR) -> Result<String, String> {
-    if let Some(script) = &method.script {
-        if !script.trim().is_empty() {
-            return translate_script(script);
-        }
+    if let Some(script) = method.script.as_deref().filter(|s| !s.trim().is_empty()) {
+        return translate_script(script);
     }
     if method.actions.is_empty() {
         return Err("the method has no body to run inside PostgreSQL".to_string());
@@ -134,13 +132,11 @@ fn translate_script_line(line: &str) -> Result<String, String> {
         }
         return Err("testField needs a field name".to_string());
     }
-    if let Some(rest) = line.strip_prefix("rec.") {
-        if let Some((field, value)) = rest.split_once('=') {
-            let field = field.trim();
-            if !field.is_empty() && !field.contains('(') && !field.contains('.') {
-                let expr = literal_jsonb(value)?;
-                return Ok(format!("    p_params := jsonb_set(p_params, ARRAY['{field}'], {expr});\n"));
-            }
+    if let Some((field, value)) = line.strip_prefix("rec.").and_then(|r| r.split_once('=')) {
+        let field = field.trim();
+        if !field.is_empty() && !field.contains('(') && !field.contains('.') {
+            let expr = literal_jsonb(value)?;
+            return Ok(format!("    p_params := jsonb_set(p_params, ARRAY['{field}'], {expr});\n"));
         }
     }
     if let Some(rest) = line.strip_prefix("ctx.audit.log(") {

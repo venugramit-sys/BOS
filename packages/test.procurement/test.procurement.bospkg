@@ -1,0 +1,1866 @@
+{
+  "manifest": {
+    "package_id": "test.procurement",
+    "name": "Procurement & Vendor Operations",
+    "version": "1.0.0",
+    "publisher": "BOS Architecture Test Suite",
+    "dependencies": [],
+    "optional_features": []
+  },
+  "objects": [
+    {
+      "caption": "Vendor",
+      "check_constraints": [],
+      "columns": [
+        {
+          "caption": "no",
+          "check_constraint": null,
+          "data_type": "String(20)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": true,
+          "name": "no",
+          "sql_name": "no",
+          "sql_type": "VARCHAR(20)"
+        },
+        {
+          "caption": "name",
+          "check_constraint": null,
+          "data_type": "String(100)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "name",
+          "sql_name": "name",
+          "sql_type": "VARCHAR(100)"
+        },
+        {
+          "caption": "tier",
+          "check_constraint": null,
+          "data_type": "Enum(VendorTier)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "tier",
+          "sql_name": "tier",
+          "sql_type": "VARCHAR(50)"
+        },
+        {
+          "caption": "contactEmail",
+          "check_constraint": null,
+          "data_type": "String(100)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "contactEmail",
+          "sql_name": "contact_email",
+          "sql_type": "VARCHAR(100)"
+        },
+        {
+          "caption": "isBlocked",
+          "check_constraint": null,
+          "data_type": "Boolean",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "isBlocked",
+          "sql_name": "is_blocked",
+          "sql_type": "BOOLEAN"
+        },
+        {
+          "caption": "totalOrderAmount",
+          "check_constraint": null,
+          "data_type": "Decimal(18, 2)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "totalOrderAmount",
+          "sql_name": "total_order_amount",
+          "sql_type": "NUMERIC(18, 2)"
+        },
+        {
+          "caption": "riskScore",
+          "check_constraint": null,
+          "data_type": "Integer",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "riskScore",
+          "sql_name": "risk_score",
+          "sql_type": "INTEGER"
+        },
+        {
+          "caption": "lastAuditDate",
+          "check_constraint": null,
+          "data_type": "DateTime",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "lastAuditDate",
+          "sql_name": "last_audit_date",
+          "sql_type": "TIMESTAMPTZ"
+        }
+      ],
+      "data_per_company": true,
+      "field_groups": [
+        {
+          "fields": [
+            "no",
+            "name"
+          ],
+          "name": "DropDown"
+        },
+        {
+          "fields": [
+            "no",
+            "name",
+            "tier"
+          ],
+          "name": "Brick"
+        }
+      ],
+      "flow_fields": [],
+      "indexes": [],
+      "name": "Vendor",
+      "object_type": "table",
+      "on_delete": null,
+      "package_name": "test.procurement",
+      "primary_key": [
+        "no"
+      ],
+      "sql_table_name": "vendor",
+      "table_type": "Normal",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.tier) {\n    rec.tier = \"Standard\";\n}"
+        },
+        {
+          "actions": [],
+          "name": "onValidate_name",
+          "params": [
+            "val"
+          ],
+          "script": "if (!val || val.trim().length === 0) {\n    throw new Error(\"Vendor name cannot be blank.\");\n}"
+        },
+        {
+          "actions": [],
+          "name": "onValidate_risk_score",
+          "params": [
+            "val"
+          ],
+          "script": "if (val !== undefined && val !== null && (val < 0 || val > 100)) {\n    throw new Error(\"Risk score must be between 0 and 100.\");\n}"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "caption": "PurchaseOrderHeader",
+      "check_constraints": [],
+      "columns": [
+        {
+          "caption": "orderNo",
+          "check_constraint": null,
+          "data_type": "String(20)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": true,
+          "name": "orderNo",
+          "sql_name": "order_no",
+          "sql_type": "VARCHAR(20)"
+        },
+        {
+          "caption": "vendorNo",
+          "check_constraint": null,
+          "data_type": "String(20)",
+          "default_val": null,
+          "foreign_key": {
+            "on_delete": "RESTRICT",
+            "target_column": "no",
+            "target_table": "vendor"
+          },
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "vendorNo",
+          "sql_name": "vendor_no",
+          "sql_type": "VARCHAR(20)"
+        },
+        {
+          "caption": "orderDate",
+          "check_constraint": null,
+          "data_type": "DateTime",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "orderDate",
+          "sql_name": "order_date",
+          "sql_type": "TIMESTAMPTZ"
+        },
+        {
+          "caption": "status",
+          "check_constraint": null,
+          "data_type": "Enum(PurchaseOrderStatus)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "status",
+          "sql_name": "status",
+          "sql_type": "VARCHAR(50)"
+        },
+        {
+          "caption": "currency",
+          "check_constraint": null,
+          "data_type": "String(10)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "currency",
+          "sql_name": "currency",
+          "sql_type": "VARCHAR(10)"
+        },
+        {
+          "caption": "totalAmount",
+          "check_constraint": null,
+          "data_type": "Decimal(18, 2)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "totalAmount",
+          "sql_name": "total_amount",
+          "sql_type": "NUMERIC(18, 2)"
+        },
+        {
+          "caption": "notes",
+          "check_constraint": null,
+          "data_type": "String(250)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "notes",
+          "sql_name": "notes",
+          "sql_type": "VARCHAR(250)"
+        }
+      ],
+      "data_per_company": true,
+      "field_groups": [],
+      "flow_fields": [],
+      "indexes": [],
+      "name": "PurchaseOrderHeader",
+      "object_type": "table",
+      "on_delete": null,
+      "package_name": "test.procurement",
+      "primary_key": [
+        "order_no"
+      ],
+      "sql_table_name": "purchase_order_header",
+      "table_type": "Normal",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.status) {\n    rec.status = \"Draft\";\n}\nif (!rec.currency) {\n    rec.currency = \"USD\";\n}"
+        },
+        {
+          "actions": [],
+          "name": "onDelete",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "// Cascade delete child lines when a draft order is deleted\nPurchaseOrderLine.deleteAll({ orderNo: rec.orderNo });"
+        },
+        {
+          "actions": [],
+          "name": "onValidate_vendor_no",
+          "params": [
+            "val"
+          ],
+          "script": "if (!val) {\n    throw new Error(\"Vendor number is required.\");\n}"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "caption": "PurchaseOrderLine",
+      "check_constraints": [],
+      "columns": [
+        {
+          "caption": "orderNo",
+          "check_constraint": null,
+          "data_type": "String(20)",
+          "default_val": null,
+          "foreign_key": {
+            "on_delete": "RESTRICT",
+            "target_column": "order_no",
+            "target_table": "purchase_order_header"
+          },
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": false,
+          "name": "orderNo",
+          "sql_name": "order_no",
+          "sql_type": "VARCHAR(20)"
+        },
+        {
+          "caption": "lineNo",
+          "check_constraint": null,
+          "data_type": "Integer",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": false,
+          "name": "lineNo",
+          "sql_name": "line_no",
+          "sql_type": "INTEGER"
+        },
+        {
+          "caption": "itemDescription",
+          "check_constraint": null,
+          "data_type": "String(120)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "itemDescription",
+          "sql_name": "item_description",
+          "sql_type": "VARCHAR(120)"
+        },
+        {
+          "caption": "quantity",
+          "check_constraint": null,
+          "data_type": "Decimal(18, 2)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "quantity",
+          "sql_name": "quantity",
+          "sql_type": "NUMERIC(18, 2)"
+        },
+        {
+          "caption": "unitPrice",
+          "check_constraint": null,
+          "data_type": "Decimal(18, 2)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "unitPrice",
+          "sql_name": "unit_price",
+          "sql_type": "NUMERIC(18, 2)"
+        },
+        {
+          "caption": "lineAmount",
+          "check_constraint": null,
+          "data_type": "Decimal(18, 2)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "lineAmount",
+          "sql_name": "line_amount",
+          "sql_type": "NUMERIC(18, 2)"
+        }
+      ],
+      "data_per_company": true,
+      "field_groups": [],
+      "flow_fields": [],
+      "indexes": [],
+      "name": "PurchaseOrderLine",
+      "object_type": "table",
+      "on_delete": null,
+      "package_name": "test.procurement",
+      "primary_key": [
+        "order_no",
+        "line_no"
+      ],
+      "sql_table_name": "purchase_order_line",
+      "table_type": "Normal",
+      "triggers": [],
+      "version": "1.0.0"
+    },
+    {
+      "caption": "Posted Purchase Invoice Header",
+      "check_constraints": [],
+      "columns": [
+        {
+          "caption": "invoiceNo",
+          "check_constraint": null,
+          "data_type": "String(30)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": true,
+          "name": "invoiceNo",
+          "sql_name": "invoice_no",
+          "sql_type": "VARCHAR(30)"
+        },
+        {
+          "caption": "orderNo",
+          "check_constraint": null,
+          "data_type": "String(20)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "orderNo",
+          "sql_name": "order_no",
+          "sql_type": "VARCHAR(20)"
+        },
+        {
+          "caption": "vendorNo",
+          "check_constraint": null,
+          "data_type": "String(20)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "vendorNo",
+          "sql_name": "vendor_no",
+          "sql_type": "VARCHAR(20)"
+        },
+        {
+          "caption": "postingDate",
+          "check_constraint": null,
+          "data_type": "Date",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "postingDate",
+          "sql_name": "posting_date",
+          "sql_type": "DATE"
+        },
+        {
+          "caption": "currency",
+          "check_constraint": null,
+          "data_type": "String(10)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "currency",
+          "sql_name": "currency",
+          "sql_type": "VARCHAR(10)"
+        },
+        {
+          "caption": "totalAmount",
+          "check_constraint": null,
+          "data_type": "Decimal(18, 2)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "totalAmount",
+          "sql_name": "total_amount",
+          "sql_type": "NUMERIC(18, 2)"
+        },
+        {
+          "caption": "notes",
+          "check_constraint": null,
+          "data_type": "String(250)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "notes",
+          "sql_name": "notes",
+          "sql_type": "VARCHAR(250)"
+        }
+      ],
+      "data_per_company": true,
+      "field_groups": [],
+      "flow_fields": [],
+      "indexes": [],
+      "name": "PurchInvHeader",
+      "object_type": "table",
+      "on_delete": null,
+      "package_name": "test.procurement",
+      "primary_key": [
+        "invoice_no"
+      ],
+      "sql_table_name": "purch_inv_header",
+      "table_type": "Ledger",
+      "triggers": [],
+      "version": "1.0.0"
+    },
+    {
+      "caption": "Posted Purchase Invoice Line",
+      "check_constraints": [],
+      "columns": [
+        {
+          "caption": "invoiceNo",
+          "check_constraint": null,
+          "data_type": "String(30)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": false,
+          "name": "invoiceNo",
+          "sql_name": "invoice_no",
+          "sql_type": "VARCHAR(30)"
+        },
+        {
+          "caption": "lineNo",
+          "check_constraint": null,
+          "data_type": "Integer",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": false,
+          "name": "lineNo",
+          "sql_name": "line_no",
+          "sql_type": "INTEGER"
+        },
+        {
+          "caption": "itemDescription",
+          "check_constraint": null,
+          "data_type": "String(120)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "itemDescription",
+          "sql_name": "item_description",
+          "sql_type": "VARCHAR(120)"
+        },
+        {
+          "caption": "quantity",
+          "check_constraint": null,
+          "data_type": "Decimal(18, 2)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "quantity",
+          "sql_name": "quantity",
+          "sql_type": "NUMERIC(18, 2)"
+        },
+        {
+          "caption": "unitPrice",
+          "check_constraint": null,
+          "data_type": "Decimal(18, 2)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "unitPrice",
+          "sql_name": "unit_price",
+          "sql_type": "NUMERIC(18, 2)"
+        },
+        {
+          "caption": "lineAmount",
+          "check_constraint": null,
+          "data_type": "Decimal(18, 2)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "lineAmount",
+          "sql_name": "line_amount",
+          "sql_type": "NUMERIC(18, 2)"
+        }
+      ],
+      "data_per_company": true,
+      "field_groups": [],
+      "flow_fields": [],
+      "indexes": [],
+      "name": "PurchInvLine",
+      "object_type": "table",
+      "on_delete": null,
+      "package_name": "test.procurement",
+      "primary_key": [
+        "invoice_no",
+        "line_no"
+      ],
+      "sql_table_name": "purch_inv_line",
+      "table_type": "Ledger",
+      "triggers": [],
+      "version": "1.0.0"
+    },
+    {
+      "caption": "Vendor Sub-Ledger Entry",
+      "check_constraints": [],
+      "columns": [
+        {
+          "caption": "id",
+          "check_constraint": null,
+          "data_type": "UUID",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": false,
+          "is_unique": true,
+          "name": "id",
+          "sql_name": "id",
+          "sql_type": "UUID"
+        },
+        {
+          "caption": "vendorNo",
+          "check_constraint": null,
+          "data_type": "String(20)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "vendorNo",
+          "sql_name": "vendor_no",
+          "sql_type": "VARCHAR(20)"
+        },
+        {
+          "caption": "postingDate",
+          "check_constraint": null,
+          "data_type": "Date",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "postingDate",
+          "sql_name": "posting_date",
+          "sql_type": "DATE"
+        },
+        {
+          "caption": "documentType",
+          "check_constraint": null,
+          "data_type": "String(20)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "documentType",
+          "sql_name": "document_type",
+          "sql_type": "VARCHAR(20)"
+        },
+        {
+          "caption": "documentNo",
+          "check_constraint": null,
+          "data_type": "String(30)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "documentNo",
+          "sql_name": "document_no",
+          "sql_type": "VARCHAR(30)"
+        },
+        {
+          "caption": "amount",
+          "check_constraint": null,
+          "data_type": "Decimal(18, 2)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "amount",
+          "sql_name": "amount",
+          "sql_type": "NUMERIC(18, 2)"
+        },
+        {
+          "caption": "isOpen",
+          "check_constraint": null,
+          "data_type": "Boolean",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "isOpen",
+          "sql_name": "is_open",
+          "sql_type": "BOOLEAN"
+        }
+      ],
+      "data_per_company": true,
+      "field_groups": [],
+      "flow_fields": [],
+      "indexes": [],
+      "name": "VendorLedgerEntry",
+      "object_type": "table",
+      "on_delete": null,
+      "package_name": "test.procurement",
+      "primary_key": [
+        "id"
+      ],
+      "sql_table_name": "vendor_ledger_entry",
+      "table_type": "Ledger",
+      "triggers": [],
+      "version": "1.0.0"
+    },
+    {
+      "bound_table": null,
+      "execution_mode": "BytecodeInterpreter",
+      "is_exposed": false,
+      "is_pushdown": false,
+      "is_transactional": true,
+      "max_fuel": 100000,
+      "methods": [
+        {
+          "actions": [],
+          "annotations": [],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "calculatePrice",
+          "params": [
+            [
+              "basePrice",
+              "number"
+            ],
+            [
+              "quantity",
+              "number"
+            ],
+            [
+              "tier",
+              "string"
+            ]
+          ],
+          "return_type": "number",
+          "script": "return basePrice * quantity;",
+          "trigger_event": null
+        }
+      ],
+      "name": "StandardPricingCalculator",
+      "object_type": "codeunit",
+      "package_name": "test.procurement",
+      "version": "1.0.0"
+    },
+    {
+      "bound_table": null,
+      "execution_mode": "BytecodeInterpreter",
+      "is_exposed": false,
+      "is_pushdown": false,
+      "is_transactional": true,
+      "max_fuel": 100000,
+      "methods": [
+        {
+          "actions": [],
+          "annotations": [],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "calculatePrice",
+          "params": [
+            [
+              "basePrice",
+              "number"
+            ],
+            [
+              "quantity",
+              "number"
+            ],
+            [
+              "tier",
+              "string"
+            ]
+          ],
+          "return_type": "number",
+          "script": "const subtotal = basePrice * quantity;\nif (ctx.decimal(quantity).gt(100)) {\n    return subtotal * 0.90; // 10% volume discount\n}\nreturn subtotal;",
+          "trigger_event": null
+        }
+      ],
+      "name": "VolumePricingCalculator",
+      "object_type": "codeunit",
+      "package_name": "test.procurement",
+      "version": "1.0.0"
+    },
+    {
+      "bound_table": null,
+      "execution_mode": "BytecodeInterpreter",
+      "is_exposed": false,
+      "is_pushdown": false,
+      "is_transactional": true,
+      "max_fuel": 100000,
+      "methods": [
+        {
+          "actions": [],
+          "annotations": [],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "CreatePurchaseOrder",
+          "params": [
+            [
+              "vendorNo",
+              "string"
+            ],
+            [
+              "amount",
+              "number"
+            ]
+          ],
+          "return_type": "any",
+          "script": "const orderId = ctx.call(\"NoSeriesManagement\", \"GetNextNo\", {\n    seriesCode: \"PO\",\n    targetDate: new Date().toISOString().slice(0, 10),\n    updateSeries: true\n});\nconst order = models.PurchaseOrderHeader.insert({\n    orderNo: orderId,\n    vendorNo: vendorNo,\n    orderDate: new Date().toISOString(),\n    status: \"Draft\",\n    currency: \"USD\",\n    totalAmount: amount,\n    notes: \"Automated procurement order\"\n});\nreturn order;",
+          "trigger_event": null
+        },
+        {
+          "actions": [],
+          "annotations": [],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "ApprovePurchaseOrder",
+          "params": [
+            [
+              "orderNo",
+              "string"
+            ]
+          ],
+          "return_type": "any",
+          "script": "const order = models.PurchaseOrderHeader.getById(orderNo);\nif (!order) {\n    throw new Error(\"Purchase order not found: \" + orderNo);\n}\norder.status = \"Approved\";\nreturn models.PurchaseOrderHeader.updateOptimistic(order);",
+          "trigger_event": null
+        }
+      ],
+      "name": "ProcurementManagement",
+      "object_type": "codeunit",
+      "package_name": "test.procurement",
+      "version": "1.0.0"
+    },
+    {
+      "bound_table": null,
+      "execution_mode": "BytecodeInterpreter",
+      "is_exposed": false,
+      "is_pushdown": false,
+      "is_transactional": true,
+      "max_fuel": 100000,
+      "methods": [
+        {
+          "actions": [],
+          "annotations": [],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "Run",
+          "params": [
+            [
+              "orderNo",
+              "String"
+            ],
+            [
+              "postingDate",
+              "String"
+            ]
+          ],
+          "return_type": "any",
+          "script": "const oNo = (rec && rec.orderNo !== undefined) ? rec.orderNo : orderNo;\nconst pDate = (rec && rec.postingDate !== undefined) ? rec.postingDate : (postingDate || new Date().toISOString().slice(0, 10));\n\nif (!oNo) throw new Error(\"Posting Error: 'orderNo' must be specified.\");\n\n// Phase 1: Check & Concurrency Lock\nconst header = PurchaseOrderHeader.lock(oNo);\nif (!header) {\n    throw new Error(\"Posting Error: Purchase order '\" + oNo + \"' not found.\");\n}\nif (header.status !== \"Approved\" && header.status !== \"Ordered\") {\n    throw new Error(\"Posting Error: Order '\" + oNo + \"' must be Approved or Ordered before posting. Status: \" + header.status);\n}\n\nconst vendor = Vendor.get(header.vendorNo);\nif (!vendor) {\n    throw new Error(\"Posting Error: Vendor '\" + header.vendorNo + \"' not found.\");\n}\nif (vendor.isBlocked) {\n    throw new Error(\"Posting Error: Vendor '\" + header.vendorNo + \"' is blocked for transactions.\");\n}\n\nconst lines = PurchaseOrderLine.findMany({ where: { orderNo: oNo } });\nif (!lines || lines.length === 0) {\n    throw new Error(\"Posting Error: Order '\" + oNo + \"' has no order lines.\");\n}\n\n// Validate line integrity and totals BEFORE allocating document sequence numbers\nfor (let i = 0; i < lines.length; i++) {\n    const line = lines[i];\n    if (!line.quantity || Number(line.quantity) <= 0) {\n        throw new Error(\"Posting Error: Line \" + line.lineNo + \" has invalid quantity (\" + line.quantity + \").\");\n    }\n    if (line.unitPrice === undefined || Number(line.unitPrice) < 0) {\n        throw new Error(\"Posting Error: Line \" + line.lineNo + \" has negative unit price.\");\n    }\n}\n\n// Phase 2: Deferred Sequence Allocation (Number Series allocated right before ledger write)\nconst postedInvNo = ctx.call(\"NoSeriesManagement\", \"GetNextNo\", {\n    seriesCode: \"PI_POST\",\n    targetDate: pDate,\n    updateSeries: true\n});\n\nPurchInvHeader.insert({\n    invoiceNo: postedInvNo,\n    orderNo: header.orderNo,\n    vendorNo: header.vendorNo,\n    postingDate: pDate,\n    currency: header.currency || \"USD\",\n    totalAmount: header.totalAmount,\n    notes: header.notes || \"\"\n});\n\nfor (let i = 0; i < lines.length; i++) {\n    const line = lines[i];\n    PurchInvLine.insert({\n        invoiceNo: postedInvNo,\n        lineNo: line.lineNo,\n        itemDescription: line.itemDescription,\n        quantity: line.quantity,\n        unitPrice: line.unitPrice,\n        lineAmount: line.lineAmount\n    });\n}\n\nVendorLedgerEntry.insert({\n    id: ctx.crypto.uuidv7(),\n    vendorNo: header.vendorNo,\n    postingDate: pDate,\n    documentType: \"Invoice\",\n    documentNo: postedInvNo,\n    amount: header.totalAmount,\n    isOpen: true\n});\n\n// Phase 3: Archive & Clean\nPurchaseOrderLine.deleteAll({ orderNo: oNo });\nPurchaseOrderHeader.update(header.orderNo, { status: \"Closed\" });\n\nreturn {\n    success: true,\n    postedInvoiceNo: postedInvNo,\n    orderNo: oNo,\n    message: \"Purchase order '\" + oNo + \"' posted successfully as '\" + postedInvNo + \"'.\"\n};",
+          "trigger_event": null
+        }
+      ],
+      "name": "PurchasePost",
+      "object_type": "codeunit",
+      "package_name": "test.procurement",
+      "version": "1.0.0"
+    },
+    {
+      "initial_state": "Draft",
+      "name": "PurchaseOrderWorkflow",
+      "object_type": "statemachine",
+      "package_name": "test.procurement",
+      "states": [
+        {
+          "allow_delete": true,
+          "allow_modify": true,
+          "badge": "neutral",
+          "caption": "Draft",
+          "escalate_to": null,
+          "name": "Draft",
+          "timeout_hours": null
+        },
+        {
+          "allow_delete": true,
+          "allow_modify": true,
+          "badge": "neutral",
+          "caption": "PendingApproval",
+          "escalate_to": null,
+          "name": "PendingApproval",
+          "timeout_hours": null
+        },
+        {
+          "allow_delete": true,
+          "allow_modify": true,
+          "badge": "neutral",
+          "caption": "Approved",
+          "escalate_to": null,
+          "name": "Approved",
+          "timeout_hours": null
+        },
+        {
+          "allow_delete": true,
+          "allow_modify": true,
+          "badge": "neutral",
+          "caption": "Ordered",
+          "escalate_to": null,
+          "name": "Ordered",
+          "timeout_hours": null
+        },
+        {
+          "allow_delete": true,
+          "allow_modify": true,
+          "badge": "neutral",
+          "caption": "Closed",
+          "escalate_to": null,
+          "name": "Closed",
+          "timeout_hours": null
+        },
+        {
+          "allow_delete": true,
+          "allow_modify": true,
+          "badge": "neutral",
+          "caption": "Received",
+          "escalate_to": null,
+          "name": "Received",
+          "timeout_hours": null
+        }
+      ],
+      "status_field": "status",
+      "target_table": "purchase_order_header",
+      "transitions": [
+        {
+          "approval_tiers": [],
+          "caption": "submit",
+          "from_states": [
+            "Draft"
+          ],
+          "guard_script": null,
+          "icon": "Activity",
+          "name": "submit",
+          "on_transition_script": null,
+          "params": [],
+          "required_roles": [],
+          "to_state": "PendingApproval"
+        },
+        {
+          "approval_tiers": [],
+          "caption": "approve",
+          "from_states": [
+            "PendingApproval"
+          ],
+          "guard_script": null,
+          "icon": "Activity",
+          "name": "approve",
+          "on_transition_script": null,
+          "params": [],
+          "required_roles": [],
+          "to_state": "Approved"
+        },
+        {
+          "approval_tiers": [],
+          "caption": "placeOrder",
+          "from_states": [
+            "Approved"
+          ],
+          "guard_script": null,
+          "icon": "Activity",
+          "name": "placeOrder",
+          "on_transition_script": null,
+          "params": [],
+          "required_roles": [],
+          "to_state": "Ordered"
+        },
+        {
+          "approval_tiers": [],
+          "caption": "close",
+          "from_states": [
+            "Ordered"
+          ],
+          "guard_script": null,
+          "icon": "Activity",
+          "name": "close",
+          "on_transition_script": null,
+          "params": [],
+          "required_roles": [],
+          "to_state": "Closed"
+        },
+        {
+          "approval_tiers": [],
+          "caption": "receive",
+          "from_states": [
+            "Ordered"
+          ],
+          "guard_script": null,
+          "icon": "Activity",
+          "name": "receive",
+          "on_transition_script": null,
+          "params": [],
+          "required_roles": [],
+          "to_state": "Received"
+        },
+        {
+          "approval_tiers": [],
+          "caption": "closeReceived",
+          "from_states": [
+            "Received"
+          ],
+          "guard_script": null,
+          "icon": "Activity",
+          "name": "closeReceived",
+          "on_transition_script": null,
+          "params": [],
+          "required_roles": [],
+          "to_state": "Closed"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "field_validations": [
+        {
+          "field_name": "name",
+          "old_param_name": null,
+          "param_name": "val",
+          "script": "if (!val || val.trim().length === 0) {\n    throw new Error(\"Vendor name cannot be blank.\");\n}"
+        }
+      ],
+      "methods": [],
+      "name": "Vendor",
+      "object_type": "tablelogic",
+      "package_name": "test.procurement",
+      "sql_table_name": "vendor",
+      "target_table": "Vendor",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.tier) {\n    rec.tier = \"Standard\";\n}"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "field_validations": [
+        {
+          "field_name": "vendorNo",
+          "old_param_name": null,
+          "param_name": "val",
+          "script": "if (!val) {\n    throw new Error(\"Vendor number is required.\");\n}"
+        }
+      ],
+      "methods": [],
+      "name": "PurchaseOrderHeader",
+      "object_type": "tablelogic",
+      "package_name": "test.procurement",
+      "sql_table_name": "purchase_order_header",
+      "target_table": "PurchaseOrderHeader",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onInsert",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "if (!rec.status) {\n    rec.status = \"Draft\";\n}\nif (!rec.currency) {\n    rec.currency = \"USD\";\n}"
+        },
+        {
+          "actions": [],
+          "name": "onDelete",
+          "params": [
+            "rec",
+            "ctx"
+          ],
+          "script": "// Cascade delete child lines when a draft order is deleted\nPurchaseOrderLine.deleteAll({ orderNo: rec.orderNo });"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "field_validations": [
+        {
+          "field_name": "riskScore",
+          "old_param_name": null,
+          "param_name": "val",
+          "script": "if (val !== undefined && val !== null && (val < 0 || val > 100)) {\n    throw new Error(\"Risk score must be between 0 and 100.\");\n}"
+        }
+      ],
+      "methods": [],
+      "name": "VendorRiskLogicExt",
+      "object_type": "tablelogicextension",
+      "package_name": "test.procurement",
+      "sql_table_name": "vendor",
+      "target_table": "Vendor",
+      "triggers": [],
+      "version": "1.0.0"
+    },
+    {
+      "implements_interface": "IPricingCalculator",
+      "members": [
+        {
+          "bound_codeunit": "StandardPricingCalculator",
+          "name": "Standard"
+        },
+        {
+          "bound_codeunit": "VolumePricingCalculator",
+          "name": "Volume"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "Enterprise"
+        }
+      ],
+      "name": "VendorTier",
+      "object_type": "enum",
+      "package_name": "test.procurement",
+      "version": "1.0.0"
+    },
+    {
+      "implements_interface": null,
+      "members": [
+        {
+          "bound_codeunit": null,
+          "name": "Draft"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "PendingApproval"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "Approved"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "Ordered"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "Received"
+        },
+        {
+          "bound_codeunit": null,
+          "name": "Closed"
+        }
+      ],
+      "name": "PurchaseOrderStatus",
+      "object_type": "enum",
+      "package_name": "test.procurement",
+      "version": "1.0.0"
+    },
+    {
+      "added_columns": [
+        {
+          "caption": "riskScore",
+          "check_constraint": null,
+          "data_type": "Integer",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "riskScore",
+          "sql_name": "risk_score",
+          "sql_type": "INTEGER"
+        },
+        {
+          "caption": "lastAuditDate",
+          "check_constraint": null,
+          "data_type": "DateTime",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "lastAuditDate",
+          "sql_name": "last_audit_date",
+          "sql_type": "TIMESTAMPTZ"
+        }
+      ],
+      "added_indexes": [],
+      "name": "VendorRiskExt",
+      "object_type": "tableextension",
+      "package_name": "test.procurement",
+      "target_table": "Vendor",
+      "version": "1.0.0"
+    },
+    {
+      "name": "PurchaseOrderWorkflowExt",
+      "object_type": "statemachineextension",
+      "package_name": "test.procurement",
+      "states": [
+        {
+          "allow_delete": true,
+          "allow_modify": true,
+          "badge": "neutral",
+          "caption": "Received",
+          "escalate_to": null,
+          "name": "Received",
+          "timeout_hours": null
+        }
+      ],
+      "target_state_machine": "PurchaseOrderWorkflow",
+      "transitions": [
+        {
+          "approval_tiers": [],
+          "caption": "receive",
+          "from_states": [
+            "Ordered"
+          ],
+          "guard_script": null,
+          "icon": "Activity",
+          "name": "receive",
+          "on_transition_script": null,
+          "params": [],
+          "required_roles": [],
+          "to_state": "Received"
+        },
+        {
+          "approval_tiers": [],
+          "caption": "closeReceived",
+          "from_states": [
+            "Received"
+          ],
+          "guard_script": null,
+          "icon": "Activity",
+          "name": "closeReceived",
+          "on_transition_script": null,
+          "params": [],
+          "required_roles": [],
+          "to_state": "Closed"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "members": [
+        {
+          "bound_codeunit": null,
+          "name": "Enterprise"
+        }
+      ],
+      "name": "VendorTierExt",
+      "object_type": "enumextension",
+      "package_name": "test.procurement",
+      "target_enum": "VendorTier",
+      "version": "1.0.0"
+    },
+    {
+      "methods": [
+        {
+          "actions": [],
+          "annotations": [],
+          "is_public": true,
+          "is_pushdown": false,
+          "is_static": false,
+          "name": "calculatePrice",
+          "params": [
+            [
+              "basePrice",
+              "number"
+            ],
+            [
+              "quantity",
+              "number"
+            ],
+            [
+              "tier",
+              "string"
+            ]
+          ],
+          "return_type": "number",
+          "script": null,
+          "trigger_event": null
+        }
+      ],
+      "name": "IPricingCalculator",
+      "object_type": "interface",
+      "package_name": "test.procurement",
+      "version": "1.0.0"
+    },
+    {
+      "caption": "Procurement Buyer",
+      "execute": [
+        "ProcurementManagement"
+      ],
+      "name": "ProcurementBuyer",
+      "object_type": "permissionset",
+      "package_name": "test.procurement",
+      "permissions": [
+        {
+          "can_delete": true,
+          "can_insert": true,
+          "can_modify": true,
+          "can_read": true,
+          "exclude_fields": [
+            "contact_email"
+          ],
+          "row_filter": "\"vendor\".\"is_blocked\" = FALSE",
+          "sql_table_name": "vendor",
+          "table_name": "Vendor"
+        },
+        {
+          "can_delete": true,
+          "can_insert": true,
+          "can_modify": true,
+          "can_read": true,
+          "exclude_fields": [],
+          "row_filter": null,
+          "sql_table_name": "purchase_order_header",
+          "table_name": "PurchaseOrderHeader"
+        },
+        {
+          "can_delete": true,
+          "can_insert": true,
+          "can_modify": true,
+          "can_read": true,
+          "exclude_fields": [],
+          "row_filter": null,
+          "sql_table_name": "purchase_order_line",
+          "table_name": "PurchaseOrderLine"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "is_materialized": false,
+      "joins": [],
+      "name": "ActiveVendorView",
+      "object_type": "view",
+      "package_name": "test.procurement",
+      "refresh_interval": null,
+      "select_fields": [
+        {
+          "alias": null,
+          "expr": "\"no\""
+        },
+        {
+          "alias": null,
+          "expr": "\"name\""
+        },
+        {
+          "alias": null,
+          "expr": "\"tier\""
+        },
+        {
+          "alias": null,
+          "expr": "\"contact_email\""
+        }
+      ],
+      "source_table": "vendor",
+      "sql_view_name": "active_vendor_view",
+      "version": "1.0.0",
+      "where_clause": "\"vendor\".\"is_blocked\" = FALSE"
+    },
+    {
+      "caption": "Vendor Spend Analytics",
+      "elements": [
+        {
+          "columns": [
+            {
+              "aggregation": null,
+              "name": "vendorNo",
+              "source_field": "no"
+            },
+            {
+              "aggregation": null,
+              "name": "vendorName",
+              "source_field": "name"
+            }
+          ],
+          "data_items": [
+            {
+              "columns": [
+                {
+                  "aggregation": "SUM",
+                  "name": "totalSpend",
+                  "source_field": "total_amount"
+                },
+                {
+                  "aggregation": "COUNT",
+                  "name": "orderCount",
+                  "source_field": "order_no"
+                }
+              ],
+              "data_items": [],
+              "filter": null,
+              "join_condition": "po.vendorNo == v.no",
+              "join_type": "LEFT JOIN",
+              "name": "po",
+              "table_name": "purchase_order_header"
+            }
+          ],
+          "filter": null,
+          "join_condition": null,
+          "join_type": null,
+          "name": "v",
+          "table_name": "vendor"
+        }
+      ],
+      "group_by": [
+        "v.no",
+        "v.name"
+      ],
+      "having": null,
+      "name": "VendorSpendAnalytics",
+      "object_type": "query",
+      "order_by": [
+        [
+          "totalSpend",
+          false
+        ]
+      ],
+      "package_name": "test.procurement",
+      "sql_query": "SELECT \"v\".\"no\" AS \"vendorNo\", \"v\".\"name\" AS \"vendorName\", SUM(\"po\".\"total_amount\") AS \"totalSpend\", COUNT(\"po\".\"order_no\") AS \"orderCount\"\nFROM \"vendor\" AS \"v\"\nLEFT JOIN \"purchase_order_header\" AS \"po\" ON po.vendorNo == v.no\nGROUP BY v.no, v.name\nORDER BY \"totalSpend\" DESC",
+      "version": "1.0.0"
+    },
+    {
+      "actions": [
+        {
+          "area": "Processing",
+          "caption": "New Purchase Order",
+          "confirm": null,
+          "enable_when": null,
+          "icon": "ShoppingCart",
+          "name": "CreateOrder",
+          "open_page": null,
+          "primary": true,
+          "run_codeunit": null,
+          "script": "const result = ctx.call(\"ProcurementManagement\", \"CreatePurchaseOrder\", {\n    vendorNo: rec.no,\n    amount: 500\n});\nctx.ui.message(\"Created Purchase Order: \" + result.orderNo);",
+          "selection": null,
+          "shortcut": null,
+          "show_when": null
+        }
+      ],
+      "caption": "Vendor Details",
+      "controls": [
+        {
+          "caption": null,
+          "children": [
+            {
+              "caption": "General Information",
+              "children": [
+                {
+                  "caption": "Vendor Code",
+                  "children": [],
+                  "kind": "field",
+                  "name": "no",
+                  "properties": {
+                    "required": "true"
+                  },
+                  "source_expr": "no"
+                },
+                {
+                  "caption": null,
+                  "children": [],
+                  "kind": "field",
+                  "name": "name",
+                  "properties": {
+                    "required": "true"
+                  },
+                  "source_expr": "name"
+                },
+                {
+                  "caption": null,
+                  "children": [],
+                  "kind": "field",
+                  "name": "tier",
+                  "properties": {},
+                  "source_expr": "tier"
+                },
+                {
+                  "caption": null,
+                  "children": [],
+                  "kind": "field",
+                  "name": "contactEmail",
+                  "properties": {},
+                  "source_expr": "contactEmail"
+                },
+                {
+                  "caption": null,
+                  "children": [],
+                  "kind": "field",
+                  "name": "isBlocked",
+                  "properties": {},
+                  "source_expr": "isBlocked"
+                }
+              ],
+              "kind": "group",
+              "name": "General",
+              "properties": {},
+              "source_expr": null
+            },
+            {
+              "caption": "Order Performance",
+              "children": [
+                {
+                  "caption": null,
+                  "children": [],
+                  "kind": "field",
+                  "name": "totalOrderAmount",
+                  "properties": {},
+                  "source_expr": "totalOrderAmount"
+                }
+              ],
+              "kind": "group",
+              "name": "Performance",
+              "properties": {},
+              "source_expr": null
+            }
+          ],
+          "kind": "area",
+          "name": "Content",
+          "properties": {},
+          "source_expr": null
+        }
+      ],
+      "delete_allowed": null,
+      "editable": null,
+      "filters": [],
+      "insert_allowed": null,
+      "ir_version": 2,
+      "modify_allowed": null,
+      "name": "VendorCard",
+      "object_type": "page",
+      "package_name": "test.procurement",
+      "page_type": "Card",
+      "source_kind": "table",
+      "source_table": "Vendor",
+      "triggers": [],
+      "version": "1.0.0",
+      "views": []
+    },
+    {
+      "actions": [
+        {
+          "area": "Processing",
+          "caption": "Approve Order",
+          "confirm": null,
+          "enable_when": null,
+          "icon": "CheckCircle",
+          "name": "Approve",
+          "open_page": null,
+          "primary": true,
+          "run_codeunit": null,
+          "script": "ctx.call(\"ProcurementManagement\", \"ApprovePurchaseOrder\", { orderNo: rec.orderNo });\nctx.ui.message(\"Order Approved\");",
+          "selection": null,
+          "shortcut": null,
+          "show_when": null
+        },
+        {
+          "area": "Processing",
+          "caption": "Post Purchase Order",
+          "confirm": null,
+          "enable_when": null,
+          "icon": "Send",
+          "name": "PostOrder",
+          "open_page": null,
+          "primary": false,
+          "run_codeunit": null,
+          "script": "const res = ctx.call(\"PurchasePost\", \"Run\", { orderNo: rec.orderNo });\nctx.ui.message(\"Purchase Order posted successfully: \" + res.postedInvoiceNo);",
+          "selection": null,
+          "shortcut": null,
+          "show_when": null
+        }
+      ],
+      "caption": "Purchase Order",
+      "controls": [
+        {
+          "caption": null,
+          "children": [
+            {
+              "caption": null,
+              "children": [
+                {
+                  "caption": null,
+                  "children": [],
+                  "kind": "field",
+                  "name": "orderNo",
+                  "properties": {
+                    "required": "true"
+                  },
+                  "source_expr": "orderNo"
+                },
+                {
+                  "caption": null,
+                  "children": [],
+                  "kind": "field",
+                  "name": "vendorNo",
+                  "properties": {
+                    "required": "true"
+                  },
+                  "source_expr": "vendorNo"
+                },
+                {
+                  "caption": null,
+                  "children": [],
+                  "kind": "field",
+                  "name": "orderDate",
+                  "properties": {},
+                  "source_expr": "orderDate"
+                },
+                {
+                  "caption": null,
+                  "children": [],
+                  "kind": "field",
+                  "name": "status",
+                  "properties": {},
+                  "source_expr": "status"
+                },
+                {
+                  "caption": null,
+                  "children": [],
+                  "kind": "field",
+                  "name": "currency",
+                  "properties": {},
+                  "source_expr": "currency"
+                },
+                {
+                  "caption": null,
+                  "children": [],
+                  "kind": "field",
+                  "name": "totalAmount",
+                  "properties": {},
+                  "source_expr": "totalAmount"
+                },
+                {
+                  "caption": null,
+                  "children": [],
+                  "kind": "field",
+                  "name": "notes",
+                  "properties": {},
+                  "source_expr": "notes"
+                }
+              ],
+              "kind": "group",
+              "name": "Header",
+              "properties": {},
+              "source_expr": null
+            }
+          ],
+          "kind": "area",
+          "name": "Content",
+          "properties": {},
+          "source_expr": null
+        }
+      ],
+      "delete_allowed": null,
+      "editable": null,
+      "filters": [],
+      "insert_allowed": null,
+      "ir_version": 2,
+      "modify_allowed": null,
+      "name": "PurchaseOrderCard",
+      "object_type": "page",
+      "package_name": "test.procurement",
+      "page_type": "Document",
+      "source_kind": "table",
+      "source_table": "PurchaseOrderHeader",
+      "triggers": [],
+      "version": "1.0.0",
+      "views": []
+    },
+    {
+      "actions": [],
+      "controls": [
+        {
+          "caption": null,
+          "children": [
+            {
+              "caption": "Risk & Compliance",
+              "children": [
+                {
+                  "caption": null,
+                  "children": [],
+                  "kind": "field",
+                  "name": "riskScore",
+                  "properties": {},
+                  "source_expr": "riskScore"
+                },
+                {
+                  "caption": null,
+                  "children": [],
+                  "kind": "field",
+                  "name": "lastAuditDate",
+                  "properties": {},
+                  "source_expr": "lastAuditDate"
+                }
+              ],
+              "kind": "group",
+              "name": "Audit",
+              "properties": {},
+              "source_expr": null
+            }
+          ],
+          "kind": "addLast",
+          "name": "Content",
+          "properties": {},
+          "source_expr": null
+        }
+      ],
+      "ir_version": 2,
+      "name": "VendorCardAuditExt",
+      "object_type": "pageextension",
+      "package_name": "test.procurement",
+      "target_page": "VendorCard",
+      "triggers": [],
+      "version": "1.0.0"
+    },
+    {
+      "caption": "Vendor Trial Balance",
+      "elements": [],
+      "name": "VendorTrialBalance",
+      "object_type": "report",
+      "package_name": "test.procurement",
+      "source_table": "Vendor",
+      "triggers": [
+        {
+          "actions": [],
+          "name": "onRun",
+          "params": [],
+          "script": "column(no, no);\ncolumn(name, name);\ncolumn(tier, tier);"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "caption": null,
+      "columns": [
+        {
+          "caption": "approvalThreshold",
+          "check_constraint": null,
+          "data_type": "Decimal(18, 2)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "approvalThreshold",
+          "sql_name": "approval_threshold",
+          "sql_type": "NUMERIC(18, 2)"
+        },
+        {
+          "caption": "defaultPaymentTerms",
+          "check_constraint": null,
+          "data_type": "String(50)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "defaultPaymentTerms",
+          "sql_name": "default_payment_terms",
+          "sql_type": "VARCHAR(50)"
+        },
+        {
+          "caption": "autoReceiveThreshold",
+          "check_constraint": null,
+          "data_type": "Decimal(18, 2)",
+          "default_val": null,
+          "foreign_key": null,
+          "formula": null,
+          "is_nullable": true,
+          "is_unique": false,
+          "name": "autoReceiveThreshold",
+          "sql_name": "auto_receive_threshold",
+          "sql_type": "NUMERIC(18, 2)"
+        }
+      ],
+      "name": "ProcurementSetting",
+      "object_type": "custommetadata",
+      "package_name": "test.procurement",
+      "records": [],
+      "version": "1.0.0"
+    },
+    {
+      "items": [
+        {
+          "badge_field": null,
+          "icon": null,
+          "items": [
+            {
+              "badge_field": null,
+              "icon": "Building2",
+              "items": [],
+              "label": "Vendors",
+              "name": "Vendors",
+              "page": "VendorCard",
+              "shortcut": null
+            },
+            {
+              "badge_field": null,
+              "icon": "FileText",
+              "items": [],
+              "label": "Purchase Orders",
+              "name": "Orders",
+              "page": "PurchaseOrderCard",
+              "shortcut": null
+            }
+          ],
+          "label": null,
+          "name": "items",
+          "page": null,
+          "shortcut": null
+        }
+      ],
+      "label": "Procurement & Purchasing",
+      "name": "ProcurementNavigation",
+      "object_type": "menu",
+      "package_name": "test.procurement",
+      "role": "ProcurementBuyer",
+      "version": "1.0.0"
+    }
+  ],
+  "checksum": "d4177f23c8e4ef60"
+}

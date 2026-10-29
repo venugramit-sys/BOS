@@ -117,7 +117,7 @@ export async function syncAmbientDts(monaco, forceRefresh = false) {
             return true;
         }
     } catch (e) {
-        console.warn("Failed to load ambient.d.ts from backend, using fallback declarations:", e);
+        console.error("Failed to load ambient.d.ts from backend, using fallback declarations:", e);
     }
 
     // Fallback ambient declarations if backend is offline

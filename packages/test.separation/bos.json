@@ -1,0 +1,10 @@
+{
+  "package_id": "test.separation",
+  "name": "Data Separation Test Suite",
+  "version": "1.0.0",
+  "publisher": "BOS System Test",
+  "description": "Verifies multi-strategy data separation at database level: shared vs company-isolated tables across shared_rls, partitioned, schema_per_company, and table_per_company.",
+  "dependencies": [
+    "bos.core"
+  ]
+}

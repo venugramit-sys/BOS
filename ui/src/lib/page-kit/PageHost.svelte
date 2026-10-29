@@ -7,6 +7,8 @@
   import { Dialog } from "$lib/bos-ui/dialog/index.js";
   import { Spinner } from "$lib/bos-ui/spinner/index.js";
   import { Banner } from "$lib/bos-ui/banner/index.js";
+  import { Button } from "$lib/bos-ui/button/index.js";
+  import { RotateCcw } from "lucide-svelte";
   import { loadPageComponent, pageManifest } from "./loader.svelte.js";
   import Self from "./PageHost.svelte";
 
@@ -18,32 +20,41 @@
    *   closePage?: (result?: any) => void,
    *   navigate?: (url: string) => void,
    *   onRecordChange?: (id: string) => void,
+   *   onActionComplete?: (actionName: string, res: any, p: any) => void,
+   *   onActionError?: (actionName: string, err: any, p: any) => void,
+   *   onHostError?: (err: string | null) => void,
    *   design?: boolean,
    *   embedded?: boolean,
    *   modal?: boolean,
    * }}
    */
-  let { page, params = {}, openPage = undefined, closePage = undefined, navigate = undefined, onRecordChange = undefined, design = false, embedded = false, modal = false } = $props();
+  let { page, params = {}, openPage = undefined, closePage = undefined, navigate = undefined, onRecordChange = undefined, onActionComplete = undefined, onActionError = undefined, onHostError = undefined, design = false, embedded = false, modal = false, onDirtyChange = undefined } = $props();
 
   const DIALOG_TYPES = new Set(["StandardDialog", "ConfirmationDialog", "NavigatePage"]);
 
   let Component = $state(null);
   let error = $state("");
   let modals = $state([]);
+  let reloadKey = $state(0);
 
   $effect(() => {
     const name = page;
     pageManifest.version; // re-import after a republish
+    reloadKey; // explicit retry trigger
     let alive = true;
     error = "";
     loadPageComponent(name)
       .then(({ component }) => {
-        if (alive) Component = component;
+        if (alive) {
+          Component = component;
+          onHostError?.(null);
+        }
       })
       .catch((e) => {
         if (alive) {
           Component = null;
           error = e?.message ?? String(e);
+          onHostError?.(error);
         }
       });
     return () => {
@@ -69,20 +80,42 @@
     recordId: params.recordId ?? null,
     mode: params.mode ?? null,
     filters: params.filters ?? {},
+    variables: params.variables ?? {},
     design,
     embedded,
     modal,
     openPage: open,
     closePage,
     navigate,
-    onRecordChange
+    onRecordChange,
+    onActionComplete,
+    onActionError,
+    onDirtyChange
   });
 </script>
 
 {#if error}
-  <Banner tone="danger" title="This page cannot be opened">
-    <p class="text-xs">{error}</p>
-  </Banner>
+  <div class="flex items-center justify-center p-8">
+    <div class="w-full max-w-lg">
+      <Banner tone="danger" title="This page cannot be opened">
+        <p class="text-xs break-all">{error}</p>
+        <div class="mt-3 flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            onclick={() => {
+              error = "";
+              pageManifest.refresh();
+              reloadKey += 1;
+            }}
+          >
+            <RotateCcw class="size-3.5 mr-1.5" />
+            Retry
+          </Button>
+        </div>
+      </Banner>
+    </div>
+  </div>
 {:else if Component}
   <Component {ctx} />
 {:else}

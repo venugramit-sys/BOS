@@ -1,0 +1,76 @@
+{
+  "executedAt": "2026-10-28T12:01:22.627Z",
+  "tests": [
+    {
+      "id": "VT-AUTH-01-Light",
+      "status": "PASS",
+      "screenshot": "D:\\Work Studio\\Bos\\scratch\\visual_tests\\01_login_desktop_light.png"
+    },
+    {
+      "id": "VT-AUTH-01-Dark",
+      "status": "PASS",
+      "screenshot": "D:\\Work Studio\\Bos\\scratch\\visual_tests\\02_login_desktop_dark.png"
+    },
+    {
+      "id": "VT-AUTH-01-Mobile",
+      "status": "PASS",
+      "screenshot": "D:\\Work Studio\\Bos\\scratch\\visual_tests\\03_login_mobile_375x812.png"
+    },
+    {
+      "id": "VT-AUTH-02",
+      "status": "PASS",
+      "screenshot": "D:\\Work Studio\\Bos\\scratch\\visual_tests\\04_login_error_feedback.png"
+    },
+    {
+      "id": "VT-AUTH-01-Success",
+      "status": "PASS",
+      "screenshot": "D:\\Work Studio\\Bos\\scratch\\visual_tests\\05_studio_dashboard_authenticated.png"
+    },
+    {
+      "id": "VT-PAGE-01-Catalog",
+      "status": "PASS",
+      "screenshot": "D:\\Work Studio\\Bos\\scratch\\visual_tests\\06_studio_pages_catalog.png"
+    },
+    {
+      "id": "VT-DSGN-01",
+      "status": "PASS",
+      "screenshot": "D:\\Work Studio\\Bos\\scratch\\visual_tests\\07_studio_designer_workspace.png"
+    },
+    {
+      "id": "VT-AUTH-03",
+      "status": "PASS",
+      "screenshot": "D:\\Work Studio\\Bos\\scratch\\visual_tests\\08_command_palette_ctrl_k.png"
+    },
+    {
+      "id": "VT-RESPONSIVE-Tablet",
+      "status": "PASS",
+      "screenshot": "D:\\Work Studio\\Bos\\scratch\\visual_tests\\09_studio_tablet_1024x768.png"
+    }
+  ],
+  "findings": [
+    {
+      "area": "Command Palette Overlay (Ctrl+K)",
+      "severity": "LOW",
+      "observation": "Command palette dialog has slight backdrop opacity difference between Chromium and WebKit rendering engines.",
+      "recommendation": "Use unified backdrop-blur-md bg-slate-900/40 with WebKit fallback."
+    },
+    {
+      "area": "FastTab Summary Badges",
+      "severity": "MEDIUM",
+      "observation": "Collapsed FastTabs on Card Pages show titles but lack dynamic collapsed summary pills (e.g. \"Balance: $12,450.00 • Active\").",
+      "recommendation": "Inject summary expression evaluator so users can preview key fields without expanding tabs (matching Dynamics 365 Business Central FastTab summaries)."
+    },
+    {
+      "area": "Monaco Editor Keyboard Shortcuts Bar",
+      "severity": "LOW",
+      "observation": "Code editor bottom status bar displays line/column but lacks Quick Shortcut chips (e.g. \"Ctrl+Space: AutoComplete\", \"F12: Go To Definition\", \"Ctrl+S: Compile\").",
+      "recommendation": "Add interactive quick-action chips in Monaco footer bar for superior developer experience (DX)."
+    },
+    {
+      "area": "Table Grid Monospace Formatting",
+      "severity": "LOW",
+      "observation": "Document numbers and currencies in list views use proportional sans-serif font.",
+      "recommendation": "Enforce font-mono tabular-nums for document IDs (INV-2026-00001) and amounts for perfect decimal alignment."
+    }
+  ]
+}

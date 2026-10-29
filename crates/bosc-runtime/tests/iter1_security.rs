@@ -73,10 +73,11 @@ fn f1_empty_identity_needs_setup() {
 #[test]
 fn f3_data_apis_are_not_public() {
     for p in ["/api/entities/user", "/api/entities/role", "/api/query", "/api/tenants",
-              "/api/codeunits/AuthManager/run", "/api/meta/objects", "/api/v1/pages/manifest"] {
+              "/api/codeunits/AuthManager/run", "/api/meta/objects", "/api/script/apply"] {
         assert!(!is_public_route(&Method::GET, p), "{p} must require auth");
     }
-    for p in ["/api/health", "/api/auth/status", "/api/auth/login", "/api/setup/status"] {
+    for p in ["/api/health", "/api/auth/status", "/api/auth/login", "/api/setup/status",
+              "/api/v1/pages/manifest", "/api/v1/pages/manifest/stream"] {
         assert!(is_public_route(&Method::GET, p), "{p} must stay public");
     }
 }

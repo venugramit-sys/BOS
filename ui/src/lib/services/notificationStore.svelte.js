@@ -195,7 +195,7 @@ class NotificationStore {
           }
         }
       } catch (err) {
-        console.warn("[notificationStore] Failed to parse x-bos-notifications header", err);
+        console.error("[notificationStore] Failed to parse x-bos-notifications header", err);
       }
     }
 
@@ -263,7 +263,7 @@ class NotificationStore {
           const payload = JSON.parse(event.data);
           this.dispatch(payload);
         } catch (err) {
-          console.warn("[notificationStore] SSE parsing error:", err, event.data);
+          console.error("[notificationStore] SSE parsing error:", err, event.data);
         }
       };
 
@@ -281,7 +281,7 @@ class NotificationStore {
         }
       };
     } catch (err) {
-      console.warn("[notificationStore] Unable to create EventSource:", err);
+      console.error("[notificationStore] Unable to create EventSource:", err);
     }
   }
 

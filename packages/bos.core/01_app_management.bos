@@ -1,0 +1,974 @@
+// ============================================================================
+// BOS Core Mega-Package: Feature 1 - App & Environment Management
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// 1. EXTENSIBLE ENUMERATIONS (App & Environment)
+// ----------------------------------------------------------------------------
+
+enum TenantTier {
+    extensible = true;
+    Free;
+    Professional;
+    Enterprise;
+    Unlimited;
+}
+
+enum TenantStatus {
+    extensible = true;
+    Active;
+    Suspended;
+    Provisioning;
+    Archived;
+}
+
+enum CompanyStatus {
+    extensible = true;
+    Active;
+    Inactive;
+    Archived;
+}
+
+enum ColorTheme {
+    extensible = true;
+    Default;
+    Slate;
+    Emerald;
+    Violet;
+    CorporateBlue;
+    Amber;
+    Rose;
+    Zinc;
+}
+
+enum ThemeMode {
+    extensible = true;
+    Light;
+    Dark;
+    SystemAuto;
+}
+
+enum DateFormatEnum {
+    extensible = true;
+    YYYY_MM_DD;
+    DD_MM_YYYY;
+    MM_DD_YYYY;
+    DD_DOT_MM_DOT_YYYY;
+}
+
+enum TimeFormatEnum {
+    extensible = true;
+    H24;
+    H12;
+}
+
+enum NumberFormatEnum {
+    extensible = true;
+    CommaDecimal;
+    PeriodDecimal;
+    SpaceGrouped;
+}
+
+enum CurrencyPosition {
+    extensible = true;
+    BeforeAmount;
+    AfterAmount;
+}
+
+// ----------------------------------------------------------------------------
+// 2. DOMAIN TABLES
+// ----------------------------------------------------------------------------
+
+table CoreSetup {
+    caption = "Core Platform and Environment Setup";
+    tableType = Normal;
+    dataPerCompany = false;
+
+    primaryKeyCode: String(10) {
+        notNull = true;
+    };
+
+    // Branding & Application Identity
+    applicationTitle: String(100) {
+        default = "BOS Business Operating System";
+    };
+    applicationSubtitle: String(200) {
+        default = "Next-Generation Intelligent Enterprise Architecture";
+    };
+    applicationLogoUrl: String(255);
+    faviconUrl: String(255);
+    supportContactEmail: String(100) {
+        default = "support@bos.local";
+    };
+
+    // UI & Color Theming
+    colorTheme: Enum(ColorTheme) {
+        default = "CorporateBlue";
+    };
+    themeMode: Enum(ThemeMode) {
+        default = "SystemAuto";
+    };
+    enableCompactDensity: Boolean {
+        default = false;
+    };
+
+    // Regional & Localization
+    defaultLocale: String(20) {
+        default = "en-US";
+    };
+    defaultTimezone: String(60) {
+        default = "UTC";
+    };
+    dateFormat: Enum(DateFormatEnum) {
+        default = "YYYY_MM_DD";
+    };
+    timeFormat: Enum(TimeFormatEnum) {
+        default = "H24";
+    };
+    numberFormat: Enum(NumberFormatEnum) {
+        default = "PeriodDecimal";
+    };
+    baseCurrencyCode: String(10) {
+        default = "USD";
+    };
+    currencySymbol: String(10) {
+        default = "$";
+    };
+    currencyPosition: Enum(CurrencyPosition) {
+        default = "BeforeAmount";
+    };
+
+    // Posting Date Guards & Accounting Boundaries
+    allowPostingFrom: Date;
+    allowPostingTo: Date;
+    enableAuditChaining: Boolean {
+        default = true;
+    };
+
+    // System Maintenance
+    isMaintenanceMode: Boolean {
+        default = false;
+    };
+    maintenanceMessage: String(255) {
+        default = "System is undergoing planned maintenance. Please check back shortly.";
+    };
+
+    primaryKey(primaryKeyCode);
+}
+
+table Tenant {
+    caption = "Platform Tenant Organization";
+    tableType = Normal;
+    dataPerCompany = false;
+
+    code: String(50) {
+        notNull = true;
+        unique = true;
+    };
+    name: String(100) {
+        notNull = true;
+    };
+    tier: Enum(TenantTier) {
+        default = "Professional";
+    };
+    status: Enum(TenantStatus) {
+        default = "Active";
+    };
+    maxUsers: Integer {
+        default = 50;
+    };
+    storageQuotaMb: Integer {
+        default = 10240;
+    };
+    primaryContactEmail: String(100);
+    customDomain: String(255);
+    isActive: Boolean {
+        default = true;
+    };
+
+    primaryKey(code);
+    key(status);
+}
+
+table Company {
+    caption = "Legal Entity Company";
+    tableType = Normal;
+    dataPerCompany = false;
+
+    code: String(30) {
+        notNull = true;
+        unique = true;
+    };
+    name: String(100) {
+        notNull = true;
+    };
+    legalName: String(150);
+    taxRegistrationNo: String(50);
+    baseCurrencyCode: String(10) {
+        default = "USD";
+    };
+    countryCode: String(10) {
+        default = "US";
+    };
+    addressLine1: String(120);
+    addressLine2: String(120);
+    city: String(60);
+    stateOrProvince: String(60);
+    postalCode: String(20);
+    phoneNo: String(30);
+    email: String(100);
+    websiteUrl: String(255);
+    logoUrl: String(255);
+    fiscalYearStartMonth: Integer {
+        default = 1;
+    };
+    isDefaultCompany: Boolean {
+        default = false;
+    };
+    status: Enum(CompanyStatus) {
+        default = "Active";
+    };
+    isActive: Boolean {
+        default = true;
+    };
+
+    primaryKey(code);
+    key(status);
+}
+
+table Currency {
+    caption = "Currency Master";
+    tableType = Normal;
+    dataPerCompany = false;
+
+    code: String(10) {
+        notNull = true;
+        unique = true;
+    };
+    name: String(60) {
+        notNull = true;
+    };
+    symbol: String(10) {
+        notNull = true;
+    };
+    decimalPlaces: Integer {
+        default = 2;
+    };
+    isBaseCurrency: Boolean {
+        default = false;
+    };
+    isActive: Boolean {
+        default = true;
+    };
+
+    primaryKey(code);
+}
+
+table CountryRegion {
+    caption = "Country and Region Master";
+    tableType = Normal;
+    dataPerCompany = false;
+
+    code: String(10) {
+        notNull = true;
+        unique = true;
+    };
+    name: String(100) {
+        notNull = true;
+    };
+    isoNumericCode: String(5);
+    defaultCurrencyCode: String(10);
+    addressFormat: String(50) {
+        default = "CityStateZip";
+    };
+    isActive: Boolean {
+        default = true;
+    };
+
+    primaryKey(code);
+}
+
+// ----------------------------------------------------------------------------
+// 3. TABLE LOGIC COMPANIONS
+// ----------------------------------------------------------------------------
+
+tablelogic CoreSetupLogic for CoreSetup {
+    onInsert(rec, ctx) {
+        if (!rec.primaryKeyCode || String(rec.primaryKeyCode).trim().length === 0) {
+            rec.primaryKeyCode = "PRIMARY";
+        }
+        if (!rec.applicationTitle || String(rec.applicationTitle).trim().length === 0) {
+            rec.applicationTitle = "BOS Business Operating System";
+        }
+        if (rec.allowPostingFrom && rec.allowPostingTo) {
+            if (new Date(rec.allowPostingFrom) > new Date(rec.allowPostingTo)) {
+                throw new Error("Validation Failed: 'allowPostingFrom' date cannot be after 'allowPostingTo' date.");
+            }
+        }
+    }
+
+    onModify(rec, xRec, ctx) {
+        if (!rec.applicationTitle || String(rec.applicationTitle).trim().length === 0) {
+            throw new Error("Validation Failed: 'applicationTitle' cannot be blank.");
+        }
+        if (rec.allowPostingFrom && rec.allowPostingTo) {
+            if (new Date(rec.allowPostingFrom) > new Date(rec.allowPostingTo)) {
+                throw new Error("Validation Failed: 'allowPostingFrom' date cannot be after 'allowPostingTo' date.");
+            }
+        }
+    }
+
+    onDelete(rec, ctx) {
+        if (rec.primaryKeyCode === "PRIMARY") {
+            throw new Error("Validation Failed: The 'PRIMARY' CoreSetup configuration row cannot be deleted.");
+        }
+    }
+}
+
+tablelogic TenantLogic for Tenant {
+    onInsert(rec, ctx) {
+        if (!rec.code || String(rec.code).trim().length === 0) {
+            throw new Error("Validation Failed: Tenant 'code' is required.");
+        }
+        rec.code = String(rec.code).toLowerCase().trim();
+        if (!/^[a-z0-9][a-z0-9._-]{1,49}$/.test(rec.code)) {
+            throw new Error("Validation Failed: Tenant code must be alphanumeric with dots, hyphens or underscores.");
+        }
+        if (!rec.name || String(rec.name).trim().length === 0) {
+            throw new Error("Validation Failed: Tenant 'name' is required.");
+        }
+        if (rec.maxUsers !== undefined && rec.maxUsers < 1) {
+            throw new Error("Validation Failed: 'maxUsers' must be at least 1.");
+        }
+    }
+
+    onModify(rec, xRec, ctx) {
+        if (!rec.name || String(rec.name).trim().length === 0) {
+            throw new Error("Validation Failed: Tenant 'name' cannot be blank.");
+        }
+    }
+}
+
+tablelogic CompanyLogic for Company {
+    onInsert(rec, ctx) {
+        if (!rec.code || String(rec.code).trim().length === 0) {
+            throw new Error("Validation Failed: Company 'code' is required.");
+        }
+        rec.code = String(rec.code).toUpperCase().trim();
+        if (!rec.name || String(rec.name).trim().length === 0) {
+            throw new Error("Validation Failed: Company 'name' is required.");
+        }
+        if (rec.fiscalYearStartMonth !== undefined && (rec.fiscalYearStartMonth < 1 || rec.fiscalYearStartMonth > 12)) {
+            throw new Error("Validation Failed: 'fiscalYearStartMonth' must be between 1 and 12.");
+        }
+    }
+
+    onModify(rec, xRec, ctx) {
+        if (!rec.name || String(rec.name).trim().length === 0) {
+            throw new Error("Validation Failed: Company 'name' cannot be blank.");
+        }
+    }
+}
+
+tablelogic CurrencyLogic for Currency {
+    onInsert(rec, ctx) {
+        if (!rec.code || String(rec.code).trim().length === 0) {
+            throw new Error("Validation Failed: Currency 'code' is required.");
+        }
+        rec.code = String(rec.code).toUpperCase().trim();
+        if (!rec.name || String(rec.name).trim().length === 0) {
+            throw new Error("Validation Failed: Currency 'name' is required.");
+        }
+        if (rec.decimalPlaces !== undefined && (rec.decimalPlaces < 0 || rec.decimalPlaces > 4)) {
+            throw new Error("Validation Failed: 'decimalPlaces' must be between 0 and 4.");
+        }
+    }
+}
+
+tablelogic CountryRegionLogic for CountryRegion {
+    onInsert(rec, ctx) {
+        if (!rec.code || String(rec.code).trim().length === 0) {
+            throw new Error("Validation Failed: Country 'code' is required.");
+        }
+        rec.code = String(rec.code).toUpperCase().trim();
+        if (!rec.name || String(rec.name).trim().length === 0) {
+            throw new Error("Validation Failed: Country 'name' is required.");
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// 4. CODEUNIT: CoreManager
+// ----------------------------------------------------------------------------
+
+codeunit CoreManager {
+    @businessEvent
+    onCompanyCreated(companyCode: String, companyName: String) {}
+
+    @businessEvent
+    onTenantProvisioned(tenantCode: String, tier: String) {}
+
+    @businessEvent
+    onCoreSetupModified(modifiedBy: String) {}
+
+    GetSetup() {
+        let setup = null;
+        try {
+            setup = CoreSetup.get("PRIMARY");
+        } catch (e) {}
+        if (!setup) {
+            return {
+                primaryKeyCode: "PRIMARY",
+                applicationTitle: "BOS Business Operating System",
+                applicationSubtitle: "Next-Generation Intelligent Enterprise Architecture",
+                colorTheme: "CorporateBlue",
+                themeMode: "SystemAuto",
+                enableCompactDensity: false,
+                defaultLocale: "en-US",
+                defaultTimezone: "UTC",
+                dateFormat: "YYYY_MM_DD",
+                timeFormat: "H24",
+                numberFormat: "PeriodDecimal",
+                baseCurrencyCode: "USD",
+                currencySymbol: "$",
+                currencyPosition: "BeforeAmount",
+                enableAuditChaining: true,
+                isMaintenanceMode: false
+            };
+        }
+        return setup;
+    }
+
+    UpdateSetup(patchData: any) {
+        const patch = (rec && rec.patchData !== undefined) ? rec.patchData : (patchData || rec || {});
+        let current = CoreSetup.get("PRIMARY");
+        if (!current) {
+            ctx.call("CoreManager", "InitializeCoreSetup");
+            current = CoreSetup.get("PRIMARY");
+        }
+        const updated = CoreSetup.update("PRIMARY", patch);
+        return { success: true, setup: updated };
+    }
+
+    InitializeCoreSetup() {
+        const defaults = {
+            primaryKeyCode: "PRIMARY",
+            applicationTitle: "BOS Business Operating System",
+            applicationSubtitle: "Next-Generation Intelligent Enterprise Architecture",
+            applicationLogoUrl: "",
+            faviconUrl: "",
+            supportContactEmail: "support@bos.local",
+            colorTheme: "CorporateBlue",
+            themeMode: "SystemAuto",
+            enableCompactDensity: false,
+            defaultLocale: "en-US",
+            defaultTimezone: "UTC",
+            dateFormat: "YYYY_MM_DD",
+            timeFormat: "H24",
+            numberFormat: "PeriodDecimal",
+            baseCurrencyCode: "USD",
+            currencySymbol: "$",
+            currencyPosition: "BeforeAmount",
+            enableAuditChaining: true,
+            isMaintenanceMode: false,
+            maintenanceMessage: "System is undergoing planned maintenance. Please check back shortly."
+        };
+        if (CoreSetup.get("PRIMARY")) {
+            CoreSetup.update("PRIMARY", defaults);
+        } else {
+            CoreSetup.insert(defaults);
+        }
+
+        if (!Currency.get("USD")) {
+            Currency.insert({ code: "USD", name: "United States Dollar", symbol: "$", decimalPlaces: 2, isBaseCurrency: true, isActive: true });
+        }
+        if (!Currency.get("EUR")) {
+            Currency.insert({ code: "EUR", name: "Euro", symbol: "EUR", decimalPlaces: 2, isBaseCurrency: false, isActive: true });
+        }
+        if (!Currency.get("INR")) {
+            Currency.insert({ code: "INR", name: "Indian Rupee", symbol: "INR", decimalPlaces: 2, isBaseCurrency: false, isActive: true });
+        }
+        if (!Currency.get("GBP")) {
+            Currency.insert({ code: "GBP", name: "British Pound", symbol: "GBP", decimalPlaces: 2, isBaseCurrency: false, isActive: true });
+        }
+
+        if (!CountryRegion.get("US")) {
+            CountryRegion.insert({ code: "US", name: "United States", isoNumericCode: "840", defaultCurrencyCode: "USD", isActive: true });
+        }
+        if (!CountryRegion.get("IN")) {
+            CountryRegion.insert({ code: "IN", name: "India", isoNumericCode: "356", defaultCurrencyCode: "INR", isActive: true });
+        }
+        if (!CountryRegion.get("GB")) {
+            CountryRegion.insert({ code: "GB", name: "United Kingdom", isoNumericCode: "826", defaultCurrencyCode: "GBP", isActive: true });
+        }
+        if (!CountryRegion.get("DE")) {
+            CountryRegion.insert({ code: "DE", name: "Germany", isoNumericCode: "276", defaultCurrencyCode: "EUR", isActive: true });
+        }
+
+        return { success: true, message: "Core setup initialized successfully." };
+    }
+
+    CreateCompany(code: String, name: String, baseCurrency: String, countryCode: String) {
+        const c = (rec && rec.code !== undefined) ? rec.code : code;
+        const n = (rec && rec.name !== undefined) ? rec.name : name;
+        const curr = (rec && rec.baseCurrency !== undefined) ? rec.baseCurrency : (baseCurrency || "USD");
+        const cc = (rec && rec.countryCode !== undefined) ? rec.countryCode : (countryCode || "US");
+
+        if (!c || !n) throw new Error("Both company code and company name are required.");
+        const cleanCode = String(c).toUpperCase().trim();
+
+        if (Company.get(cleanCode)) {
+            throw new Error(`Company with code '${cleanCode}' already exists.`);
+        }
+
+        const newCompany = Company.insert({
+            code: cleanCode,
+            name: String(n).trim(),
+            legalName: String(n).trim(),
+            baseCurrencyCode: String(curr).toUpperCase().trim(),
+            countryCode: String(cc).toUpperCase().trim(),
+            status: "Active",
+            isActive: true,
+            isDefaultCompany: false
+        });
+
+        return { success: true, company: newCompany };
+    }
+
+    CreateTenant(code: String, name: String, tier: String, contactEmail: String) {
+        const c = (rec && rec.code !== undefined) ? rec.code : code;
+        const n = (rec && rec.name !== undefined) ? rec.name : name;
+        const t = (rec && rec.tier !== undefined) ? rec.tier : (tier || "Professional");
+        const email = (rec && rec.contactEmail !== undefined) ? rec.contactEmail : contactEmail;
+
+        if (!c || !n) throw new Error("Both tenant code and tenant name are required.");
+        const cleanCode = String(c).toLowerCase().trim();
+
+        if (Tenant.get(cleanCode)) {
+            throw new Error(`Tenant with code '${cleanCode}' already exists.`);
+        }
+
+        const newTenant = Tenant.insert({
+            code: cleanCode,
+            name: String(n).trim(),
+            tier: t,
+            status: "Active",
+            maxUsers: t === "Enterprise" ? 500 : 50,
+            storageQuotaMb: t === "Enterprise" ? 102400 : 10240,
+            primaryContactEmail: email ? String(email).trim() : "",
+            isActive: true
+        });
+
+        return { success: true, tenant: newTenant };
+    }
+}
+
+// ----------------------------------------------------------------------------
+// 5. USER INTERFACE PAGES
+// ----------------------------------------------------------------------------
+
+page CoreSetupCard for CoreSetup {
+    pageType = Card;
+    caption = "Core Platform and Environment Setup";
+
+    layout {
+        area(Content) {
+            group(BrandingFastTab) {
+                caption = "Application Identity and Branding";
+                field(applicationTitle) {
+                    caption = "Application Title";
+                }
+                field(applicationSubtitle) {
+                    caption = "Application Subtitle";
+                }
+                field(applicationLogoUrl) {
+                    caption = "Application Logo URL";
+                }
+                field(faviconUrl) {
+                    caption = "Favicon URL";
+                }
+                field(supportContactEmail) {
+                    caption = "Support Contact Email";
+                }
+            }
+
+            group(ThemeFastTab) {
+                caption = "Color Theme and Appearance";
+                field(colorTheme) {
+                    caption = "Application Color Theme";
+                }
+                field(themeMode) {
+                    caption = "Theme Mode (Light / Dark / Auto)";
+                }
+                field(enableCompactDensity) {
+                    caption = "Compact Density Mode";
+                }
+            }
+
+            group(RegionalFastTab) {
+                caption = "Regional Localization and Currency";
+                field(defaultLocale) {
+                    caption = "Default Locale";
+                }
+                field(defaultTimezone) {
+                    caption = "Default Timezone";
+                }
+                field(dateFormat) {
+                    caption = "System Date Format";
+                }
+                field(timeFormat) {
+                    caption = "System Time Format";
+                }
+                field(numberFormat) {
+                    caption = "Number Separator Format";
+                }
+                field(baseCurrencyCode) {
+                    caption = "Base Currency Code";
+                }
+                field(currencySymbol) {
+                    caption = "Currency Symbol";
+                }
+                field(currencyPosition) {
+                    caption = "Currency Symbol Position";
+                }
+            }
+
+            group(PostingFastTab) {
+                caption = "Posting Date Control and Compliance";
+                field(allowPostingFrom) {
+                    caption = "Allow Posting From Date";
+                }
+                field(allowPostingTo) {
+                    caption = "Allow Posting To Date";
+                }
+                field(enableAuditChaining) {
+                    caption = "Cryptographic Audit Hash Chaining";
+                }
+            }
+
+            group(MaintenanceFastTab) {
+                caption = "System Maintenance Window";
+                field(isMaintenanceMode) {
+                    caption = "Maintenance Mode Active";
+                }
+                field(maintenanceMessage) {
+                    caption = "Maintenance Banner Message";
+                }
+            }
+        }
+    }
+
+    actions {
+        area(Processing) {
+            action(ResetToRecommended) {
+                caption = "Initialize Core Defaults";
+                icon = "Settings";
+                primary = true;
+                onAction(rec, ctx) {
+                    const res = ctx.call("CoreManager", "InitializeCoreSetup", {});
+                    ctx.ui.message("Core setup initialized to standard enterprise defaults.");
+                }
+            }
+        }
+    }
+}
+
+page TenantList for Tenant {
+    pageType = List;
+    caption = "Tenant Organizations";
+
+    layout {
+        area(Content) {
+            repeater(TenantsRepeater) {
+                field(code) {
+                    caption = "Tenant Code";
+                }
+                field(name) {
+                    caption = "Organization Name";
+                }
+                field(tier) {
+                    caption = "Subscription Tier";
+                }
+                field(status) {
+                    caption = "Status";
+                }
+                field(maxUsers) {
+                    caption = "Max Users";
+                }
+                field(storageQuotaMb) {
+                    caption = "Storage (MB)";
+                }
+                field(primaryContactEmail) {
+                    caption = "Contact Email";
+                }
+                field(isActive) {
+                    caption = "Active";
+                }
+            }
+        }
+    }
+}
+
+page TenantCard for Tenant {
+    pageType = Card;
+    caption = "Tenant Details";
+
+    layout {
+        area(Content) {
+            group(TenantGeneralFastTab) {
+                caption = "General Information";
+                field(code) {
+                    caption = "Tenant Code";
+                }
+                field(name) {
+                    caption = "Organization Name";
+                }
+                field(tier) {
+                    caption = "Subscription Tier";
+                }
+                field(status) {
+                    caption = "Status";
+                }
+                field(isActive) {
+                    caption = "Active";
+                }
+            }
+
+            group(TenantLimitsFastTab) {
+                caption = "Resource Quotas and Domain";
+                field(maxUsers) {
+                    caption = "Max User Licenses";
+                }
+                field(storageQuotaMb) {
+                    caption = "Storage Quota (MB)";
+                }
+                field(customDomain) {
+                    caption = "Custom Domain Slug";
+                }
+                field(primaryContactEmail) {
+                    caption = "Primary Contact Email";
+                }
+            }
+        }
+    }
+}
+
+page CompanyList for Company {
+    pageType = List;
+    caption = "Legal Companies";
+
+    layout {
+        area(Content) {
+            repeater(CompaniesRepeater) {
+                field(code) {
+                    caption = "Company Code";
+                }
+                field(name) {
+                    caption = "Company Name";
+                }
+                field(legalName) {
+                    caption = "Legal Registered Name";
+                }
+                field(taxRegistrationNo) {
+                    caption = "Tax / VAT No.";
+                }
+                field(baseCurrencyCode) {
+                    caption = "Base Currency";
+                }
+                field(countryCode) {
+                    caption = "Country";
+                }
+                field(isDefaultCompany) {
+                    caption = "Default Company";
+                }
+                field(status) {
+                    caption = "Status";
+                }
+            }
+        }
+    }
+}
+
+page CompanyCard for Company {
+    pageType = Card;
+    caption = "Legal Company Information";
+
+    layout {
+        area(Content) {
+            group(CompanyGeneralFastTab) {
+                caption = "General Information";
+                field(code) {
+                    caption = "Company Code";
+                }
+                field(name) {
+                    caption = "Commercial Name";
+                }
+                field(legalName) {
+                    caption = "Legal Registered Entity Name";
+                }
+                field(taxRegistrationNo) {
+                    caption = "Tax / GST / VAT Registration No.";
+                }
+                field(baseCurrencyCode) {
+                    caption = "Base Currency Code";
+                }
+                field(countryCode) {
+                    caption = "Country Code";
+                }
+                field(isDefaultCompany) {
+                    caption = "Default Organization Company";
+                }
+                field(status) {
+                    caption = "Status";
+                }
+            }
+
+            group(CompanyAddressFastTab) {
+                caption = "Address and Contact Information";
+                field(addressLine1) {
+                    caption = "Address Line 1";
+                }
+                field(addressLine2) {
+                    caption = "Address Line 2";
+                }
+                field(city) {
+                    caption = "City";
+                }
+                field(stateOrProvince) {
+                    caption = "State / Province";
+                }
+                field(postalCode) {
+                    caption = "Postal Code";
+                }
+                field(phoneNo) {
+                    caption = "Telephone Number";
+                }
+                field(email) {
+                    caption = "Official Email";
+                }
+                field(websiteUrl) {
+                    caption = "Corporate Website";
+                }
+            }
+        }
+    }
+}
+
+page CurrencyList for Currency {
+    pageType = List;
+    caption = "Currencies";
+
+    layout {
+        area(Content) {
+            repeater(CurrenciesRepeater) {
+                field(code) {
+                    caption = "ISO Code";
+                }
+                field(name) {
+                    caption = "Currency Name";
+                }
+                field(symbol) {
+                    caption = "Symbol";
+                }
+                field(decimalPlaces) {
+                    caption = "Decimal Places";
+                }
+                field(isBaseCurrency) {
+                    caption = "Base Currency";
+                }
+                field(isActive) {
+                    caption = "Active";
+                }
+            }
+        }
+    }
+}
+
+page CurrencyCard for Currency {
+    pageType = Card;
+    caption = "Currency Details";
+
+    layout {
+        area(Content) {
+            group(CurrencyGeneralFastTab) {
+                caption = "General Information";
+                field(code) {
+                    caption = "ISO Currency Code";
+                }
+                field(name) {
+                    caption = "Currency Name";
+                }
+                field(symbol) {
+                    caption = "Display Symbol";
+                }
+                field(decimalPlaces) {
+                    caption = "Decimal Precision";
+                }
+                field(isBaseCurrency) {
+                    caption = "Is Reporting Base Currency";
+                }
+                field(isActive) {
+                    caption = "Active";
+                }
+            }
+        }
+    }
+}
+
+page CountryRegionList for CountryRegion {
+    pageType = List;
+    caption = "Countries and Regions";
+
+    layout {
+        area(Content) {
+            repeater(CountriesRepeater) {
+                field(code) {
+                    caption = "Country Code (ISO-2)";
+                }
+                field(name) {
+                    caption = "Country Name";
+                }
+                field(isoNumericCode) {
+                    caption = "ISO Numeric";
+                }
+                field(defaultCurrencyCode) {
+                    caption = "Default Currency";
+                }
+                field(isActive) {
+                    caption = "Active";
+                }
+            }
+        }
+    }
+}
+
+page CountryRegionCard for CountryRegion {
+    pageType = Card;
+    caption = "Country and Region Details";
+
+    layout {
+        area(Content) {
+            group(CountryGeneralFastTab) {
+                caption = "General Information";
+                field(code) {
+                    caption = "ISO-2 Country Code";
+                }
+                field(name) {
+                    caption = "Country Name";
+                }
+                field(isoNumericCode) {
+                    caption = "ISO Numeric Code";
+                }
+                field(defaultCurrencyCode) {
+                    caption = "Default Currency Code";
+                }
+                field(addressFormat) {
+                    caption = "Address Formatting Rule";
+                }
+                field(isActive) {
+                    caption = "Active";
+                }
+            }
+        }
+    }
+}

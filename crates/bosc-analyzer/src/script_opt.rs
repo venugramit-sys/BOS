@@ -33,12 +33,12 @@ fn find_for_of(source: &str) -> Option<ForOf> {
         let keyword_end = i + 3;
         let followed_by_ident = keyword_end < bytes.len()
             && (bytes[keyword_end].is_ascii_alphanumeric() || bytes[keyword_end] == b'_');
-        if !is_ident_boundary(source, i) || &source[i..keyword_end] != "for" || followed_by_ident {
+        if &bytes[i..keyword_end] != b"for" || !is_ident_boundary(source, i) || followed_by_ident {
             i += 1;
             continue;
         }
         let j = skip_ws(source, keyword_end);
-        if j >= source.len() || !source[j..].starts_with('(') {
+        if j >= bytes.len() || bytes[j] != b'(' {
             i = keyword_end;
             continue;
         }
@@ -53,7 +53,7 @@ fn find_for_of(source: &str) -> Option<ForOf> {
             continue;
         };
         let k = skip_ws(source, paren_end + 1);
-        if k >= source.len() || !source[k..].starts_with('{') {
+        if k >= bytes.len() || bytes[k] != b'{' {
             i = paren_end + 1;
             continue;
         }

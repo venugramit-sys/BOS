@@ -1,0 +1,51 @@
+{
+  "version": "1.0.0",
+  "description": "BOS Persistent Browser Test Memory & Regression Store",
+  "updatedAt": "2026-10-26T14:08:37.995Z",
+  "scenarios": [
+    {
+      "id": "BM-001-AUTH-AND-DB-MANAGER",
+      "name": "Super Admin Authentication & Database Manager Lifecycle",
+      "persona": "SuperAdmin",
+      "category": "Security & Database Management",
+      "lastRunAt": "2026-10-26T14:08:10.256Z",
+      "status": "PASSED",
+      "durationMs": 4931,
+      "stepsCount": 11,
+      "improvementsCount": 3
+    },
+    {
+      "id": "BM-002-MULTI-COMPANY-DATA-SEPARATION",
+      "name": "Multi-Strategy Data Separation & Company Isolation Verification",
+      "persona": "AccountingClerk",
+      "category": "Data Architecture & Multi-Tenancy",
+      "lastRunAt": "2026-10-26T14:08:17.117Z",
+      "status": "PASSED",
+      "durationMs": 6857,
+      "stepsCount": 11,
+      "improvementsCount": 3
+    },
+    {
+      "id": "BM-003-MULTI-TAB-PAGE-WORKFLOW",
+      "name": "Enterprise Multi-Document Tab Workflow & Inline Grid CRUD",
+      "persona": "OperationsManager",
+      "category": "UI Studio & Page Architecture",
+      "lastRunAt": "2026-10-26T14:08:31.995Z",
+      "status": "PASSED",
+      "durationMs": 14874,
+      "stepsCount": 12,
+      "improvementsCount": 3
+    },
+    {
+      "id": "BM-004-RAPID-ENTRY-AND-SEMANTIC-SELECTORS",
+      "name": "Semantic AST Selectors, Excel Rapid Entry & Draft Resilience",
+      "persona": "AccountingClerk",
+      "category": "Operator Ergonomics & Rapid Entry",
+      "lastRunAt": "2026-10-26T14:08:37.993Z",
+      "status": "PASSED",
+      "durationMs": 5996,
+      "stepsCount": 11,
+      "improvementsCount": 2
+    }
+  ]
+}

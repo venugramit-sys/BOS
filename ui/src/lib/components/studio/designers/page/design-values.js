@@ -72,7 +72,27 @@ export function lastSegment(path) {
 }
 
 /** Kinds that can hold other controls (drop "into" targets). */
-export const CONTAINER_KINDS = new Set(["area", "group", "grid", "fixed", "repeater", "cuegroup", "tabs", "tab", "flex", "split", "card", "wizardstep", "container"]);
+export const CONTAINER_KINDS = new Set([
+  "area",
+  "group",
+  "grid",
+  "fixed",
+  "repeater",
+  "cuegroup",
+  "tabs",
+  "tab",
+  "flex",
+  "split",
+  "card",
+  "wizardstep",
+  "container",
+  "section",
+  "header",
+  "footer",
+  "nav",
+  "aside",
+  "article"
+]);
 
 /** Flat, document-ordered list of outline nodes. */
 export function flatten(nodes, out = []) {
@@ -84,7 +104,11 @@ export function flatten(nodes, out = []) {
 }
 
 export function findNode(nodes, path) {
-  return flatten(nodes).find((n) => n.path.toLowerCase() === String(path).toLowerCase()) ?? null;
+  const flat = flatten(nodes);
+  const exact = flat.find((n) => n.path.toLowerCase() === String(path).toLowerCase());
+  if (exact) return exact;
+  const seg = lastSegment(path).name.toLowerCase();
+  return flat.find((n) => (n.name && n.name.toLowerCase() === seg) || (n.path && lastSegment(n.path).name.toLowerCase() === seg)) ?? null;
 }
 
 /** Siblings of a node and its index among them. */

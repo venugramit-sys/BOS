@@ -16,19 +16,19 @@
     if (!selectedElement) return [];
     if (selectedElement.type === "action") {
       return [
-        { name: "onAction", desc: "Invoked when user clicks the action button", stub: "async function onAction() {\n    // Code here\n}" },
+        { name: "onAction", desc: "Invoked when user clicks the action button", templateCode: "async function onAction() {\n    // Code here\n}" },
       ];
     }
     if (selectedElement.type === "fasttab") {
       return [
-        { name: "onCollapse", desc: "Invoked when fasttab expands or collapses", stub: "function onCollapse() {}" },
+        { name: "onCollapse", desc: "Invoked when fasttab expands or collapses", templateCode: "function onCollapse() {}" },
       ];
     }
     // Form fields
     return [
-      { name: "onValidate", desc: "Triggered after value input is validated", stub: "async function onValidate(val) {\n    if (!val) error('Field required');\n}" },
-      { name: "onLookup", desc: "Custom lookup dialog trigger", stub: "async function onLookup() {\n    // Lookup code\n}" },
-      { name: "onAssistEdit", desc: "Drill-down or assist edit helper", stub: "function onAssistEdit() {}" },
+      { name: "onValidate", desc: "Triggered after value input is validated", templateCode: "async function onValidate(val) {\n    if (!val) error('Field required');\n}" },
+      { name: "onLookup", desc: "Custom lookup dialog trigger", templateCode: "async function onLookup() {\n    // Lookup code\n}" },
+      { name: "onAssistEdit", desc: "Drill-down or assist edit helper", templateCode: "function onAssistEdit() {}" },
     ];
   });
 

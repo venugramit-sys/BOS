@@ -27,6 +27,8 @@ axum = { workspace = true, features = ["macros"] }
 tower-http.workspace = true
 rust_decimal.workspace = true
 sha2 = "0.10"
+argon2 = "0.5"
+bcrypt = { workspace = true }
 crc32fast.workspace = true
 memmap2.workspace = true
 arc-swap.workspace = true

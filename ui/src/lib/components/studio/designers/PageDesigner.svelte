@@ -8,13 +8,17 @@
    * The canvas is the real compiled page (design build) with real records.
    */
   import { onMount, untrack } from "svelte";
-  import { Code2, Monitor, Redo2, Smartphone, Tablet, Undo2, Maximize2, Rocket, RotateCcw } from "lucide-svelte";
+  import { Code2, Monitor, Redo2, Smartphone, Tablet, Undo2, Maximize2, Rocket, RotateCcw, Columns2, Sparkles, UserCheck, PanelLeft, PanelRight, PanelLeftClose, PanelRightClose, Sliders, X } from "lucide-svelte";
+  import MonacoCodeStudio from "../code-editor/MonacoCodeStudio.svelte";
   import { Button, Banner, Spinner } from "$lib/bos-ui/index.js";
   import { pageManifest } from "$lib/page-kit/loader.svelte.js";
   import DesignerCanvas from "./page/DesignerCanvas.svelte";
+  import LayersPanel from "./page/LayersPanel.svelte";
   import Outline from "./page/Outline.svelte";
   import Toolbox from "./page/Toolbox.svelte";
   import PropertyPanel from "./page/PropertyPanel.svelte";
+  import BreadcrumbBar from "./page/BreadcrumbBar.svelte";
+  import ActionBuilderModal from "./page/ActionBuilderModal.svelte";
   import { PageDesignerModel } from "./page/designer-model.svelte.js";
 
   let {
@@ -24,12 +28,33 @@
     onSourceChange = null,
     onJumpToCode = null,
     mode = $bindable("design"),
-    isDirty = $bindable(false)
+    isDirty = $bindable(false),
+    theme = "dark"
   } = $props();
 
   const model = untrack(() => new PageDesignerModel({ name: pageName, packageName, onSourceChange: (src) => onSourceChange?.(src) }));
-  let leftTab = $state("toolbox");
+  let leftTab = $state("layers");
+  let showLeftPanel = $state(true);
+  let showRightPanel = $state(true);
   let root = $state(null);
+  let viewMode = $state("design"); // "design" | "split"
+  let isActionModalOpen = $state(false);
+  let modalDefaultArea = $state("Processing");
+  let modalDefaultGroup = $state("");
+  let simulatedPersona = $state("admin");
+
+  // Ensure property sheet is visible when an element is actively selected
+  $effect(() => {
+    if (model.selected) {
+      showRightPanel = true;
+    }
+  });
+
+  function openActionModal(area = "Processing", group = "") {
+    modalDefaultArea = area || "Processing";
+    modalDefaultGroup = group || "";
+    isActionModalOpen = true;
+  }
 
   // The Studio resolves the object's package after the tab opens; Apply must store the object there.
   $effect(() => {
@@ -44,6 +69,13 @@
   onMount(() => {
     pageManifest.start();
     model.init(untrack(() => sourceCode));
+    const handleOpenActionModal = (e) => {
+      openActionModal(e.detail?.area, e.detail?.group);
+    };
+    window.addEventListener("bos:open-action-builder", handleOpenActionModal);
+    return () => {
+      window.removeEventListener("bos:open-action-builder", handleOpenActionModal);
+    };
   });
 
   // The Studio fetches the object source asynchronously; pick it up once it arrives.
@@ -103,12 +135,12 @@
     </div>
 
     <div class="inline-flex rounded-md bg-slate-100 p-0.5 dark:bg-slate-800" role="radiogroup" aria-label="Designer mode">
-      {#each [["develop", "Develop"], ["customize", "Customize"]] as [id, label] (id)}
+      {#each [["develop", "Design"], ["preview", "Interact"]] as [id, label] (id)}
         <button
           type="button"
           role="radio"
           aria-checked={model.mode === id}
-          disabled={(id === "develop" && !model.object) || (id === "customize" && !model.customizable)}
+          disabled={id === "develop" && !model.object}
           class={"rounded px-2.5 py-1 text-xs font-semibold disabled:opacity-40 " + (model.mode === id ? "bg-white text-indigo-600 shadow-xs dark:bg-slate-950 dark:text-indigo-300" : "text-slate-600 dark:text-slate-300")}
           onclick={() => model.setMode(id)}
         >{label}</button>
@@ -129,18 +161,53 @@
     </div>
     {#if model.busy}<Spinner size="sm" label="Updating" />{/if}
 
-    <div class="ml-auto flex items-center gap-2">
-      {#if model.mode === "customize"}
-        <span class="text-[11px] text-slate-500">{model.changeCount} change{model.changeCount === 1 ? "" : "s"}</span>
-        <Button size="xs" variant="ghost" icon={RotateCcw} disabled={model.changeCount === 0} onclick={() => model.resetCustomization()}>Reset all</Button>
-      {:else}
-        <Button size="xs" variant="ghost" icon={Code2} onclick={() => jumpToCode()}>Code</Button>
-      {/if}
+    <div class="inline-flex rounded-md bg-slate-100 p-0.5 dark:bg-slate-800" role="radiogroup" aria-label="Layout view">
+      <button
+        type="button"
+        class={"rounded px-2.5 py-1 text-xs font-semibold " + (viewMode === "design" ? "bg-white text-indigo-600 shadow-xs dark:bg-slate-950 dark:text-indigo-300" : "text-slate-600 dark:text-slate-300")}
+        onclick={() => (viewMode = "design")}
+        title="Visual Designer Only"
+      >
+        Canvas
+      </button>
+      <button
+        type="button"
+        class={"inline-flex items-center gap-1 rounded px-2.5 py-1 text-xs font-semibold " + (viewMode === "split" ? "bg-white text-indigo-600 shadow-xs dark:bg-slate-950 dark:text-indigo-300" : "text-slate-600 dark:text-slate-300")}
+        onclick={() => (viewMode = "split")}
+        title="Side-by-Side Dual View (Monaco + Canvas)"
+      >
+        <Columns2 class="size-3" /> Split
+      </button>
+    </div>
+
+    <div class="ml-auto flex items-center gap-1.5">
+      <Button
+        size="xs"
+        variant={showLeftPanel ? "secondary" : "ghost"}
+        icon={PanelLeft}
+        title="Toggle Layers & Elements Panel"
+        onclick={() => (showLeftPanel = !showLeftPanel)}
+      >
+        <span class="hidden md:inline">Layers</span>
+      </Button>
+      <Button
+        size="xs"
+        variant={showRightPanel ? "secondary" : "ghost"}
+        icon={Sliders}
+        title="Toggle Properties Panel"
+        onclick={() => (showRightPanel = !showRightPanel)}
+      >
+        <span class="hidden md:inline">Properties</span>
+      </Button>
+      <Button size="xs" variant="ghost" icon={Code2} onclick={() => jumpToCode()}>Full Code</Button>
       <Button size="xs" icon={Rocket} loading={model.saving} disabled={!model.dirty || model.errors.length > 0} onclick={() => model.save()}>
-        {model.mode === "customize" ? "Publish" : "Apply"}
+        Apply
       </Button>
     </div>
   </div>
+
+  <!-- Hierarchical DOM / Control Ancestry Bar -->
+  <BreadcrumbBar {model} />
 
   {#if model.apiPage}
     <div class="px-3 pt-2">
@@ -169,40 +236,189 @@
   {/if}
 
   <!-- body -->
-  <div class="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[15rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)_18rem]">
-    <aside class="flex max-h-72 min-h-0 flex-col border-b border-slate-200 md:max-h-none md:border-b-0 md:border-r dark:border-slate-800">
-      <div class="flex gap-1 border-b border-slate-200 px-2 pt-2 dark:border-slate-800" role="tablist">
-        {#each [["toolbox", "Toolbox"], ["outline", "Outline"], ["properties", "Properties"]] as [id, label] (id)}
-          <button type="button" role="tab" aria-selected={leftTab === id} class={"-mb-px border-b-2 px-2 py-1 text-xs font-semibold " + (id === "properties" ? "xl:hidden " : "") + (leftTab === id ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-500")} onclick={() => (leftTab = id)}>{label}</button>
-        {/each}
+  {#if viewMode === "split"}
+    <div class="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-800">
+      <div class="min-h-[20rem] flex flex-col min-h-0 overflow-hidden">
+        <MonacoCodeStudio
+          objectName={pageName}
+          objectType={model.objectKind || "page"}
+          packageName={packageName}
+          bind:content={model.source}
+          focusLine={model.selectedNode?.line || 0}
+          {theme}
+          onChange={(newSrc) => {
+            if (newSrc !== undefined) model.sourceLoaded(newSrc);
+          }}
+          onApplySuccess={() => {
+            model.dirty = false;
+          }}
+        />
       </div>
-      <div class="min-h-0 flex-1 overflow-y-auto p-2">
-        {#if leftTab === "toolbox"}<Toolbox {model} />{:else if leftTab === "outline"}<Outline {model} />{:else}
-          <div class="xl:hidden"><PropertyPanel {model} /></div>
-          <p class="hidden p-2 text-xs text-slate-400 xl:block">Properties are shown on the right.</p>
-        {/if}
+      <div class="min-h-[20rem] flex flex-col min-h-0 overflow-hidden bg-slate-100/50 dark:bg-slate-950">
+        <main class="min-h-0 flex-1 overflow-auto">
+          <DesignerCanvas {model} />
+        </main>
       </div>
-    </aside>
+    </div>
+  {:else if model.mode === "preview"}
+    <div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-100/70 dark:bg-slate-950">
+      <div class="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2 text-xs dark:border-slate-800 dark:bg-slate-900">
+        <span class="inline-flex items-center gap-2 font-medium text-emerald-600 dark:text-emerald-400">
+          <span class="relative flex size-2">
+            <span class="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+            <span class="relative inline-flex size-2 rounded-full bg-emerald-500"></span>
+          </span>
+          Interactive Multi-Device Preview &middot; Live Draft
+        </span>
+        <div class="flex items-center gap-2">
+          <span class="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+            <UserCheck class="size-3 text-indigo-500" />
+            <span>Simulate Persona:</span>
+          </span>
+          <select
+            class="rounded border border-slate-300 bg-white px-2 py-0.5 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            bind:value={simulatedPersona}
+          >
+            <option value="admin">System Administrator (Full Access)</option>
+            <option value="sales">Sales Representative (Orders Only)</option>
+            <option value="accountant">Financial Accountant (Posting Active)</option>
+            <option value="auditor">Auditor (Read-Only Enforced)</option>
+          </select>
+        </div>
+      </div>
+      <main class="min-h-0 flex-1">
+        <DesignerCanvas {model} {simulatedPersona} />
+      </main>
+    </div>
+  {:else}
+    <div class="relative flex min-h-0 flex-1 overflow-hidden">
+      <!-- Left Sidebar: Layers & Elements (Collapsible & Responsive) -->
+      {#if showLeftPanel}
+        <aside class="flex w-60 sm:w-64 md:w-64 lg:w-68 shrink-0 flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 z-10 transition-all duration-150">
+          <div class="flex items-center justify-between border-b border-slate-200 px-2 pt-1.5 dark:border-slate-800" role="tablist">
+            <div class="flex gap-1">
+              {#each [["layers", "Layers"], ["toolbox", "Elements"]] as [id, label] (id)}
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={leftTab === id}
+                  class={"-mb-px border-b-2 px-2.5 py-1 text-xs font-semibold transition-colors " +
+                    (leftTab === id
+                      ? "border-indigo-600 text-indigo-600 dark:text-indigo-400"
+                      : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200")}
+                  onclick={() => (leftTab = id)}
+                >
+                  {label}
+                </button>
+              {/each}
+            </div>
+            <button
+              type="button"
+              class="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded"
+              title="Collapse left panel"
+              onclick={() => (showLeftPanel = false)}
+            >
+              <PanelLeftClose class="size-3.5" />
+            </button>
+          </div>
+          <div class="min-h-0 flex-1 overflow-y-auto p-1.5">
+            {#if leftTab === "layers"}
+              <LayersPanel {model} {openActionModal} />
+            {:else}
+              <Toolbox {model} {openActionModal} />
+            {/if}
+          </div>
+        </aside>
+      {/if}
 
-    <main class="min-h-[28rem] md:min-h-0">
-      <DesignerCanvas {model} />
-    </main>
+      <!-- Center Main: Designer Canvas -->
+      <main class="min-h-0 flex-1 flex flex-col overflow-hidden bg-slate-100/50 dark:bg-slate-950">
+        <DesignerCanvas {model} />
+      </main>
 
-    <aside class="hidden min-h-0 overflow-y-auto border-l border-slate-200 p-3 xl:block dark:border-slate-800">
-      <PropertyPanel {model} />
-    </aside>
-  </div>
+      <!-- Right Panel: Properties Inspector (Docked on lg+, Overlay Drawer on <lg) -->
+      {#if showRightPanel}
+        <!-- Desktop Docked Aside (visible on lg+) -->
+        <aside class="hidden lg:flex w-72 xl:w-80 shrink-0 flex-col border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden z-10 transition-all duration-150">
+          <div class="flex items-center justify-between border-b border-slate-200 px-3 py-1.5 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Properties</span>
+            <button
+              type="button"
+              class="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded"
+              title="Close properties panel"
+              onclick={() => (showRightPanel = false)}
+            >
+              <PanelRightClose class="size-3.5" />
+            </button>
+          </div>
+          <div class="min-h-0 flex-1 overflow-y-auto p-2.5">
+            <PropertyPanel {model} />
+          </div>
+        </aside>
+
+        <!-- Tablet / Mobile Slide-over Drawer (visible on <lg) -->
+        <div class="lg:hidden fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-xs" role="dialog" aria-modal="true">
+          <button
+            type="button"
+            class="absolute inset-0 size-full cursor-default bg-transparent"
+            aria-label="Close properties drawer"
+            onclick={() => (showRightPanel = false)}
+          ></button>
+          <div class="relative w-full max-w-sm sm:max-w-md h-full bg-white dark:bg-slate-900 shadow-2xl flex flex-col z-10 border-l border-slate-200 dark:border-slate-800 animate-in slide-in-from-right duration-150">
+            <div class="flex items-center justify-between border-b border-slate-200 px-3.5 py-2.5 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
+              <span class="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Properties Inspector</span>
+              <button
+                type="button"
+                class="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors"
+                onclick={() => (showRightPanel = false)}
+              >
+                <X class="size-4" />
+              </button>
+            </div>
+            <div class="min-h-0 flex-1 overflow-y-auto p-3">
+              <PropertyPanel {model} />
+            </div>
+          </div>
+        </div>
+      {/if}
+    </div>
+  {/if}
 
   <!-- diagnostics -->
   {#if model.diagnostics.length}
-    <div class="max-h-32 overflow-y-auto border-t border-slate-200 px-3 py-2 text-xs dark:border-slate-800">
+    <div class="max-h-36 overflow-y-auto border-t border-slate-200 px-3 py-2 text-xs dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40">
+      <div class="flex items-center justify-between pb-1 mb-1 border-b border-slate-200 dark:border-slate-800">
+        <span class="font-bold text-[10px] uppercase tracking-wider text-slate-500">
+          Problems & Diagnostics ({model.diagnostics.length})
+        </span>
+      </div>
       {#each model.diagnostics as d, i (i)}
-        <button type="button" class="flex w-full items-start gap-2 py-0.5 text-left hover:underline" onclick={() => d.path && (model.selected = d.path)}>
-          <span class={"font-mono font-semibold " + (d.severity === "error" ? "text-rose-600" : "text-amber-600")}>{d.code}</span>
-          <span>{d.message}</span>
-          {#if d.path}<span class="ml-auto shrink-0 font-mono text-[10px] text-slate-400">{d.path}</span>{/if}
-        </button>
+        {@const missingCu = (d.code === "BOS3004" || d.message?.includes("Codeunit '")) ? d.message?.match(/Codeunit '([^']+)'/)?.[1] : null}
+        <div class="flex items-center justify-between gap-2 py-1 hover:bg-slate-100/60 dark:hover:bg-slate-800/60 rounded px-1.5 transition-colors">
+          <button type="button" class="flex min-w-0 flex-1 items-start gap-2 text-left hover:underline" onclick={() => d.path && (model.selected = d.path)}>
+            <span class={"font-mono font-semibold shrink-0 " + (d.severity === "error" ? "text-rose-600" : "text-amber-600")}>{d.code}</span>
+            <span class="truncate text-slate-700 dark:text-slate-300">{d.message}</span>
+            {#if d.path}<span class="ml-auto shrink-0 font-mono text-[10px] text-slate-400">{d.path}</span>{/if}
+          </button>
+          {#if missingCu}
+            <Button
+              size="xs"
+              variant="outline"
+              class="h-5 px-2 text-[10px] gap-1 shrink-0 text-indigo-600 border-indigo-300 dark:border-indigo-800 hover:bg-indigo-50 dark:hover:bg-indigo-950 font-semibold"
+              onclick={() => model.scaffoldCodeunit(missingCu)}
+            >
+              <Sparkles class="size-2.5" /> Scaffold {missingCu}
+            </Button>
+          {/if}
+        </div>
       {/each}
     </div>
   {/if}
+
+  <ActionBuilderModal
+    bind:open={isActionModalOpen}
+    {model}
+    defaultArea={modalDefaultArea}
+    defaultGroup={modalDefaultGroup}
+  />
 </div>

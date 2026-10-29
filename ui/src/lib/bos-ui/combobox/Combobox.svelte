@@ -286,6 +286,12 @@
     } else if (e.key === "Escape" && open) {
       e.preventDefault();
       open = false;
+    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (!open) {
+        e.preventDefault();
+        open = true;
+        searchQuery = e.key;
+      }
     }
   }
 
@@ -300,9 +306,9 @@
       const prevIndex = Math.max(activeIndex - 1, 0);
       activeIndex = prevIndex;
       scrollActiveIntoView(prevIndex);
-    } else if (e.key === "Enter") {
-      e.preventDefault();
+    } else if (e.key === "Enter" || e.key === "Tab") {
       if (visibleItems[activeIndex]) {
+        e.preventDefault();
         selectItem(visibleItems[activeIndex]);
       }
     } else if (e.key === "Escape") {

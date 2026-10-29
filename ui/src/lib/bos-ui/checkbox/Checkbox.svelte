@@ -20,7 +20,7 @@
   const uid = $props.id();
 </script>
 
-<div class={cn("inline-flex items-center gap-2", className)}>
+<div class={cn("inline-flex items-center gap-2.5 min-h-[44px] sm:min-h-0", className)}>
   <CheckboxPrimitive.Root
     bind:ref
     checked={checked ?? false}
@@ -30,6 +30,11 @@
     {required}
     {name}
     id={uid}
+    onkeydown={(e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+      }
+    }}
     onCheckedChange={(value) => {
       if (value === "indeterminate") {
         indeterminate = true;

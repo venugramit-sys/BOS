@@ -19,7 +19,7 @@
   } = $props();
 
   let methodName = $state("execute");
-  let paramsJson = $state('{\n  "id": "00000000-0000-0000-0000-000000000000"\n}');
+  let paramsJson = $state('{\n  "id": "' + (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : '') + '"\n}');
   let isExecuting = $state(false);
   let executionResult = $state(null);
   let executionError = $state(null);
@@ -72,7 +72,7 @@
       } else if (t.includes("bool")) {
         templateObj[p.name] = true;
       } else if (t.includes("uuid")) {
-        templateObj[p.name] = "00000000-0000-0000-0000-000000000000";
+        templateObj[p.name] = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : '');
       } else if (t.includes("date")) {
         templateObj[p.name] = new Date().toISOString().slice(0, 10);
       } else {
