@@ -1,0 +1,21 @@
+12:41:48 am [vite] (client) Re-optimizing dependencies because vite config has changed
+12:41:48 am [vite] (ssr) Re-optimizing dependencies because vite config has changed
+12:41:52 am [vite] (ssr) [optimizer] bundling dependencies...
+12:41:52 am [vite] (client) [optimizer] bundling dependencies...
+
+  VITE v8.3.3  ready in 8140 ms
+
+  ➜  Local:   http://localhost:5199/
+  ➜  Network: use --host to expose
+  ➜  press h + enter to show help
+12:42:05 am [vite-plugin-svelte] src/lib/bos-ui/input/Input.svelte:279:6 A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control
+12:42:05 am [vite-plugin-svelte] src/lib/bos-ui/date-picker/DatePicker.svelte:414:6 A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control
+12:42:05 am [vite-plugin-svelte] src/lib/bos-ui/select/Select.svelte:119:10 Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+12:42:05 am [vite-plugin-svelte] src/lib/bos-ui/select/Select.svelte:119:10 `<div>` with a pointerdown or click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+12:42:05 am [vite-plugin-svelte] src/lib/bos-ui/combobox/Combobox.svelte:406:6 A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control
+12:42:11 am [vite] (client) hmr update /@bos-page/CustomerCard.svelte

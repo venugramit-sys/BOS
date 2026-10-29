@@ -1,0 +1,5 @@
+pageextension CustomerCardExt extends CustomerCard {
+    layout {
+        modify(name) { caption = "Customer Name"; style { emphasis = Strong; } }
+    }
+}

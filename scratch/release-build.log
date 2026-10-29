@@ -1,0 +1,8 @@
+   Compiling bosc-syntax v0.1.0 (D:\Work Studio\Bos\crates\bosc-syntax)
+   Compiling bosc-ir v0.1.0 (D:\Work Studio\Bos\crates\bosc-ir)
+   Compiling bosc-codegen-db v0.1.0 (D:\Work Studio\Bos\crates\bosc-codegen-db)
+   Compiling bosc-codegen-svelte v0.1.0 (D:\Work Studio\Bos\crates\bosc-codegen-svelte)
+   Compiling bosc-analyzer v0.1.0 (D:\Work Studio\Bos\crates\bosc-analyzer)
+   Compiling bosc-runtime v0.1.0 (D:\Work Studio\Bos\crates\bosc-runtime)
+   Compiling bosc-cli v0.1.0 (D:\Work Studio\Bos\crates\bosc-cli)
+    Finished `release` profile [optimized] target(s) in 5m 59s

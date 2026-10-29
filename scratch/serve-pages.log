@@ -1,0 +1,92 @@
+Connecting BOS Engine to PostgreSQL at postgres://postgres:postgres@localhost:5432/bos_pages_e2e...
+2026-10-22T05:02:35.244997Z  INFO sqlx::postgres::notice: column "storage_strategy" of relation "_bos_sys_info" already exists, skipping
+2026-10-22T05:02:35.315138Z  INFO sqlx::postgres::notice: index "idx_bos_meta_objects_ir" does not exist, skipping
+2026-10-22T05:02:35.317048Z  INFO sqlx::postgres::notice: relation "idx_bos_meta_objects_def" already exists, skipping
+2026-10-22T05:02:35.317533Z  INFO sqlx::postgres::notice: relation "_bos_job_queue" already exists, skipping
+2026-10-22T05:02:35.318009Z  INFO sqlx::postgres::notice: relation "idx_bos_job_queue_status" already exists, skipping
+2026-10-22T05:02:35.319563Z  INFO sqlx::postgres::notice: relation "_bos_schema_migrations" already exists, skipping
+2026-10-22T05:02:35.320091Z  INFO sqlx::postgres::notice: relation "idx_bos_schema_migrations_pkg" already exists, skipping
+2026-10-22T05:02:35.337888Z  INFO sqlx::postgres::notice: relation "_bos_event_subscribers" already exists, skipping
+2026-10-22T05:02:35.338481Z  INFO sqlx::postgres::notice: relation "idx_bos_event_subscribers_pub_evt" already exists, skipping
+2026-10-22T05:02:35.338753Z  INFO sqlx::postgres::notice: relation "_bos_event_outbox" already exists, skipping
+2026-10-22T05:02:35.339034Z  INFO sqlx::postgres::notice: relation "idx_bos_event_outbox_status_created" already exists, skipping
+2026-10-22T05:02:35.346478Z  INFO bosc_runtime::bytecode_cache: [BYTECODE CACHE] Loaded verified AOT bytecode: AuthConfigurationLogic (type: unknown, crc32: 0x8f1f98df)
+2026-10-22T05:02:35.348098Z  INFO bosc_runtime::bytecode_cache: [BYTECODE CACHE] Loaded verified AOT bytecode: AuthManager (type: unknown, crc32: 0x4eccd5b6)
+2026-10-22T05:02:35.349995Z  INFO bosc_runtime::bytecode_cache: [BYTECODE CACHE] Loaded verified AOT bytecode: package.bundle (type: unknown, crc32: 0x70798967)
+2026-10-22T05:02:35.351145Z  INFO bosc_runtime::bytecode_cache: [BYTECODE CACHE] Loaded verified AOT bytecode: RoleLogic (type: unknown, crc32: 0xdb8d0e6d)
+2026-10-22T05:02:35.352062Z  INFO bosc_runtime::bytecode_cache: [BYTECODE CACHE] Loaded verified AOT bytecode: SecurityAuditLogLogic (type: unknown, crc32: 0xfdf395ff)
+2026-10-22T05:02:35.352850Z  INFO bosc_runtime::bytecode_cache: [BYTECODE CACHE] Loaded verified AOT bytecode: UserLogic (type: unknown, crc32: 0x075fe470)
+2026-10-22T05:02:35.353300Z  INFO bosc_runtime::bytecode_cache: [BYTECODE CACHE] Loaded verified AOT bytecode: UserRoleLogic (type: unknown, crc32: 0x91b1300a)
+2026-10-22T05:02:35.353767Z  INFO bosc_runtime::bytecode_cache: [BYTECODE CACHE] Loaded verified AOT bytecode: UserSecuritySettingLogic (type: unknown, crc32: 0xd9a1b46e)
+2026-10-22T05:02:35.354219Z  INFO bosc_runtime::bytecode_cache: [BYTECODE CACHE] Loaded verified AOT bytecode: UserSessionLogic (type: unknown, crc32: 0x8bf6816f)
+2026-10-22T05:02:35.356193Z  INFO bosc_runtime::bytecode_cache: [BYTECODE CACHE] Loaded verified AOT bytecode: package.bundle (type: unknown, crc32: 0xacf8c1dd)
+2026-10-22T05:02:35.359304Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: User_GetById (table: User, kind: get_by_id)
+2026-10-22T05:02:35.359832Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: User_Exists (table: User, kind: exists)
+2026-10-22T05:02:35.360114Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: User_Insert (table: User, kind: insert)
+2026-10-22T05:02:35.360434Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: User_UpdateOptimistic (table: User, kind: update_optimistic)
+2026-10-22T05:02:35.360726Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: User_Delete (table: User, kind: delete)
+2026-10-22T05:02:35.361021Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: User_SIFT_activeSessionCount (table: User, kind: sift_sum)
+2026-10-22T05:02:35.361290Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: Role_GetById (table: Role, kind: get_by_id)
+2026-10-22T05:02:35.361673Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: Role_Exists (table: Role, kind: exists)
+2026-10-22T05:02:35.361940Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: Role_Insert (table: Role, kind: insert)
+2026-10-22T05:02:35.362223Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: Role_UpdateOptimistic (table: Role, kind: update_optimistic)
+2026-10-22T05:02:35.362493Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: Role_Delete (table: Role, kind: delete)
+2026-10-22T05:02:35.362756Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: Role_SIFT_assignedUsersCount (table: Role, kind: sift_sum)
+2026-10-22T05:02:35.363027Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: UserRole_GetById (table: UserRole, kind: get_by_id)
+2026-10-22T05:02:35.363297Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: UserRole_Exists (table: UserRole, kind: exists)
+2026-10-22T05:02:35.363566Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: UserRole_Insert (table: UserRole, kind: insert)
+2026-10-22T05:02:35.363843Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: UserRole_UpdateOptimistic (table: UserRole, kind: update_optimistic)
+2026-10-22T05:02:35.364113Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: UserRole_Delete (table: UserRole, kind: delete)
+2026-10-22T05:02:35.364317Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: UserSession_GetById (table: UserSession, kind: get_by_id)
+2026-10-22T05:02:35.364492Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: UserSession_Exists (table: UserSession, kind: exists)
+2026-10-22T05:02:35.364661Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: UserSession_Insert (table: UserSession, kind: insert)
+2026-10-22T05:02:35.364827Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: UserSession_UpdateOptimistic (table: UserSession, kind: update_optimistic)
+2026-10-22T05:02:35.364995Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: UserSession_Delete (table: UserSession, kind: delete)
+2026-10-22T05:02:35.365161Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: UserSecuritySetting_GetById (table: UserSecuritySetting, kind: get_by_id)
+2026-10-22T05:02:35.365328Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: UserSecuritySetting_Exists (table: UserSecuritySetting, kind: exists)
+2026-10-22T05:02:35.365493Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: UserSecuritySetting_Insert (table: UserSecuritySetting, kind: insert)
+2026-10-22T05:02:35.365661Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: UserSecuritySetting_UpdateOptimistic (table: UserSecuritySetting, kind: update_optimistic)
+2026-10-22T05:02:35.365828Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: UserSecuritySetting_Delete (table: UserSecuritySetting, kind: delete)
+2026-10-22T05:02:35.366000Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: SecurityAuditLog_GetById (table: SecurityAuditLog, kind: get_by_id)
+2026-10-22T05:02:35.366167Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: SecurityAuditLog_Exists (table: SecurityAuditLog, kind: exists)
+2026-10-22T05:02:35.366333Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: SecurityAuditLog_Insert (table: SecurityAuditLog, kind: insert)
+2026-10-22T05:02:35.366503Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: SecurityAuditLog_UpdateOptimistic (table: SecurityAuditLog, kind: update_optimistic)
+2026-10-22T05:02:35.366669Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: SecurityAuditLog_Delete (table: SecurityAuditLog, kind: delete)
+2026-10-22T05:02:35.366834Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: AuthConfiguration_GetById (table: AuthConfiguration, kind: get_by_id)
+2026-10-22T05:02:35.366998Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: AuthConfiguration_Exists (table: AuthConfiguration, kind: exists)
+2026-10-22T05:02:35.367162Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: AuthConfiguration_Insert (table: AuthConfiguration, kind: insert)
+2026-10-22T05:02:35.367335Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: AuthConfiguration_UpdateOptimistic (table: AuthConfiguration, kind: update_optimistic)
+2026-10-22T05:02:35.367501Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: AuthConfiguration_Delete (table: AuthConfiguration, kind: delete)
+2026-10-22T05:02:35.368389Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: User_GetById (table: User, kind: get_by_id)
+2026-10-22T05:02:35.368605Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: User_Exists (table: User, kind: exists)
+2026-10-22T05:02:35.368780Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: User_Insert (table: User, kind: insert)
+2026-10-22T05:02:35.368948Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: User_UpdateOptimistic (table: User, kind: update_optimistic)
+2026-10-22T05:02:35.369115Z  INFO bosc_runtime::prepared_statement_registry: [PREPARED STMTS] Registered AOT query: User_Delete (table: User, kind: delete)
+Resolving pages (artifacts: ./data/page-artifacts, compiler: ./ui/dist\bos-runtime)...
+2026-10-22T05:02:36.298593Z  INFO bos::pages: Svelte page compiler ready svelte=5.57.1 workers=4
+2026-10-22T05:02:36.347773Z  INFO bos::pages: page catalog resolved pages=25 db=ef1523ba97acca0e
+✓ Page service ready (4 compiler workers).
+2026-10-22T05:02:36.349323Z  INFO bos::pages: page artifacts warmed compiled=0 failures=0 removed=0
+========================================================
+🚀 BOS Backend API Server LIVE and LISTENING on http://localhost:3100
+========================================================
+Endpoints:
+  System & Diagnostics:
+    GET  /api/health
+    GET  /api/detect-db
+  Database Lifecycle Management:
+    GET  /api/databases
+    POST /api/databases
+    GET  /api/databases/{name}
+    DELETE /api/databases/{name}
+    POST /api/databases/{name}/manage
+    POST /api/databases/test-connection
+    POST /api/databases/switch
+  Entity CRUD & Workflows:
+    GET  /api/entities/{table}
+    POST /api/entities/{table}
+    GET  /api/entities/{table}/{id}
+    POST /api/entities/{table}/{id}/transition
+    GET  /api/entities/{table}/{id}/state-history
+    POST /api/entities/{table}/{id}/privileged-override
+
